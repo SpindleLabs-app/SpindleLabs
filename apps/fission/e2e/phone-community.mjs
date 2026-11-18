@@ -91,7 +91,7 @@ try {
     await page.context().close();
   });
 
-  await check("1280 px: the AI panel beside the view stays open on Escape; Community shows its card as before", async () => {
+  await check("1280 px: the AI panel beside the view stays open on Escape; Community shows its page over the view (UI review 2026-11-18: one centred page, not a card)", async () => {
     const page = await fresh(1280, 800, false);
     await page.click("#assistant-toggle");
     await until(page, () => !document.getElementById("assistant").hidden, null, "the AI panel open");
@@ -100,7 +100,7 @@ try {
     assert.equal(await page.isVisible("#assistant"), true, "Escape is Design's at 1280 px");
     await page.click("#community");
     await page.locator("#properties .placeholder h2", { hasText: "Community" }).waitFor();
-    assert.ok((await covers(page, "#properties")) < 0.6, "a card over the view, not a page over all of it");
+    assert.ok((await covers(page, "#properties")) > 0.9, "a page over all of the view, as every Coming-soon page");
     if (shots) await page.screenshot({ path: `${shots}/community-1280.png` });
     await page.context().close();
   });

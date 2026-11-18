@@ -6,7 +6,7 @@
 .feature-edit h2 { margin-top: 0; overflow-wrap: anywhere; }
 .feature-edit p { margin: 6px 0; }
 .feature-edit .feature-edit-row { display: block; margin: 6px 0; }
-.feature-edit .feature-edit-row input { width: 6em; }
+.feature-edit .feature-edit-row input:not([type=checkbox]) { width: 6em; }
 .feature-edit .feature-edit-note { color: var(--text-8b95a3); font-size: 0.9em; }
 .feature-edit .feature-edit-region { font-size: 0.9em; }
 .feature-edit .feature-edit-buttons { display: flex; gap: 6px; margin-top: 4px; }

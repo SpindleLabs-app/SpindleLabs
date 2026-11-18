@@ -17,11 +17,13 @@ name: Kernel CI
 #
 # Secrets, in the "kernel" environment, which only main may use (Ben adds
 # them; every job that needs them names it, so no other branch's workflow
-# and no fork can read them; test_kernel_ci.py checks): KERNEL_READ, a fine-grained key with
-# read-only contents and read-write commit statuses on SpindleLabs-app/kernel
-# (being split into KERNEL_SOURCE, contents read-only, for the jobs that run
-# the kernel's code, and KERNEL_STATUS, commit statuses only);
-# RESULTS_WRITE, contents and issues read-write on SpindleLabs-app/kernel-results.
+# and no fork can read them; test_kernel_ci.py checks): KERNEL_SOURCE, a
+# fine-grained key with read-only contents on SpindleLabs-app/kernel, for the
+# jobs that run the kernel's code; KERNEL_STATUS, commit statuses only, for
+# the jobs that post the verdicts; RESULTS_WRITE, contents and issues
+# read-write on SpindleLabs-app/kernel-results. (The steps still call the key
+# they are handed KERNEL_READ, the name kernel_ci.sh reads; the old
+# all-in-one secret of that name is no longer used, security hunt H3.)
 # The title names the label, so the kernel repo's ci.yml can find and cancel
 # a pull request's run when it goes back to draft.
 run-name: Kernel CI ${{ inputs.label }}

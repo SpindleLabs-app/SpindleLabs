@@ -381,7 +381,7 @@ test("a kernel that fails or answers nonsense gives unknown, never a throw and n
   });
   const doubted = await partsRelation(unsure, SQUARE, crossing);
   assert.deepEqual([doubted.relation, doubted.meet], ["unknown", true]);
-  assert.match(doubted.why ?? "", /meet too closely for the kernel to tell a touch from an overlap \(the curves meet too closely near/);
+  assert.match(doubted.why ?? "", /meet too closely for SpindleLabs to tell a touch from an overlap \(the curves meet too closely near/);
   // A kernel that throws something that is no Error.
   const rude: KernelCalls = { call: (() => Promise.reject("boom")) as KernelCalls["call"] };
   assert.deepEqual(await partsRelation(rude, SQUARE, crossing), { relation: "unknown", why: "couldn't work out how the two parts sit on one sheet: boom" });

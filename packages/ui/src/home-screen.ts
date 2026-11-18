@@ -398,14 +398,30 @@ export function homeScreen(doc: Document, parts: HomeParts): HomeScreen {
   search.addEventListener("input", () => paintList());
   filter.addEventListener("change", () => paintList());
   // The app's shortcuts listen on the document: keys typed here stay here. Escape goes back to the project.
-  root.addEventListener("keydown", (e) => {
+  const keyHere = (e: KeyboardEvent) => {
     if (e.key === "Escape") {
       e.preventDefault();
       if (folded) unfold();
       else hide();
     }
     e.stopPropagation();
-  });
+  };
+  root.addEventListener("keydown", keyHere);
+  // A press on the picture or an empty part of the screen leaves the focus on the page's body, so the next key is aimed
+  // outside the screen and would reach the design behind it (Ctrl+Z undoing a step unseen, Delete deleting a body). While
+  // the screen is up, a key aimed at the body or at the inert page is heard first, on the window, and kept here too.
+  const view = doc.defaultView;
+  view?.addEventListener(
+    "keydown",
+    (e) => {
+      if (root.hidden) return;
+      const t = e.target as Element | null;
+      if (t && root.contains(t)) return; // heard by the screen itself
+      const behind = !t || t === doc.body || t === doc.documentElement || (t as Node) === doc || !!t.closest?.("[inert]");
+      if (behind) keyHere(e);
+    },
+    { capture: true },
+  );
   /** Back from folded, the focus on the icon that folds it again (a press on the picture leaves it nowhere). */
   const unfold = () => (setFolded(false), foldButton.focus());
   // Folded, a press anywhere but on a button brings the screen back (the picture itself takes no press: it lands here).

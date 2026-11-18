@@ -50,6 +50,15 @@ import { vectorWorkspace } from "@fission/vector";
 import { imageWorkspace } from "@fission/image";
 import { layoutWorkspace } from "@fission/layout";
 import { keptSteps } from "./kept-steps.ts";
+import { showNo3d, webglWorks } from "./no-3d.ts";
+import "./styles/no-3d.css";
+
+// No 3D drawing in this browser (bug hunt 2026-11-18 D-11): say so where the loading shapes are and start nothing, rather
+// than shimmer for good over an uncaught error. The wait never settles, so nothing below runs.
+if (!webglWorks(document)) {
+  showNo3d(document);
+  await new Promise<never>(() => {});
+}
 
 const workspaces: WorkspacePlugin[] = [
   designWorkspace,
@@ -419,6 +428,8 @@ function showPage(page: Page) {
   // sheet over Design's box (SL #522 item 4, styles/placeholder-page.css). Only Community: a workspace still marked
   // "placeholder" (Laser, TestLab…) mounts a real page of its own, which the words' sheet would cover.
   document.body.classList.toggle("placeholder-page", !workspace);
+  // A page that is only its words (Community, and every workspace not built yet) is one centred page on wide screens (styles/placeholder-centred.css).
+  document.body.classList.toggle("placeholder-centred", !!$("properties").querySelector(":scope > .placeholder"));
   $("community").setAttribute("aria-pressed", String(page === "community"));
   document.body.dataset.activeWorkspace = page; // read by the e2e test
   current = page;
@@ -1125,6 +1136,9 @@ const projects = listedProjects(document, {
 /** A new, empty project in place of the open one (the home screen's New, and "+" on the design tabs). */
 async function startNewProject(keepNow = false) {
   await started;
+  // An OK still being checked lands in the project left behind first, as Open waits (app bug hunt 2026-11-18, E-3:
+  // the home screen's New project dropped it without a word).
+  await okLanded();
   openings++; // a project still opening is never kept or counted as reopened
   endOffer();
   guard.finished();
