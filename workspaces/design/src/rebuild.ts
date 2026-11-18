@@ -1697,7 +1697,10 @@ async function copyBody(f: Feature, done: Record<string, FeatureResult>, bodies:
  * kernel's store holds it): each face kept from the body keeps the names,
  * frame and turn it had there, and the new face of the k-th edge listed is
  * `face:<the Chamfer>/chamfer:<k>`, counted from 1, made after every name
- * before it. The Chamfer holds the body as it was (`holds`).
+ * before it. The chamfered body is made `by` the Chamfer, as a Combine's
+ * result is by the Combine, so a pin or projection on it depends on the
+ * Chamfer and a sketch before the Chamfer is offered none of it (app hunt
+ * 2026-11-18). The Chamfer holds the body as it was (`holds`).
  */
 async function chamferRun(doc: DesignDocument, f: Feature, done: Record<string, FeatureResult>, bodies: Bodies, cache: BodyCache): Promise<FeatureResult> {
   const [maker] = f.dependsOn;
@@ -1744,7 +1747,7 @@ async function chamferRun(doc: DesignDocument, f: Feature, done: Record<string, 
     named: { faces, made },
     ...(frames.some((x) => x !== null) && { frames }),
     ...(reversed && { reversed }),
-    ...(b.by !== undefined && { by: b.by }),
+    by: f.id,
     ...(b.from !== undefined && { from: b.from }),
   };
   return { status: "built", holds: [b.handle], chamfered: { edges, body: out.body } };
