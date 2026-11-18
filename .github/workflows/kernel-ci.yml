@@ -432,7 +432,7 @@ jobs:
           echo "count=$count" >>"$GITHUB_OUTPUT"
           echo "shards=$shards" >>"$GITHUB_OUTPUT"
           # The crates with changed lines (kernel, slice, fea; a kernel commit
-          # from before the slicer and solver were mutated prints none).
+          # from before the slicer and solver were mutated prints no such line).
           echo "crates=$(sed -n 's/^crates \(.*\)$/\1/p' "$RUNNER_TEMP/plan.txt")" >>"$GITHUB_OUTPUT"
       - name: Seal the logs (only the keyed job can open them)
         if: always()
