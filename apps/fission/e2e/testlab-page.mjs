@@ -100,9 +100,16 @@ async function hintShows(page, words, shot) {
   const box = await page.evaluate(() => {
     const h = document.querySelector("#testlab-view-hint");
     const r = h.getBoundingClientRect();
+    // The hint takes no presses (pointer-events: none), so elementFromPoint skips it: let it take them while asked.
+    h.style.pointerEvents = "auto";
     const top = document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2);
-    return { left: r.left, right: r.right, top: r.top, bottom: r.bottom, width: innerWidth, height: innerHeight, onTop: top === h || h.contains(top) };
+    h.style.pointerEvents = "";
+    // The overlays' legend ("Held here") is never under it.
+    const legend = document.querySelector(".overlay-legend:not([hidden])")?.getBoundingClientRect();
+    const overLegend = legend !== undefined && legend.height > 0 && r.left < legend.right && legend.left < r.right && r.top < legend.bottom && legend.top < r.bottom;
+    return { left: r.left, right: r.right, top: r.top, bottom: r.bottom, width: innerWidth, height: innerHeight, onTop: top === h || h.contains(top), overLegend };
   });
+  assert.ok(!box.overLegend, `the hint lies over the overlays' legend: ${JSON.stringify(box)}`);
   assert.ok(box.left >= 0 && box.right <= box.width && box.top >= 0 && box.bottom <= box.height, `the hint is inside the window: ${JSON.stringify(box)}`);
   assert.ok(box.onTop, "nothing covers the hint");
   if (shots && shot) await page.screenshot({ path: `${shots}/${shot}-${box.width}.png` });

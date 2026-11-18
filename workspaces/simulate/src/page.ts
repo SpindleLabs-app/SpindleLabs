@@ -148,6 +148,12 @@ export function mountTestLabPage(ctx: WorkspaceContext): MountedWorkspace {
     const words = awake ? pickHint(picking, study()) : null;
     viewHint.hidden = words === null;
     viewHint.textContent = words ?? "";
+    // On a phone the overlays' legend ("Held here") sits where the hint's pill would (theme.css, 112 px down), so the
+    // hint goes just under it, however many lines it has; on a wide screen the hint is above it.
+    const legend = ctx.viewport.element.querySelector<HTMLElement>(".overlay-legend");
+    const phone = doc.defaultView?.matchMedia?.("(max-width: 640px)").matches ?? false;
+    const under = words !== null && phone && legend !== null && !legend.hidden && legend.offsetHeight > 0;
+    viewHint.style.top = under ? `${legend.offsetTop + legend.offsetHeight + 8}px` : "";
   };
 
   const el = <K extends keyof HTMLElementTagNameMap>(tag: K, cls?: string, text?: string): HTMLElementTagNameMap[K] => {
@@ -339,7 +345,6 @@ export function mountTestLabPage(ctx: WorkspaceContext): MountedWorkspace {
     const problems = s === null ? [] : refused !== null ? [refused] : readyProblems(s, now?.lost ?? []);
     words.textContent = [note, picking ? "Tap faces of the body to pick them; tap a picked face to let it go." : "", ...problems].filter((x) => x !== "").join(" ");
     drawState();
-    showViewHint();
     const run = button("Run", "run", () => void runStudy());
     run.disabled = s === null || s.body === null || running !== null;
     panel.append(words, stateLine);
@@ -358,6 +363,7 @@ export function mountTestLabPage(ctx: WorkspaceContext): MountedWorkspace {
     else panel.append(el("p", "testlab-page-note", "A simulation: real prints are weaker across their layers."));
     drawBodies();
     paint();
+    showViewHint(); // after the overlays: on a phone it goes under their legend
   };
 
   /** The progress line while a Run works. */
