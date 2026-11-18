@@ -1,7 +1,7 @@
 // An export pressed while a tool is still open (issue #639): Export STL, Slice
 // for printing and its print preview save the design as it is recorded, so a
 // Move typed into place but not yet OK'd, an Extrude's preview, an edit or a
-// Combine or Chamfer not yet pressed OK (a Chamfer previews its cut, 44a-app3), or a sketch still being drawn, would be saved
+// Combine, Chamfer or Pattern not yet pressed OK (a Chamfer previews its cut, 44a-app3; a Pattern its copies, 61c), or a sketch still being drawn, would be saved
 // as it was before, while the view shows it changed. Rather than save what
 // the screen does not show (or an unconfirmed preview), every export route
 // refuses in plain words naming the tool and how to finish it. Measure only
@@ -28,13 +28,15 @@ export interface ToolsOpen {
   chamfer?: { editing: string | null } | null;
   /** Shell's panel (35h2c-app2, which previews the hollow): the item it edits (null for a new one). Left out: none open. */
   shell?: { editing: string | null } | null;
+  /** Pattern's panel (step 61c, which previews the copies): the item it edits (null for a new one). Left out: none open. */
+  pattern?: { editing: string | null } | null;
   /** A sketch: picking its plane, or being drawn (the sketch's id when known). */
   sketch: { kind: "pick" } | { kind: "edit"; id: string | null } | null;
 }
 
 /** The open tool (which panel, to say the words in), its name as its panel shows it, and what finishes it. */
 export interface OpenTool {
-  tool: "move" | "extrude" | "edit" | "combine" | "chamfer" | "shell" | "pick" | "sketch";
+  tool: "move" | "extrude" | "edit" | "combine" | "chamfer" | "pattern" | "shell" | "pick" | "sketch";
   name: string;
   finish: string;
 }
@@ -49,6 +51,7 @@ export function openTool(open: ToolsOpen, name: (id: string) => string): OpenToo
   if (open.combine) return { tool: "combine", name: open.combine.editing === null ? "Combine" : `Edit ${name(open.combine.editing)}`, finish: OK_OR_CANCEL };
   if (open.chamfer) return { tool: "chamfer", name: open.chamfer.editing === null ? "Chamfer" : `Edit ${name(open.chamfer.editing)}`, finish: OK_OR_CANCEL };
   if (open.shell) return { tool: "shell", name: open.shell.editing === null ? "Shell" : `Edit ${name(open.shell.editing)}`, finish: OK_OR_CANCEL };
+  if (open.pattern) return { tool: "pattern", name: open.pattern.editing === null ? "Pattern" : `Edit ${name(open.pattern.editing)}`, finish: OK_OR_CANCEL };
   if (open.sketch?.kind === "pick") return { tool: "pick", name: "Sketch", finish: "pick its plane or press Cancel" };
   if (open.sketch?.kind === "edit") return { tool: "sketch", name: open.sketch.id === null ? "The sketch" : name(open.sketch.id), finish: "press Finish sketch" };
   return null;

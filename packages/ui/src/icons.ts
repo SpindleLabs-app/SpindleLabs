@@ -38,6 +38,8 @@ export const ICONS = {
   chamfer: [tone("M13 4 20 11 17.5 13.5 10.5 6.5Z"), line("M4 20V4H13L20 11V20ZM10.5 6.5 17.5 13.5")],
   // A block seen from the front, hollowed out with its top open, its walls in the second tone: Shell (step 35h2c-app2).
   shell: [tone("M4 4H7V17H17V4H20V20H4Z"), line("M4 4V20H20V4M7 4V17H17V4M4 4H7M17 4H20")],
+  // A block and two copies of it in a row, the first in the second tone: Pattern (step 61c).
+  pattern: [tone("M3 9.5H8V14.5H3Z"), line("M3 9.5H8V14.5H3ZM9.5 9.5H14.5V14.5H9.5ZM16 9.5H21V14.5H16Z")],
   // A block in front, its copy behind it and up to the right in outline only: Duplicate body (step 35e2).
   duplicate: [tone("M4 9H15V20H4Z"), line("M4 9H15V20H4ZM9 9V4H20V15H15")],
   // A small block in the corner of a bigger one in outline, an arrow out along the diagonal: Scale (step 35e2).

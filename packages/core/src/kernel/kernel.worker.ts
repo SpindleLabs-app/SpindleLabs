@@ -6,10 +6,10 @@ import init from "./wasm/fission_kernel.js";
 import { entry as kernel } from "./entry-points.ts";
 import release from "./wasm/kernel.json";
 import { startKernel } from "./handshake.ts";
-import type { ProgressCallback } from "./kernel-client.ts";
+import type { KernelTestProgress, ProgressCallback } from "./kernel-client.ts";
 import { isTrap, KERNEL_NOT_DOWNLOADED, kernelFailure, progressPoster, type KernelReady, type KernelRequest, type KernelResponse } from "./kernel-client.ts";
 import { calibrate } from "./time-limit.ts";
-import type { BodyHandle, BodySpec, BooleanOp, Motion, BooleanResult, BuildPlate, ChamferResult, ChamferSize, ShellResult, ConstructMade, ConstructMake, Measured, MeasurePick, NozzleType, Outline, SketchArc, SketchCircle, SketchLine, SupportStyle, PatternSpec } from "./kernel-types.ts";
+import type { BodyHandle, BodySpec, BooleanOp, Motion, BooleanResult, BuildPlate, ChamferResult, ChamferSize, ShellResult, ConstructMade, ConstructMake, Measured, MeasurePick, NozzleType, Outline, SketchArc, SketchCircle, SketchLine, SupportStyle, PatternSpec, StressStage, StressTest } from "./kernel-types.ts";
 
 // A .wasm that didn't download or compile fails every call with the app's
 // words, not the browser's; a build that doesn't take the app's key keeps
@@ -95,6 +95,7 @@ const ops = {
     loose(kernel.slice_stl)(stl, layerHeight, wallCount, infillPercent, supports, warmUp, betterGrip, told),
   print_file_stl: (stl: Uint8Array<ArrayBuffer>, layerHeight: number, wallCount: number, infillPercent: number, supports: SupportStyle, plate: BuildPlate, nozzle: NozzleType, warmUp: boolean, betterGrip: boolean, told?: ProgressCallback) =>
     loose(kernel.print_file_stl)(stl, layerHeight, wallCount, infillPercent, supports, plate, nozzle, warmUp, betterGrip, told),
+  stress_test: (body: BodyHandle, test: StressTest, told?: (stage: StressStage) => void) => loose(kernel.stress_test)(body, test, told),
   wasm_bytes: () => memory?.buffer.byteLength ?? 0,
 } satisfies Record<KernelRequest["op"], (...args: never[]) => unknown>;
 
@@ -105,7 +106,12 @@ self.onmessage = async (event: MessageEvent<KernelRequest>) => {
     await ready;
     const fn = ops[op] as (...a: unknown[]) => unknown;
     // A slice gets its progress callback after its own arguments (it reports while the call runs).
-    const told = op === "slice_stl" || op === "print_file_stl" ? [progressPoster(id, (m) => self.postMessage(m), () => performance.now())] : [];
+    const told =
+      op === "slice_stl" || op === "print_file_stl"
+        ? [progressPoster(id, (m) => self.postMessage(m), () => performance.now())]
+        : op === "stress_test"
+          ? [(testStage: StressStage) => self.postMessage({ id, testStage } satisfies KernelTestProgress)]
+          : [];
     reply = { id, ok: true, value: fn(...args, ...told) };
   } catch (e) {
     // A trap leaves this kernel unfit for another call: the client replaces this worker (kernel-client.ts, restart).

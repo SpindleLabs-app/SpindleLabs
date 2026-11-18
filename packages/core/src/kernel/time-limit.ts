@@ -318,6 +318,40 @@ export function sliceUnits(stl: Uint8Array, layerHeight: number, infill = 15, su
 export interface BodySize {
   faces: number;
   mesh: number;
+  /** The body's box sides (mm), once a view has said them (for the stress test). */
+  sides?: readonly [number, number, number];
+}
+
+/**
+ * The stress test (TestLab T5b). Its cost follows how many elements the mesh
+ * has, about the body's box volume over the mesh size cubed (the box is at
+ * least the body, so this is never under). Timed on the local WebAssembly
+ * build (2026-11-18, a unit 12.6 ms): a 100 × 10 × 10 bar at the kernel's
+ * default size 5 mm (ratio 80, solved directly) 122 units; a 100 × 100 × 4
+ * plate at 2.36 mm (ratio 3,051, 46,039 points, solved step by step) 14,588
+ * units; a 100 mm cube at 50 mm (ratio 8) 3 units. STRESS_UNITS × ratio^STRESS_POWER
+ * lies above all three (185, 25,300, 8) and grows faster than they do.
+ */
+export const STRESS_UNITS = 0.5;
+export const STRESS_POWER = 1.35;
+/**
+ * The largest ratio the kernel's default size can give (half the thinnest
+ * box side, no finer than a sixtieth of the box diagonal). Thinner than
+ * where the two meet, the ratio falls as t; thicker, as 1/t². Where they
+ * meet, (t/2)² = (a² + b² + t²)/3600, so t² = (a² + b²)/899 and the ratio
+ * a·b·t/(t/2)³ = 8ab/t² = 7192ab/(a² + b²), largest for a square: 3,596.
+ * Used when the sides are not known yet.
+ */
+export const STRESS_WORST_RATIO = 3596;
+
+/** The stress test's units for a body of box `sides` meshed at `size` (none: the kernel's default). */
+export function stressUnits(sides: readonly [number, number, number] | undefined, size?: number): number {
+  let ratio = STRESS_WORST_RATIO;
+  if (sides && sides.every((s) => Number.isFinite(s) && s > 0)) {
+    const each = size ?? Math.max(0.5 * Math.min(...sides), Math.hypot(...sides) / 60);
+    ratio = (sides[0] * sides[1] * sides[2]) / each ** 3;
+  }
+  return STRESS_UNITS * ratio ** STRESS_POWER;
 }
 
 const loopCorners = (loop: Loop) => ("circle" in loop ? 1 : loop.path.corners.length / 2);
@@ -475,6 +509,8 @@ function unitsOf<K extends keyof KernelOps>(op: K, args: KernelOps[K]["args"], s
     case "slice_stl":
     case "print_file_stl":
       return sliceUnits(a[0] as Uint8Array, a[1] as number, a[3] as number, (a[4] ?? "off") as SupportStyle);
+    case "stress_test":
+      return stressUnits(sizeOf(a[0] as BodyHandle)?.sides, (a[1] as { size?: number }).size);
     default:
       return 0;
   }

@@ -100,6 +100,19 @@ export function readConstructRef(ref: unknown): ConstructRef | null {
   return null;
 }
 
+/**
+ * The construction a sketch's plane or a Mirror's plane names (step 59a3:
+ * "construct:feature-7"), or null for anything else (an origin plane, a
+ * face's name, a name this SpindleLabs never writes).
+ */
+export function constructPlaneItem(plane: unknown): string | null {
+  const r = readConstructRef(plane);
+  return r?.kind === "construct" ? r.item : null;
+}
+
+/** Whether a sketch's or a Mirror's plane is a construction plane's name (step 59a3). */
+export const isConstructPlane = (plane: unknown): plane is string => constructPlaneItem(plane) !== null;
+
 /** A corner's name from the held names of the edges meeting there. */
 export const cornerRef = (edges: readonly string[]): string => CORNER_REF + [...new Set(edges)].sort().join("&");
 

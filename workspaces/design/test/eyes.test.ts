@@ -166,7 +166,7 @@ test("the reader takes every eye's id, and refuses each way of breaking the list
   // Every id the eyes list reads back.
   const all = { hidden: ["sketch-2", "body:feature-11", "origin-x", "origin-y", "origin-z", "folder-bodies", "folder-sketches", "folder-origin"], shownPlanes: ["origin-xy", "origin-xz", "origin-yz"] };
   assert.deepEqual({ hidden: read(all).hidden, shownPlanes: read(all).shownPlanes }, all);
-  const NOT_HIDEABLE = (id: string) => ({ message: `Design data hides ${id}, which is not a body (by its body id), a sketch in the timeline, an origin axis or a folder` });
+  const NOT_HIDEABLE = (id: string) => ({ message: `Design data hides ${id}, which is not a body (by its body id), a sketch or construction in the timeline, an origin axis or a folder` });
   // A plane goes in shownPlanes (hidden at first), not hidden; a profile, the Timeline and Profiles folders have no eye.
   assert.throws(() => read({ hidden: ["origin-xy"] }), NOT_HIDEABLE("origin-xy"));
   // Version 6 lists a body by its body id: the item's own id (what version 5 listed) is no eye's.

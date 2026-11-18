@@ -54,6 +54,12 @@ export async function studyNow(registry: RepresentationRegistry, project: Projec
   } catch (e) {
     return { refused: `${study.body.label} can't be tested now: ${e instanceof Error ? e.message : String(e)}.` };
   }
+  return studyOn(study, faces);
+}
+
+/** The study on a body's faces as its owner gave them for `studyFaces(study)` (in that order): each face's place by its stable id, and the words for every one lost. */
+export function studyOn(study: Study, faces: BodyFaces): StudyNow {
+  const held = studyFaces(study);
   const found = new Map(held.map((h, i) => [h.ref.id, faces.found[i]] as const));
   return { faces, found, lost: studyLost(study, found) };
 }

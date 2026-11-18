@@ -6,7 +6,7 @@
 // profiles are one kind; sketches (step 21b) register as another type with
 // this same producer, so there is no sketch-only path.
 
-import type { BodyFaces, BodyReference, BodySpec, FaceFound, FaceReference, KernelCalls, Outline, Plane, Producible, Producer, Project, RepresentationRegistry, SourceLookup } from "@fission/core";
+import type { BodyFaces, BodyReference, BodySpec, FaceFound, FaceReference, KernelCalls, LentBody, Outline, Plane, Producible, Producer, Project, RepresentationRegistry, SourceLookup } from "@fission/core";
 import { bodyFeatures, designBodies, failedIds } from "./browser.ts";
 import { bodyHidden, bodyIdOf, bodyItem, bodyNumbers, kernelHeld, profileLabel, readDesignDocument, type DesignDocument } from "./document.ts";
 import { endSpec, endStls } from "./move-tool.ts";
@@ -143,6 +143,15 @@ export function designLookup(document: DesignDocument, scene: Scene | null, kern
  * show (hidden, failed, deleted) is refused in words.
  */
 export async function bodyFaces(kernel: KernelCalls, project: Project, body: BodyReference, refs: readonly FaceReference[]): Promise<BodyFaces> {
+  return lendBody(kernel, project, body, refs, async (lent) => lent.faces);
+}
+
+/**
+ * Body `body` built now on a body store of its own, with its faces as `bodyFaces` gives them, lent to `use` (TestLab's
+ * Run, core's `withBody`): the handle is the one the faces were read from, so a face index found is the kernel's own
+ * on it. Every body the rebuild made is freed once `use` settles, however it ends.
+ */
+export async function lendBody<T>(kernel: KernelCalls, project: Project, body: BodyReference, refs: readonly FaceReference[], use: (lent: LentBody) => Promise<T>): Promise<T> {
   const document = readDesignDocument(project.workspaces.design);
   if (bodyItem(body.id) === null) throw new Error(`${JSON.stringify(body.id)} is not a body of the design`);
   if (bodyHidden(document, body.id)) throw new Error("it is hidden in Design: show it there to pick its faces");
@@ -151,7 +160,8 @@ export async function bodyFaces(kernel: KernelCalls, project: Project, body: Bod
     const build = await rebuildTimeline(document, cache, kernel);
     const scene = joinBodies(await shownBodies(document, build, cache), build);
     const b = scene.bodies.findIndex((x) => x.body === body.id);
-    if (b < 0) throw new Error("the design doesn't build it now");
+    const built = build.bodies[body.id];
+    if (b < 0 || built === undefined) throw new Error("the design doesn't build it now");
     const view = scene.bodies[b].view;
     const faces = Array.from({ length: view.faces }, (_, i) => shownReference(scene, b, "face", i) as FaceReference | null);
     const labels = faces.map((f, i) => (f === null ? `Face ${i + 1} (no name of its own)` : referenceLabel(f)));
@@ -164,7 +174,8 @@ export async function bodyFaces(kernel: KernelCalls, project: Project, body: Bod
       return { status: "found", face: hit.index };
     });
     const m = view.mesh;
-    return { mesh: { positions: [...m.positions], normals: [...m.normals], indices: [...m.indices], triangle_faces: [...m.triangle_faces], edge_lines: [...m.edge_lines], edge_line_edges: [...m.edge_line_edges] }, faces, labels, found, inputs: document.timeline.features.map((f) => f.id) };
+    const got: BodyFaces = { mesh: { positions: [...m.positions], normals: [...m.normals], indices: [...m.indices], triangle_faces: [...m.triangle_faces], edge_lines: [...m.edge_lines], edge_line_edges: [...m.edge_line_edges] }, faces, labels, found, inputs: document.timeline.features.map((f) => f.id) };
+    return await use({ handle: built.handle, faces: got });
   } finally {
     await cache.close();
   }
@@ -293,6 +304,7 @@ export function registerDesign(registry: RepresentationRegistry, kernel: KernelC
   });
   // Where a body's faces are now, by name (TestLab's held and pushed faces).
   registry.registerFaceFinder("design", (project, body, refs) => bodyFaces(kernel, project, body, refs));
+  registry.registerBodyLender("design", (project, body, refs, use) => lendBody(kernel, project, body, refs, use));
   // A body's exact STL file from the kernel (the file the slicer reads, a Combine's pieces too), as data: the files of every
   // body shown are made together, once for the design as it stands, since a Combine's rebuild is the costly part.
   // Kept with the failed set they were made for: a list read again after a rebuild was noted (the same design) gets files

@@ -28,7 +28,10 @@ import {
   PRICE_KEY,
   readPrice,
   rememberedPrice,
+  settingsLine,
   settingsWords,
+  rememberedSettingsOpen,
+  SETTINGS_OPEN_KEY,
   WARM_UP_KEY,
   PLATE_OPTIONS,
   printFileName,
@@ -114,6 +117,8 @@ export interface PrintPanel {
   preview(): Promise<void>;
   /** Slices the plate into the P1S's print file and saves it; resolves when its words are on screen. */
   download(): Promise<void>;
+  /** Stops a slice under way and drops its file (nothing is saved or previewed); the panel is ready again at once. */
+  stop(): void;
   destroy(): void;
 }
 
@@ -131,17 +136,53 @@ export function printPanel(doc: Document, parts: PrintPanelParts): PrintPanel {
   heading.textContent = "Print";
   element.append(heading);
 
+  // First version, not test-printed (placeholders never pretend to work): the page says so until a real test print passes (H3a).
+  const untested = doc.createElement("p");
+  untested.id = "slice-page-untested";
+  untested.className = "slice-page-untested";
+  untested.textContent = "First version: these files haven't been test-printed yet, so open one in your printer's slicer or a G-code viewer to check it before printing it.";
+  // The printer's settings (file, plate, nozzle, quality, walls, infill, fits) fold into one section, closed to a line of
+  // words unless left open (remembered); Supports, Warm-up loop and Better grip are per print, so they stay outside it
+  // and out of the presets (Ben, 2026-11-16, as the dialog).
+  const settings = doc.createElement("details");
+  settings.id = "slice-page-settings";
+  settings.className = "slice-page-settings";
+  const settingsSummary = doc.createElement("summary");
+  const settingsName = doc.createElement("span");
+  settingsName.textContent = "Printer settings";
+  const settingsWordsEl = doc.createElement("span");
+  settingsWordsEl.className = "slice-page-settings-words";
+  settingsSummary.append(settingsName, settingsWordsEl);
+  const choicesBox = doc.createElement("div");
+  choicesBox.className = "slice-page-settings-choices";
+  settings.append(settingsSummary, choicesBox);
+  settings.open = rememberedSettingsOpen(parts.storage);
+  settings.addEventListener("toggle", () => {
+    try {
+      (parts.storage as Storage | null)?.setItem?.(SETTINGS_OPEN_KEY, settings.open ? "open" : "closed");
+    } catch {
+      // storage blocked: it still stays as left for this page
+    }
+  });
+  const showSettings = () => {
+    settingsWordsEl.textContent = settingsLine({ layerHeight: choices.layerHeight, walls: choices.walls, infill: choices.infill, format, plate, nozzle });
+  };
+  element.append(untested, settings);
+
   const controls: HTMLSelectElement[] = [];
   /** Puts every control back to what the state says (a preset was picked); each choice and tick adds its own. */
   const syncs: (() => void)[] = [];
   /** Marks the preset picked as changed (set once the presets bar exists). */
   let presetsChanged = () => {};
-  const addChoice = <T>(c: Choice<T>): HTMLSelectElement => {
+  /** A result stays next to choices it no longer matches: any change clears the words, the cost line and the hint (as the dialog did). */
+  let clearResult = () => {};
+  const addChoice = <T>(c: Choice<T>, id: string, into: HTMLElement = element): HTMLSelectElement => {
     const label = doc.createElement("label");
     label.className = "slice-page-choice";
     label.append(doc.createTextNode(c.label));
     const select = doc.createElement("select");
     select.className = "dark-select";
+    select.id = id;
     c.options.forEach((o, i) => {
       const opt = doc.createElement("option");
       opt.value = String(i);
@@ -151,23 +192,25 @@ export function printPanel(doc: Document, parts: PrintPanelParts): PrintPanel {
     select.value = String(Math.max(0, c.options.findIndex((o) => o.value === c.current)));
     select.addEventListener("change", () => {
       c.pick(c.options[Number(select.value)].value);
+      if (id !== "slice-page-supports") clearResult(); // Supports keeps the result: its hint offers the other way as it changes
       presetsChanged();
+      showSettings();
     });
-    syncs.push(() => (select.value = String(Math.max(0, c.options.findIndex((o) => o.value === c.read())))));
+    syncs.push(() => {
+      select.value = String(Math.max(0, c.options.findIndex((o) => o.value === c.read())));
+      showSettings();
+    });
     label.append(select);
     controls.push(select);
-    element.append(label);
+    into.append(label);
     return select;
   };
   let showHint: () => void = () => undefined;
   const numbers = (list: readonly number[], unit: string) => list.map((v) => ({ label: `${v}${unit}`, value: v }));
-  addChoice({ label: "Quality", options: QUALITY_OPTIONS, current: choices.layerHeight, read: () => choices.layerHeight, pick: (v: number) => (choices = { ...choices, layerHeight: v }) });
-  addChoice({ label: "Walls", options: numbers(WALL_OPTIONS, ""), current: choices.walls, read: () => choices.walls, pick: (v: number) => (choices = { ...choices, walls: v }) });
-  addChoice({ label: "Infill", options: numbers(INFILL_OPTIONS, " %"), current: choices.infill, read: () => choices.infill, pick: (v: number) => (choices = { ...choices, infill: v }) });
   addChoice({ label: "Supports", options: SUPPORT_OPTIONS, current: choices.supports, read: () => choices.supports, pick: (v: PrintChoices["supports"]) => {
       choices = { ...choices, supports: v };
       showHint(); // the hint offers the other way once the choice changes
-    } });
+    } }, "slice-page-supports");
 
   // The file: the P1S's own print file (plate and nozzle matter to it only) or plain G-code for another printer.
   const plateSelect: { el: HTMLSelectElement | null } = { el: null };
@@ -185,8 +228,8 @@ export function printPanel(doc: Document, parts: PrintPanelParts): PrintPanel {
       format = v;
       plateAndNozzleMatter();
     },
-  });
-  plateSelect.el = addChoice({ label: "Build plate", options: PLATE_OPTIONS, current: plate, read: () => plate, pick: (v: BuildPlate) => (plate = v) });
+  }, "slice-page-format", choicesBox);
+  plateSelect.el = addChoice({ label: "Build plate", options: PLATE_OPTIONS, current: plate, read: () => plate, pick: (v: BuildPlate) => (plate = v) }, "slice-page-plate", choicesBox);
   nozzleSelect.el = addChoice({
     label: "Nozzle",
     options: NOZZLE_OPTIONS,
@@ -200,7 +243,10 @@ export function printPanel(doc: Document, parts: PrintPanelParts): PrintPanel {
         // storage blocked: the choice still holds for this page
       }
     },
-  });
+  }, "slice-page-nozzle", choicesBox);
+  addChoice({ label: "Quality", options: QUALITY_OPTIONS, current: choices.layerHeight, read: () => choices.layerHeight, pick: (v: number) => (choices = { ...choices, layerHeight: v }) }, "slice-page-quality", choicesBox);
+  addChoice({ label: "Walls", options: numbers(WALL_OPTIONS, ""), current: choices.walls, read: () => choices.walls, pick: (v: number) => (choices = { ...choices, walls: v }) }, "slice-page-walls", choicesBox);
+  addChoice({ label: "Infill", options: numbers(INFILL_OPTIONS, " %"), current: choices.infill, read: () => choices.infill, pick: (v: number) => (choices = { ...choices, infill: v }) }, "slice-page-infill", choicesBox);
 
   const button = doc.createElement("button");
   button.type = "button";
@@ -231,6 +277,7 @@ export function printPanel(doc: Document, parts: PrintPanelParts): PrintPanel {
     syncs.push(() => (box.checked = read()));
     box.addEventListener("change", () => {
       pick(box.checked);
+      clearResult();
       presetsChanged();
       try {
         (parts.storage as Storage | null)?.setItem?.(key, box.checked ? "on" : "off"); // remembered like the dialog's
@@ -245,13 +292,16 @@ export function printPanel(doc: Document, parts: PrintPanelParts): PrintPanel {
   addCheck("slice-page-warm-up", "Warm-up loop", "Prints two loops round the part's first layer before the part, so the nozzle's first, uneven plastic goes on a line you peel off afterwards instead of on the part. Helps when the start of the first layer doesn't stick. Your choice is remembered.", WARM_UP_KEY, choices.warmUp, () => choices.warmUp, (v) => (choices = { ...choices, warmUp: v }));
   addCheck("slice-page-grip", "Better grip", "Prints a 5 mm brim round the part's first layer, and prints that layer slower and 5 °C hotter, so parts whose first layer lifts or comes loose hold on to the plate. Peel the brim off afterwards. Your choice is remembered.", GRIP_KEY, choices.betterGrip, () => choices.betterGrip, (v) => (choices = { ...choices, betterGrip: v }));
   const status = doc.createElement("p");
+  status.id = "slice-page-status";
   status.className = "slice-page-slice-words";
   status.setAttribute("role", "status");
   // The weight and cost line after a slice (print-cost.ts): plastic, money and time, with the price per kg the user's to change.
   const cost = doc.createElement("div");
+  cost.id = "slice-page-cost";
   cost.className = "slice-page-cost";
   cost.hidden = true;
   const costText = doc.createElement("span");
+  costText.id = "slice-page-cost-words";
   costText.className = "slice-page-cost-words";
   const priceWrap = doc.createElement("label");
   priceWrap.className = "slice-page-price";
@@ -268,11 +318,14 @@ export function printPanel(doc: Document, parts: PrintPanelParts): PrintPanel {
   // The supports hint after a slice (the dialog's, Ben 2026-11-04): recommended or not by the overhangs, and one button that
   // flips the Supports choice when it disagrees. It shows with the cost line and goes with it.
   const hint = doc.createElement("div");
+  hint.id = "slice-page-supports-hint";
   hint.className = "slice-page-supports-hint";
   hint.hidden = true;
   const hintWords = doc.createElement("span");
+  hintWords.id = "slice-page-supports-hint-words";
   hintWords.className = "slice-page-supports-hint-words";
   const flip = doc.createElement("button");
+  flip.id = "slice-page-supports-flip";
   flip.className = "slice-page-supports-flip";
   flip.type = "button";
   hint.append(hintWords, flip);
@@ -293,6 +346,10 @@ export function printPanel(doc: Document, parts: PrintPanelParts): PrintPanel {
     const words = print === null ? null : costWords(print, pricePerKg);
     cost.hidden = words === null;
     costText.textContent = words ?? "";
+  };
+  clearResult = () => {
+    status.textContent = "";
+    showCost(null);
   };
   price.addEventListener("input", () => {
     const p = readPrice(price.value);
@@ -321,6 +378,7 @@ export function printPanel(doc: Document, parts: PrintPanelParts): PrintPanel {
   element.append(button, previewButton, download, bar, status, hint, cost);
   // Printer presets: the settings saved under a name in this browser (slice-presets.ts, shared with the dialog), picked
   // in the heading's line; picking one puts its settings in, and any change marks it changed.
+  let fitsShown = false; // the bar applies the preset picked last time while it is made, before the fits line below exists
   const applyPreset = (v: Parameters<typeof presetSettingsOf>[0] & object) => {
     const x = presetSettingsOf(v);
     if (!x) return;
@@ -335,7 +393,7 @@ export function printPanel(doc: Document, parts: PrintPanelParts): PrintPanel {
     }
     for (const sync of syncs) sync();
     plateAndNozzleMatter();
-    showFits();
+    if (fitsShown) showFits();
     showCost(null);
   };
   const presets = presetBar(doc, parts.storage as Storage | null, {
@@ -361,6 +419,7 @@ export function printPanel(doc: Document, parts: PrintPanelParts): PrintPanel {
     fitsWords.textContent = fitsLine(parts.storage, nozzle);
   }
   showFits();
+  fitsShown = true;
   nozzleSelect.el?.addEventListener("change", showFits);
   const fits = parts.testPiece
     ? fitCalibration(element, parts.storage as Storage | null, {
@@ -371,7 +430,8 @@ export function printPanel(doc: Document, parts: PrintPanelParts): PrintPanel {
     : null;
   fitsRow.hidden = fits === null;
   fitsOpen.addEventListener("click", () => fits?.ask());
-  element.insertBefore(fitsRow, button);
+  settings.append(fitsRow);
+  showSettings();
   const showProgress = (): (() => void) => {
     meter.removeAttribute("value");
     stage.textContent = progressWords(null);
@@ -412,8 +472,11 @@ export function printPanel(doc: Document, parts: PrintPanelParts): PrintPanel {
   };
 
   let endProgress: (() => void) | null = null;
+  /** Set by stop(): the slice under way is dropped, whatever it comes back with. */
+  let stopped = false;
   const busy = (on: boolean) => {
     running = on;
+    if (on) stopped = false;
     if (on) endProgress = showProgress();
     else {
       endProgress?.();
@@ -445,11 +508,11 @@ export function printPanel(doc: Document, parts: PrintPanelParts): PrintPanel {
       const file = format === "p1s" ? await printFileOfStls(parts.kernel, files, choices, plate, nozzle) : null;
       const moves = file ? printMovesOf(gcodeOfPackage(file.package) ?? "") : null;
       const done = file && moves !== null ? { ...file, gcode: moves } : await sliceStls(parts.kernel, files, choices);
-      if (!live) return;
+      if (!live || stopped) return;
       status.textContent = "";
       parts.openPreview(done.gcode, sliceWords(done));
     } catch (e) {
-      if (live && !(e instanceof SliceDropped)) status.textContent = refusalOf(e);
+      if (live && !stopped && !(e instanceof SliceDropped)) status.textContent = refusalOf(e);
     } finally {
       if (live) busy(false);
     }
@@ -472,17 +535,17 @@ export function printPanel(doc: Document, parts: PrintPanelParts): PrintPanel {
       const files = () => plateFiles(parts.registry, objects);
       const p1s = format === "p1s";
       const done = p1s ? await printFileOfStls(parts.kernel, files, choices, plate, nozzle) : await sliceStls(parts.kernel, files, choices);
-      if (!live) return;
+      if (!live || stopped) return;
       const suggestedName = p1s ? printFileName(choices, plate, nozzle, parts.projectName?.()) : gcodeName(choices, parts.projectName?.());
       const bytes = p1s ? (done as { package: Uint8Array<ArrayBuffer> }).package : (new TextEncoder().encode((done as { gcode: string }).gcode) as Uint8Array<ArrayBuffer>);
       const r = await parts.save({ suggestedName, kind: p1s ? P1S_KIND : GCODE_KIND, bytes });
-      if (!live) return;
+      if (!live || stopped) return;
       const saved = r.status === "saved" ? `Saved ${r.name}:` : r.status === "failed" ? `Sliced, but not saved (${r.message}):` : "Sliced, but not saved:";
       const logged = r.status === "saved" && parts.log?.({ name: parts.projectName?.() ?? "", settings: settingsWords(choices, nozzle), grams: done.filamentG, seconds: done.printTimeS });
       status.textContent = [saved, sliceWords(done), ...(logged ? [PRINT_LOGGED_WORDS] : [])].join(" ");
       showCost(done);
     } catch (e) {
-      if (live && !(e instanceof SliceDropped)) status.textContent = refusalOf(e);
+      if (live && !stopped && !(e instanceof SliceDropped)) status.textContent = refusalOf(e);
     } finally {
       if (live) busy(false);
     }
@@ -499,12 +562,12 @@ export function printPanel(doc: Document, parts: PrintPanelParts): PrintPanel {
     showCost(null);
     try {
       const done = await sliceStls(parts.kernel, () => plateFiles(parts.registry, objects), choices);
-      if (live) {
+      if (live && !stopped) {
         status.textContent = sliceWords(done);
         showCost(done);
       }
     } catch (e) {
-      if (live && !(e instanceof SliceDropped)) status.textContent = refusalOf(e);
+      if (live && !stopped && !(e instanceof SliceDropped)) status.textContent = refusalOf(e);
     } finally {
       if (live) busy(false);
     }
@@ -517,6 +580,7 @@ export function printPanel(doc: Document, parts: PrintPanelParts): PrintPanel {
     for (const sync of syncs) sync();
     presetsChanged();
     showHint();
+    hint.hidden = true; // the old result's hint goes: the file made before the switch is not the one it was about
     status.textContent = to !== "off" ? "Supports turned on (Normal). Slice again to make the file with them." : "Supports turned off. Slice again to make the file without them.";
   });
   button.addEventListener("click", () => void slice());
@@ -529,6 +593,11 @@ export function printPanel(doc: Document, parts: PrintPanelParts): PrintPanel {
     slice,
     preview: previewPrint,
     download: downloadFile,
+    stop() {
+      if (!running) return;
+      stopped = true;
+      stopSlices();
+    },
     destroy() {
       live = false;
       endProgress?.();

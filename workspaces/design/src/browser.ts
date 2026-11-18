@@ -6,10 +6,13 @@
 import { summaryInUnit, type Feature, type GeometryReference, type Unit } from "@fission/core";
 import { ICONS, type IconName } from "@fission/ui";
 import { BUILD_AREA_LABEL, BUILD_AREA_ROW, BUILD_AREA_TITLE } from "@fission/print";
-import { bodyHidden, bodyIdOf, bodyItem, bodyNumbers, buildingItems, combineBodies, EYE_FOLDERS, extrudeOperation, isCombineItem, isPiece, isHidden, isSketchItem, makesBody, numberedWhenBuilt, ORIGIN_PLANES, presetKinds, profileLabel, type DesignDocument } from "./document.ts";
+import { bodyHidden, bodyIdOf, bodyItem, bodyNumbers, buildingItems, combineBodies, EYE_FOLDERS, extrudeOperation, isCombineItem, isConstructItem, isPiece, isHidden, isSketchItem, makesBody, numberedWhenBuilt, ORIGIN_PLANES, presetKinds, profileLabel, type DesignDocument, isPatternItem } from "./document.ts";
 import { CONSTRUCT_KINDS, isConstructKind } from "./construct-data.ts";
 import { bodyReference, profileReference } from "./references.ts";
 import { sketchItem } from "./sketch.ts";
+
+/** What starts a construction's row in the browser's Construction folder (59a3): "constructions/feature-7". */
+export const CONSTRUCTION_ROW = "constructions/";
 
 export interface BrowserNode {
   /** Stable within the document: a feature's id, "body-1", "origin-xy"… */
@@ -107,6 +110,11 @@ export function designBodies(document: DesignDocument, failed: ReadonlySet<strin
       const { target, tools, keepTools } = combineBodies(f);
       if (![target, ...tools].every((b) => out.has(b))) continue;
       if (!keepTools) for (const t of tools) out.delete(t);
+      for (const piece of pieces.get(f.id) ?? []) if (!failed.has(piece)) out.set(piece, { body: piece, feature: f });
+    } else if (isPatternItem(f)) {
+      // A Pattern (61b) keeps every body it copies, whole or with its copies joined in, under its own id, and adds the
+      // copies the data numbers for it that the rebuild made (a joined copy is no body of its own, so never numbered).
+      if (!(f.intent.parameters.bodies as string[]).every((b) => out.has(b))) continue;
       for (const piece of pieces.get(f.id) ?? []) if (!failed.has(piece)) out.set(piece, { body: piece, feature: f });
     } else {
       // An extrude with an operation (version 10): its own body never stays.
@@ -221,7 +229,8 @@ export function combineRowTags(document: DesignDocument, failed: ReadonlySet<str
  * body the last rebuild built is a row (`bodyRows`; `failed` the ids it failed). Each profile
  * is a row by its own id ("profile-1"), selectable as an outline. Each
  * sketch is a timeline row by its id and a row in Sketches by
- * "sketches/<id>", so no two rows share an id.
+ * "sketches/<id>", so no two rows share an id; a construction's (59a3)
+ * "constructions/<id>".
  */
 export function browserTree(document: DesignDocument, failed: ReadonlySet<string> = NONE_FAILED, buildAreaShown = false, unit: Unit = "mm"): BrowserNode[] {
   const features = document.timeline.features;
@@ -230,6 +239,7 @@ export function browserTree(document: DesignDocument, failed: ReadonlySet<string
   for (const f of features) if (isSketchItem(f) && !items.has(f.id)) items.set(f.id, f);
   const sketchItemOf = (id: string) => items.get(id) ?? sketchItem(document, id);
   const iconOf = itemIcons(document);
+  const constructions = features.filter(isConstructItem);
   // A row's eye: its own (an origin plane's shut until shown), and its folder's when shut.
   const planes: readonly string[] = ORIGIN_PLANES;
   const eye = (id: string, folder?: string) => ({
@@ -259,6 +269,18 @@ export function browserTree(document: DesignDocument, failed: ReadonlySet<string
       }),
     },
     { id: "profiles", label: "Profiles", icon: "folder", children: document.profiles.map((p) => ({ id: p.id, label: profileLabel(p), icon: "profile" })) },
+    // Construction planes, axes and points (59a3), each with its eye; the folder only when the design has any.
+    ...(constructions.length === 0
+      ? []
+      : [
+          {
+            id: "constructions",
+            label: "Construction",
+            icon: "folder" as const,
+            ...eye(EYE_FOLDERS.constructions),
+            children: constructions.map((f) => ({ id: `${CONSTRUCTION_ROW}${f.id}`, label: f.provenance.self.label, title: `${f.provenance.self.label}\n${summaryInUnit(f.intent.summary, unit)}`, icon: iconOf(f), ...eye(f.id, EYE_FOLDERS.constructions) })),
+          },
+        ]),
     { id: "bodies", label: "Bodies", icon: "folder", ...eye(EYE_FOLDERS.bodies), children: bodyRows(document, failed).map(({ id, label, body }) => ({ id, label, icon: "body", ...eye(body, EYE_FOLDERS.bodies) })) },
     {
       id: "origin",
@@ -285,6 +307,7 @@ export function browserTree(document: DesignDocument, failed: ReadonlySet<string
  */
 export function rowItem(node: string, doc: DesignDocument, failed: ReadonlySet<string> = NONE_FAILED): string | null {
   if (node.startsWith("sketches/")) return node.slice("sketches/".length);
+  if (node.startsWith(CONSTRUCTION_ROW)) return node.slice(CONSTRUCTION_ROW.length);
   if (node.startsWith("body-")) return bodyRows(doc, failed).find((r) => r.id === node)?.feature.id ?? null;
   return doc.timeline.features.some((f) => f.id === node) ? node : null;
 }
@@ -331,6 +354,7 @@ export function rowReferences(doc: DesignDocument, failed: ReadonlySet<string> =
  */
 export function eyeId(doc: DesignDocument, node: string, failed: ReadonlySet<string> = NONE_FAILED): string | null {
   if (node.startsWith("sketches/")) return node.slice("sketches/".length);
+  if (node.startsWith(CONSTRUCTION_ROW)) return node.slice(CONSTRUCTION_ROW.length);
   if (node.startsWith("body-")) {
     const row = bodyRows(doc, failed).find((r) => r.id === node);
     return row === undefined ? null : row.body;

@@ -1839,9 +1839,11 @@ phone.addEventListener("change", () => {
       (props.querySelector("#chamfer-panel:not([hidden])") !== null && document.querySelector("#chamfer-hint[hidden]") !== null) ||
       // Shell's thickness box and OK once a face or body is picked, its hint over the view gone (35h2c-app2).
       (props.querySelector("#shell-panel:not([hidden])") !== null && document.querySelector("#shell-hint[hidden]") !== null) ||
+      // Pattern's boxes and OK once a body is picked (or an edited Pattern's), its hint over the view gone (61c).
+      (props.querySelector("#pattern-panel:not([hidden])") !== null && document.querySelector("#pattern-hint[hidden]") !== null) ||
       // Construct's rows, lists and number (step 59a2): the sheet opens with it, a tap on the view puts it away to pick.
       props.querySelector("#construct-panel:not([hidden])") !== null;
-    const again = (props.querySelector<HTMLElement>("#combine-panel:not([hidden])") ?? props.querySelector<HTMLElement>("#construct-panel:not([hidden])"))?.dataset.shows ?? "";
+    const again = (props.querySelector<HTMLElement>("#combine-panel:not([hidden])") ?? props.querySelector<HTMLElement>("#pattern-panel:not([hidden])") ?? props.querySelector<HTMLElement>("#construct-panel:not([hidden])"))?.dataset.shows ?? "";
     const restarted = now && again !== "" && again !== shows;
     shows = again;
     if (now === wanted && !(turned && now) && !restarted) return;
