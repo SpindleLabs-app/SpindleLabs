@@ -54,13 +54,17 @@ export function previewedMesh(scene: Scene, body: string, view: BodyView): Displ
 /** Why an edited Chamfer has no preview: a later item changed its body (its handle now is not the one the Chamfer made). */
 export const LATER_CHANGES = "No preview: an item after this Chamfer changes the body, so the result shows after OK.";
 
+/** Why an edited Chamfer that failed has no preview: the body it held came from a build that failed (bug hunt 2026-11-18 A-4). */
+export const FAILED_NO_PREVIEW = "No preview while this Chamfer has failed: press OK to try the new size.";
+
 /**
  * What an edited Chamfer's preview chamfers: the body as it was before the
  * Chamfer (`holds`) and the kernel edges the rebuild cut, when the body
  * shown now (`now`, its handle in the last build) is still the one the
- * Chamfer made; else why not, or null when the Chamfer did not build.
+ * Chamfer made; else why not (a later item changed the body, or the Chamfer failed), or null when the rebuild has no answer for it.
  */
 export function editPreviewInput(result: ChamferBuilt | undefined, now: BodyHandle | undefined): { handle: BodyHandle; edges: number[] } | { why: string } | null {
+  if (result?.status === "failed") return { why: FAILED_NO_PREVIEW };
   if (result?.status !== "built" || result.chamfered === undefined || result.holds === undefined || result.holds.length !== 1) return null;
   if (now !== result.chamfered.body) return { why: LATER_CHANGES };
   return { handle: result.holds[0], edges: [...result.chamfered.edges] };

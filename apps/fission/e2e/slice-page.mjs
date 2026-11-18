@@ -74,6 +74,9 @@ if (!WITH_PAGE) {
     await plateWords(page, "1 body");
     await page.click("#slice-page-slice");
     await until(page, () => /^100 layers, /.test(document.querySelector(".slice-page-slice-words")?.textContent ?? ""), null, "the slice saying 100 layers", 60000);
+    // The supports hint: a plain box has nothing hanging, and supports are off, so no button.
+    assert.match(await page.textContent(".slice-page-supports-hint-words"), /^Supports not needed: nothing hangs out more than 45°\.$/);
+    assert.equal(await page.isVisible(".slice-page-supports-flip"), false);
     // Quality is the first choice: pick the Detailed 0.16 mm layers (its option label names the height).
     await page.evaluate(() => {
       const select = document.querySelector(".slice-page-print select:not(#slice-presets-list)");

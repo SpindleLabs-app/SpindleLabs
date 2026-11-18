@@ -136,6 +136,9 @@ function stlEdges(buffer) {
 async function readable(page, id) {
   const box = await page.locator(`#${id}`).boundingBox();
   const colour = await page.$eval(`#${id}`, (e) => getComputedStyle(e).color);
+  // A rounded button's corners lie outside its plate, so the moving picture shows there; no word or icon is ever drawn
+  // there, so those pixels are not its ground (they made the Fold icon fail now and then at 3.0 : 1 as a line passed).
+  const radius = await page.$eval(`#${id}`, (e) => parseFloat(getComputedStyle(e).borderTopLeftRadius) || 0);
   await page.$eval(`#${id}`, (e) => (e.style.color = "transparent"));
   const ground = decodePng(await page.screenshot({ clip: box, animations: "disabled" }));
   await page.$eval(`#${id}`, (e) => (e.style.color = ""));
@@ -143,7 +146,15 @@ async function readable(page, id) {
   const text = lum(colour.match(/[\d.]+/g).map(Number));
   let worst = Infinity;
   let where = -1;
+  const scale = ground.width / box.width;
+  const outside = (i) => {
+    const x = ((i / 4) % ground.width) / scale, y = Math.floor(i / 4 / ground.width) / scale;
+    const dx = x < radius ? radius - x : x > box.width - radius ? x - (box.width - radius) : 0;
+    const dy = y < radius ? radius - y : y > box.height - radius ? y - (box.height - radius) : 0;
+    return dx > 0 && dy > 0 && Math.hypot(dx - 0.5, dy - 0.5) > radius - 1; // pixel centres; the 1 px edge is the plate's antialiased rim
+  };
   for (let i = 0; i < ground.data.length; i += 4) {
+    if (outside(i)) continue;
     const l = lum([ground.data[i], ground.data[i + 1], ground.data[i + 2]]);
     const [hi, lo] = text > l ? [text, l] : [l, text];
     const ratio = (hi + 0.05) / (lo + 0.05);

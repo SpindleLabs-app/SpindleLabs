@@ -10,7 +10,7 @@ import assert from "node:assert/strict";
 import type { BodyView } from "@fission/core";
 import { nodeKernel } from "../../../packages/testing/src/node-kernel.ts";
 import { changedChamfer, CHAMFER_MAX, editableChamfer, insertChamfer } from "../src/chamfer.ts";
-import { cutAt, editPreviewInput, LATER_CHANGES, pickableView, previewChamfer, previewedMesh } from "../src/chamfer-preview.ts";
+import { cutAt, editPreviewInput, FAILED_NO_PREVIEW, LATER_CHANGES, pickableView, previewChamfer, previewedMesh } from "../src/chamfer-preview.ts";
 import { chamferOf, partDocument, readDesignDocument, type DesignDocument } from "../src/document.ts";
 import { editStep } from "../src/feature-edit.ts";
 import { insertMove, NO_MOVE } from "../src/move.ts";
@@ -199,8 +199,11 @@ test("an edited Chamfer's preview chamfers the body it was made from with the re
     const moved = insertMove(doc, [BODY], { ...NO_MOVE, x: 50 }).doc;
     const mb = await rebuildTimeline(moved, cache, kernel);
     assert.deepEqual(editPreviewInput(mb.results[id], mb.bodies[BODY].handle), { why: LATER_CHANGES });
-    // A Chamfer that did not build has none.
-    assert.equal(editPreviewInput({ status: "failed" }, undefined), null);
+    // A Chamfer that failed has none, and says so (bug hunt 2026-11-18 A-4: it showed nothing and said nothing).
+    assert.deepEqual(editPreviewInput({ status: "failed" }, undefined), { why: FAILED_NO_PREVIEW });
+    assert.deepEqual(editPreviewInput({ status: "failed" }, build.bodies[BODY].handle), { why: FAILED_NO_PREVIEW });
+    // One the rebuild never reached (no result at all) has none, with nothing to say yet.
+    assert.equal(editPreviewInput(undefined, undefined), null);
   } finally {
     await cache.close();
   }

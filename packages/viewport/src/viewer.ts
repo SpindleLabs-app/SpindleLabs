@@ -1148,6 +1148,7 @@ export class ViewportView {
     this.image!.sheet = { mesh, texture, widthMm: sheet.widthMm, heightMm: sheet.heightMm };
     this.host.scene.add(mesh);
     this.element.dataset.image = `${image.width} x ${image.height} px, ${+sheet.widthMm.toPrecision(12)} x ${+sheet.heightMm.toPrecision(12)} mm`; // read by the e2e test
+    this.element.classList.remove("image-empty");
     if (first) this.frameImage();
   }
 
@@ -1158,6 +1159,7 @@ export class ViewportView {
     this.enter2d(layer);
     this.removeSheet();
     this.element.dataset.image = "none"; // read by the e2e test
+    this.element.classList.add("image-empty"); // styles/image-empty.css: the prompt over an empty view
   }
 
   /** Switches this view to the top-down 2D mode on `layer`, keeping its 3D camera to give back; does nothing more when already there. */
@@ -1182,6 +1184,7 @@ export class ViewportView {
     this.image = null;
     freeImageLayers.push(layer);
     delete this.element.dataset.image;
+    this.element.classList.remove("image-empty");
     this.camera.layers.set(0);
     this.cube.element.hidden = false;
     this.controls.enableRotate = true;

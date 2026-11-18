@@ -185,6 +185,10 @@ try {
       await editItem(page, cut);
       await until(page, () => document.getElementById("edit-through")?.checked === true && !document.getElementById("edit-through").disabled, null, "Through all ticked in Edit feature");
       assert.equal(await page.isDisabled("#edit-height"), true, "the distance greyed");
+      // The tick boxes drawn as tick boxes, in line with each other (bug hunt 2026-11-18 D-9: the size boxes' 6em width made
+      // Symmetric and Through all 80 px wide, their words far from the box).
+      const ticks = await page.$$eval("#feature-edit input[type=checkbox]", (all) => all.filter((t) => t.checkVisibility()).map((t) => `${t.id} ${Math.round(t.getBoundingClientRect().width)}`));
+      assert.ok(ticks.length >= 2 && ticks.every((t) => Number(t.split(" ")[1]) <= 30), `tick boxes at most 30 px wide: ${ticks.join(", ")}`);
       if (shots) await page.screenshot({ path: `${shots}/extrude-through-1280-edit.png` });
       await page.uncheck("#edit-through");
       await editOk(page);

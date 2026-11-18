@@ -5373,12 +5373,39 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
     if (!shown) return;
     const kind = panel.shapeChoice.value as ShapeKind;
     if (!kind) return;
-    // SL #760 item 5: an OK being checked goes first (leaveEdit would shut its panel and drop it).
+    // SL #760 item 5: an OK being checked goes first (leaveEdit would shut its panel and drop it), then the Shape goes
+    // to the body it was chosen for (`boxesBackTo`).
+    const part = heldPart();
     afterOk(() => {
+      if (!boxesBackTo(part)) return;
       leaveEdit(); // as a typed size below
       void setPart({ op: "set_part", shape: kind });
     });
   });
+  /** The body the boxes describe now, by id and name, for a size or Shape that may wait for an OK (`boxesBackTo`); null with none. */
+  function heldPart(): { id: string; label: string } | null {
+    const doc = ctx.project.workspaces.design as DesignDocument | undefined;
+    const f = doc === undefined ? null : boxesFeature(doc);
+    return f === null ? null : { id: f.id, label: f.provenance.self.label };
+  }
+  /**
+   * The boxes back on `part`, the body they described when a size was typed or a Shape chosen, once the OK it waited
+   * for has landed: that OK clears the selection or makes a new last body, so the boxes moved to another one, and the
+   * size went to a body the person never typed it for, with nothing said (app bug hunt 2026-11-18, E-2: a Move's OK
+   * then Width 20 for Box 1 made Box 2 20 wide; an Extrude's OK then Box 1's Height made the extrude 20 mm). False,
+   * and the panel says so, when `part` is no longer a body the boxes can change; true with no body held (none then).
+   */
+  function boxesBackTo(part: { id: string; label: string } | null): boolean {
+    const doc = designDoc();
+    if (part === null || part.id === boxesFeature(doc)?.id) return true;
+    const f = boxesFeature(doc, part.id);
+    if (f === null || f.id !== part.id) {
+      panel.showActionNote(`The size typed was for ${part.label}, which has no sizes to change now, so nothing changed.`, true);
+      return false;
+    }
+    showPartSizes(doc, f);
+    return true;
+  }
   /**
    * A size typed in the Size boxes (or a Shape chosen) changes the design under an open Edit feature panel, whose boxes
    * would go on showing the sizes from before and whose OK wrote them back over the one just typed (Undo hunt
@@ -5397,8 +5424,13 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
       if (editStart[i] === null && saved !== null) editStart[i] = saved.sizes[i];
       // SL #760 item 5: an OK being checked goes first (sizeTyped would shut its panel and drop it); the size typed is
       // kept through the redraw its step brings and put back in the box, then taken as typed.
+      // Then it goes to the body the boxes showed as it was typed, not the one they show once the OK lands (`boxesBackTo`).
       const typed = input.value;
+      const part = heldPart();
+      const start = editStart[i];
       afterOk(() => {
+        if (!boxesBackTo(part)) return;
+        editStart[i] = start;
         if (input.value !== typed) input.value = typed;
         sizeTyped();
         void update(...sizeStep(i));
