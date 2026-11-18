@@ -27,6 +27,7 @@ import { bringForward, forget, MAX_PROJECT_NAME, rename as renameKept, keepStora
 import { listedProjects } from "./projects.ts";
 import { startPrintLog } from "./print-log.ts";
 import { versionList, versionTime, type VersionPlace } from "@fission/ui";
+import { watchScrollMore } from "@fission/ui";
 import { createAssistant } from "./assistant.ts";
 import { startOffline } from "./offline.ts";
 import { openLatest, watchKernel } from "./kernel-lost.ts";
@@ -359,12 +360,14 @@ const PRISTINE: Record<PaneId, Slots> = {
 };
 /** Four empty slots shaped like `pane`'s as the page first had them. */
 const emptySlots = (pane: PaneId): Slots => Object.fromEntries(SLOT_KEYS.map((key) => [key, PRISTINE[pane][key].cloneNode(false) as HTMLElement])) as Slots;
-const pool = new WarmPool<WorkspaceId, PaneId, { slots: Slots; view: MountedWorkspace }>({
+const pool = new WarmPool<WorkspaceId, PaneId, { slots: Slots; view: MountedWorkspace; unwatch: () => void }>({
   mount(pane, id) {
     const slots = emptySlots(pane);
     placeSlots(pane, slots);
+    // At phone width the toolbar is one row you swipe: its edge fades while tools lie past it (@fission/ui scroll-more.ts).
+    const unwatch = watchScrollMore(slots.toolbar);
     const view = workspaces.find((w) => w.id === id)!.mount(paneCtx(pane, slots));
-    return { slots, view };
+    return { slots, view, unwatch };
   },
   sleep(pane, _id, { view }) {
     view.sleep?.();
@@ -374,7 +377,10 @@ const pool = new WarmPool<WorkspaceId, PaneId, { slots: Slots; view: MountedWork
     placeSlots(pane, slots);
     view.wake?.();
   },
-  unmount: (_pane, _id, { view }) => view.unmount(), // asleep: its slots are already out of the page
+  unmount: (_pane, _id, { view, unwatch }) => {
+    unwatch();
+    view.unmount(); // asleep: its slots are already out of the page
+  },
 });
 // DESIGN ▾ (U0f2b): one button naming the page on screen, its menu the
 // workspaces listed (listed-workspaces.ts: Design and Slice in the public
