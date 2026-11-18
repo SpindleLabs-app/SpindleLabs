@@ -91,7 +91,7 @@ import { sketchEdgeTargets, sketchPlaneCorners } from "./face-edges.ts";
 import { sketchableFaces, sketchSpot, type SketchSpot } from "./face-pick.ts";
 import { FACE_NEW_BODY, faceOpen, faceProfile, faceRegion, type FaceProfile } from "./face-extrude.ts";
 import { editRegionWords, offerOf, pickRegionWords, regionChosenWords, regionOffers, regionRefusedWords, type RegionOffer } from "./extrude-regions.ts";
-import type { RegionRef } from "./regions.ts";
+import { sketchRegions, type RegionRef } from "./regions.ts";
 import { rounding, SNAP_PIXELS, snapOnSketch, snapsNow, withSnap, type BodySnaps, type Snap } from "./snap.ts";
 import { aimOf, anchorOf, lengthRefused, liveValues, NO_AIM, typedFields, withLocks, type Locks } from "./typed-entry.ts";
 import { isShapeTool } from "./sketch-shapes.ts";
@@ -2678,7 +2678,14 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
 
   /** Says what the edited sketch holds and whether it makes one closed outline, or the kernel's reason it doesn't. */
   // Every answer goes through one latestOnly, those needing no kernel too, so an older ask answered later never shows over a newer one.
-  const outlineOf = latestOnly(async (sketch: Sketch) => (sketch.curves.length === 0 ? null : (projectedOpen(sketch) ?? (await askOutline(kernel, sketchCurves(sketch))))));
+  const outlineOf = latestOnly(async (sketch: Sketch) => {
+    if (sketch.curves.length === 0) return null;
+    const out = projectedOpen(sketch) ?? (await askOutline(kernel, sketchCurves(sketch)));
+    // Separate closed loops are not one outline, but Extrude offers each region since step 48: said as such (SL #820 D-5).
+    if (typeof out === "string" || "closed" in out || !/separate loops/.test(out.open)) return out;
+    const regions = (await sketchRegions(kernel, sketch)).regions.filter((r) => r.extrudes).length;
+    return regions === 0 ? out : { regions };
+  });
   async function showOutline() {
     if (mode.kind !== "edit") return;
     const id = mode.tool.sketch;
@@ -2687,7 +2694,7 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
     const n = curveCount(sketch);
     try {
       const { current, value } = await outlineOf(sketch);
-      if (current) outlineWords = value === null ? `${n}.` : typeof value === "string" ? `${n}, not closed: ${value}.` : "closed" in value ? `${n}, a closed outline.` : `${n}, not closed: ${value.open}.`;
+      if (current) outlineWords = value === null ? `${n}.` : typeof value === "string" ? `${n}, not closed: ${value}.` : "closed" in value ? `${n}, a closed outline.` : "regions" in value ? `${n}, closed: ${value.regions} ${value.regions === 1 ? "region" : "regions"} to extrude.` : `${n}, not closed: ${value.open}.`;
     } catch (e) {
       outlineWords = `${n}: ${e instanceof Error ? e.message : String(e)}`;
     }
