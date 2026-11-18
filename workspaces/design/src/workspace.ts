@@ -2,10 +2,10 @@
 // Until the sketcher (steps 21–33) it builds primitives and ready-made
 // outlines; every other workspace will refer to its bodies, faces and edges.
 
-import { KernelError, chordLabel, parseChord, summaryInUnit, wordsInUnit, latestOnly, NO_HIGHLIGHT, playback, ORIGIN_AT_FIRST, type AnalysisOverlay, type BodyHandle, type BodySpec, type ChamferSize, type MoveKind, type BodyView, type ExtrudeArrow, type OfferedProfile, type SketchPointer, type SketchXY, type Command, type Feature, type Framing, type Plane, type GeometryReference, type MountedWorkspace, type Selected, type SharedViewport, type WorkspaceContext, type WorkspaceId, type WorkspacePlugin, type HistoryStep, withWorkspaceDocument } from "@fission/core";
+import { KernelError, chordLabel, parseChord, summaryInUnit, wordsInUnit, latestOnly, NO_HIGHLIGHT, playback, ORIGIN_AT_FIRST, type AnalysisOverlay, type OriginPlane, type BodyHandle, type BodySpec, type ChamferSize, type MoveKind, type BodyView, type ExtrudeArrow, type OfferedProfile, type SketchPointer, type SketchXY, type Command, type Feature, type Framing, type Plane, type GeometryReference, type MountedWorkspace, type Selected, type SharedViewport, type WorkspaceContext, type WorkspaceId, type WorkspacePlugin, type HistoryStep, withWorkspaceDocument } from "@fission/core";
 import { needsRefit, printView, snapDistance } from "@fission/viewport";
 import type { ShapeKind } from "./profiles.ts";
-import { bodyHidden, bodyIdOf, bodyItem, bodyNumbers, combineBodies, EYE_FOLDERS, CHAMFER_MAX, isChamferItem, isCombineItem, extrudeOperation, insertAt, isHidden, isMoveItem, isOperationExtrude, isPiece, isSketchExtrude, numberPieces, isSketchItem, ORIGIN_AXES, ORIGIN_PLANES as EYE_PLANES, builds, ownShape, originDrawn, partFeature, partOf, readDesignDocument, shapeOf, withPartAt, SKETCH_PLANES, type ChamferSizing, type DesignDocument, type MoveParam, type PartKind } from "./document.ts";
+import { bodyHidden, isConstructItem, bodyIdOf, bodyItem, bodyNumbers, combineBodies, EYE_FOLDERS, CHAMFER_MAX, isChamferItem, isCombineItem, extrudeOperation, insertAt, isHidden, isMoveItem, isOperationExtrude, isPiece, isSketchExtrude, numberPieces, isSketchItem, ORIGIN_AXES, ORIGIN_PLANES as EYE_PLANES, builds, ownShape, originDrawn, partFeature, partOf, readDesignDocument, shapeOf, withPartAt, SKETCH_PLANES, type ChamferSizing, type DesignDocument, type MoveParam, type PartKind } from "./document.ts";
 import { alreadyPicked, arrowOf, DEFAULT_DISTANCE, distanceRefused, DISTANCE_STEP, extrudeSketch, NO_SKETCH, NO_USABLE_SKETCH, PICK_PROFILE_STATUS, extrudeStep, featureBuild, featureSpec, previewSpec, setExtrudeDistance, setExtrudeOperation, setExtrudeSymmetric, setExtrudeThrough, signedDistance, symmetricDrag, ZERO_OK } from "./extrude.ts";
 import { extrudePanel } from "./extrude-panel.ts";
 import { throughDistance, throughWords } from "./extrude-through.ts";
@@ -13,7 +13,7 @@ import { FACE_ALONE, joinedView, ONE_PROFILE_OPERATION, pickedWords, severalWord
 import { bodyChoices, operationNote, tickedBodies, touchingOnly, type BodyChoice, type Bounds, type ExtrudeOperation, type ListedBody } from "./extrude-operation.ts";
 import { CHANGED_WHILE_CHECKING, editableFeature, editFeature, editStep, readTyped, refusedSizes } from "./feature-edit.ts";
 import { featureEditPanel } from "./feature-edit-panel.ts";
-import { copiedText, copiesOf, DUPLICATE_STEP, insertDuplicates, MIRROR_STEP, pastedBodies } from "./duplicate.ts";
+import { copiedText, copiesOf, DUPLICATE_STEP, insertDuplicates, MIRROR_STEP, mirrorPlaneProblem, pastedBodies, type MirrorPlane } from "./duplicate.ts";
 import { changedMove, factorOf, insertMove, MOVE_STEP, MOVE_VERBS, moveKindOf, movedBodies, moveValues, NO_MOVE, ROTATE_STEP, SCALE_STEP, type MoveBox, type MoveValues } from "./move.ts";
 import { EXPLODE_DEFAULT, explodedMesh, readSpread } from "./explode.ts";
 import { draggedValues, editedBodies, editedMoveMesh, handlesCentre, heldBefore, MOVE_BOX_WORDS, movedMesh, pickedBodies, previewable, readMoveBoxes, refusedMove, startPivot, boxCentre } from "./move-tool.ts";
@@ -34,7 +34,7 @@ import { constructView } from "./construct-view.ts";
 import { KIND_GROUPS, kindTitle } from "./construct-tool.ts";
 import { KIND_WORDS as CONSTRUCT_WORDS } from "./construct.ts";
 import { CONSTRUCT_OVERLAY, constructOverlay, constructPlanes, drawnConstructs } from "./construct-draw.ts";
-import type { ConstructAnswer, ConstructKind } from "./construct-data.ts";
+import { CONSTRUCT_REF, type ConstructAnswer, type ConstructKind } from "./construct-data.ts";
 import { snapEnds, snappedValues, snapPart, type SnapPart } from "./move-snap.ts";
 import { PART_VIEW, syncGraph } from "./graph.ts";
 import { noteRebuild, registerDesign } from "./representations.ts";
@@ -46,7 +46,7 @@ import { comingItems, type ComingGroup } from "./coming-soon.ts";
 import { INSERT_SIZES, INSERT_TITLE, inserted, insertSections, insertStep } from "./insert.ts";
 import { startHint } from "./start-hint.ts";
 import { SOLID_OVERLAY, solidBadge } from "./solid-badge.ts";
-import { bodyLabel, bodyRows, combineRowTags, browserTree, eyeId, failedIds, rowItem, rowReferences, type BrowserNode } from "./browser.ts";
+import { bodyLabel, CONSTRUCTION_ROW, bodyRows, combineRowTags, browserTree, eyeId, failedIds, rowItem, rowReferences, type BrowserNode } from "./browser.ts";
 import { callOffDrag, editOff, showTimelineBar, timelineBarItems, type MenuEntry } from "./timeline-bar.ts";
 import { DEFAULT_SIZES, followUnit, panelSizeRefused, parameterRows, propertiesPanel, revertedNote, SIZE_KEYS, type SizeKey } from "./properties.ts";
 import { FOLDED_AT_START, panelShown, propertiesFold, readPinned, type FoldState, type PropertiesFold } from "./properties-fold.ts";
@@ -74,7 +74,7 @@ import { droppedNote, followedNote, highlightOf, panelFocus, panelPart, selectio
 import { measureView } from "./measure-view.ts";
 import { bodyOf, findInScene, joinBodies, sceneHit, shownBodies, shownReference, type Scene, type ShownBody } from "./scene.ts";
 import { bodyReference, readProfileReference } from "./references.ts";
-import { addFaceSketch, addSketch, askOutline, outlineSourceOf, pinNewPoints, planeOf, projectEdges, setCircleFit, SKETCH_STEPS, sketchCurves, sketchItem, sketchPlane, sketchSide } from "./sketch.ts";
+import { addConstructSketch, addFaceSketch, addSketch, askOutline, outlineSourceOf, pinNewPoints, planeOf, projectEdges, setCircleFit, SKETCH_STEPS, sketchCurves, sketchItem, sketchPlane, sketchSide } from "./sketch.ts";
 import { fitPicker } from "./fit-tag.ts";
 import { dragTo, grabProblem } from "./point-drag.ts";
 import { PROJECT_AGAIN, projectedOpen, projectPick, sketchEdgeCurves } from "./projection.ts";
@@ -191,14 +191,16 @@ interface Duplicating {
   run(): void;
   /** Why it can't be chosen now (nothing picked), or null: Mirror body's too. */
   off(): string | null;
-  /** Mirror body: a mirrored copy of each picked body across origin plane `plane`. */
-  mirror(plane: SketchPlane): void;
+  /** Mirror body: a mirrored copy of each picked body across `plane`, an origin plane or (59a3) a construction plane's name. */
+  mirror(plane: MirrorPlane): void;
+  /** The construction planes a new Mirror can use (59a3, behind ?construct): before the marker and not suppressed, in timeline order. */
+  planes(): { plane: MirrorPlane; label: string }[];
   /** Scale: opens the Move panel as Scale. */
   scale(): void;
 }
 
 const SCALE_TITLE = "Scale: make bodies bigger or smaller by a factor you type (2 doubles every size), about a pivot. Pick the bodies, then OK. A Scale in the timeline, at the marker.";
-const mirrorTitle = (plane: SketchPlane) => `Mirror body: a mirror image of the picked bodies across the ${plane} plane, as new bodies. A Mirror in the timeline, at the marker.`;
+const mirrorTitle = (plane: string) => `Mirror body: a mirror image of the picked bodies across ${(SKETCH_PLANES as readonly string[]).includes(plane) ? `the ${plane} plane` : plane}, as new bodies. A Mirror in the timeline, at the marker.`;
 
 const DUPLICATE_TITLE = "Duplicate: copy the picked bodies where they are, then move the copies. A copy follows its body's sizes. A Duplicate in the timeline, at the marker.";
 
@@ -320,8 +322,14 @@ function toolbar(slot: HTMLElement, onClick: (b: ToolButton) => void, onSketch: 
         ...(chamfering ? [{ id: "modify-menu-chamfer", label: "Chamfer", icon: "chamfer" as const, title: CHAMFER_TITLE, run: onChamfer }] : []),
       ],
     },
-    // Mirror body (step 35e2): across an origin plane for now; a face of the body as the plane comes with construction planes.
-    { heading: "Mirror body", items: SKETCH_PLANES.map((plane) => ({ id: `modify-menu-mirror-${plane.toLowerCase()}`, label: `Across ${plane}`, icon: "mirror" as const, title: mirrorTitle(plane), off: duplicate.off()?.replace("Duplicate", "Mirror") ?? undefined, run: () => duplicate.mirror(plane) })) },
+    // Mirror body (step 35e2): across an origin plane, or (59a3, behind ?construct) a construction plane by its name.
+    {
+      heading: "Mirror body",
+      items: [
+        ...SKETCH_PLANES.map((plane) => ({ id: `modify-menu-mirror-${plane.toLowerCase()}`, label: `Across ${plane}`, icon: "mirror" as const, title: mirrorTitle(plane), off: duplicate.off()?.replace("Duplicate", "Mirror") ?? undefined, run: () => duplicate.mirror(plane) })),
+        ...(constructShown() ? duplicate.planes() : []).map(({ plane, label }) => ({ id: `modify-menu-mirror-${plane.replace(":", "-")}`, label: `Across ${label}`, icon: "mirror" as const, title: mirrorTitle(label), off: duplicate.off()?.replace("Duplicate", "Mirror") ?? undefined, run: () => duplicate.mirror(plane) })),
+      ],
+    },
     { items: comingItems("Modify").filter((i) => !(combining && i.id === "coming-combine") && !(chamfering && i.id === "coming-chamfer")) },
   ];
   const modifying = toolGroup(document, { name: "Modify", menu: { id: "modify-menu", title: "Every way to change bodies, by name", sections: modifySections } });
@@ -500,7 +508,7 @@ function browser(slot: HTMLElement, doc: DesignDocument, failed: ReadonlySet<str
         row.dataset.tip = row.title;
         row.dataset.node = n.id;
         if (ref) row.addEventListener("click", (e) => onSelect(ref, addsToSelection(e as MouseEvent))); // Shift, Ctrl or Cmd adds (SL #524)
-        if (items.has(n.id) || n.id.startsWith("sketches/") || n.id.startsWith("body-")) {
+        if (items.has(n.id) || n.id.startsWith("sketches/") || n.id.startsWith(CONSTRUCTION_ROW) || n.id.startsWith("body-")) {
           row.addEventListener("dblclick", () => onOpen(n.id));
           // The row's menu: a right-click at the pointer, or the ⋯ button under itself.
           row.addEventListener("contextmenu", (e) => {
@@ -644,7 +652,7 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
     exploded: () => explodeSpread !== null,
     noExplode: () => ((lastScene?.bodies.length ?? 0) >= 2 ? null : NO_EXPLODE),
   };
-  const { insert: insertMenu, facts: factsButton, printCheck: printCheckButton, explode: explodeButton, measure: measureButton, search: searchButton, commands } = toolbar(ctx.toolbar, (b) => run(b.command), () => startSketch(), () => startExtrude(), () => startMove(), () => startMove(null, "rotate"), () => startCombine(), () => startChamfer(), (kind) => startConstruct(kind), (kind) => afterOk(() => void insertBody(kind)), inspecting, { run: () => void duplicateBodies(), off: duplicateOff, mirror: (plane) => void duplicateBodies(undefined, plane), scale: () => startMove(null, "scale") });
+  const { insert: insertMenu, facts: factsButton, printCheck: printCheckButton, explode: explodeButton, measure: measureButton, search: searchButton, commands } = toolbar(ctx.toolbar, (b) => run(b.command), () => startSketch(), () => startExtrude(), () => startMove(), () => startMove(null, "rotate"), () => startCombine(), () => startChamfer(), (kind) => startConstruct(kind), (kind) => afterOk(() => void insertBody(kind)), inspecting, { run: () => void duplicateBodies(), off: duplicateOff, mirror: (plane) => void duplicateBodies(undefined, plane), planes: mirrorPlanes, scale: () => startMove(null, "scale") });
   // S: the command search box over the page (Ben's keys 10-29), listing what the toolbar offers now.
   const searchBox = commandSearch(ctx.toolbar.ownerDocument, commands);
   searchButton.addEventListener("click", () => searchBox.open());
@@ -1431,6 +1439,15 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
   if (!ctx.history.restoring()) designToken = Math.floor(Math.random() * 2 ** 48).toString(36);
 
   /** Why Duplicate is off: no body picked (a face or edge picks its body). */
+  /** The construction planes a new Mirror can use (59a3): before the marker, not suppressed, in timeline order. */
+  function mirrorPlanes(): { plane: MirrorPlane; label: string }[] {
+    const doc = designDoc();
+    return doc.timeline.features.flatMap((f): { plane: MirrorPlane; label: string }[] => {
+      const plane: MirrorPlane = `${CONSTRUCT_REF}${f.id}`;
+      return isConstructItem(f) && mirrorPlaneProblem(doc, plane) === null ? [{ plane, label: f.provenance.self.label }] : [];
+    });
+  }
+
   function duplicateOff(): string | null {
     return pickedBodies(ctx.selection.items, lastScene).length === 0 ? "Pick one or more bodies first, then Duplicate." : null;
   }
@@ -1443,7 +1460,7 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
    * With `mirror` (Mirror body) each copy is mirrored across that origin
    * plane, already away from its body, so the copies are only picked.
    */
-  async function duplicateBodies(bodies?: readonly string[], mirror?: SketchPlane) {
+  async function duplicateBodies(bodies?: readonly string[], mirror?: MirrorPlane) {
     // SL #760 item 5: an OK being checked goes first (it shuts the panels below), and what is selected is read after it,
     // as when pressed slowly.
     if (okChecks.size > 0) return afterOk(() => void duplicateBodies(bodies, mirror));
@@ -2022,7 +2039,7 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
       if (chamferBox.shown) syncChamferPicks(); // the edges picked, found again on the bodies as now built
       factsButton.disabled = inspecting.none() !== null;
       explodeButton.disabled = explodeSpread === null && inspecting.noExplode() !== null; // on, it can always be turned off
-      if (mode.kind === "pick") viewport.showPlanes(originPlanes(), sketchableFaces(scene)); // the faces offered are this scene's
+      if (mode.kind === "pick") viewport.showPlanes(offeredPlanes(), sketchableFaces(scene)); // the faces offered are this scene's
       // Extrude opened before this build landed (a slow kernel, a file just opened, an Undo) offered the faces of the scene
       // before it, or none: they are offered again from this one, so a face is never missing or where the body was.
       if (extruding && designDoc() === doc) void offerProfiles(doc, [...extruding.usable]);
@@ -2055,6 +2072,7 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
   let mode: Mode = { kind: "none" };
   const sketchPanelBox = sketchPanel(ctx.properties, {
     pickPlane: (id) => pickPlane(id),
+    pickConstruct: (item) => pickConstruct(item),
     cancel: () => leaveSketch(),
     grid: (typed) => void setGrid(typed),
     gridSnap: (on) => setGridSnap(on),
@@ -2078,7 +2096,7 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
       if (mode.kind === "edit") drawSketches();
     },
     // A panel shown afresh has no note, and neither has the pointer.
-    showPick: () => ((sketchNote = ""), sketchPanelBox.showPick()),
+    showPick: (constructs) => ((sketchNote = ""), sketchPanelBox.showPick(constructs)),
     showEditing: (...args) => ((sketchNote = ""), sketchPanelBox.showEditing(...args)),
     hide: () => ((sketchNote = ""), sketchPanelBox.hide()),
   };
@@ -2261,8 +2279,43 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
     mode = { kind: "pick" };
     toolsChanged();
     showStart();
-    viewport.showPlanes(originPlanes(), sketchableFaces(lastScene));
-    sketchBox.showPick();
+    viewport.showPlanes(offeredPlanes(), sketchableFaces(lastScene));
+    sketchBox.showPick(offeredConstructs());
+  }
+
+  /** The construction planes Create sketch offers as panel buttons (59a3): the same ones as the view's, named as the timeline names them. */
+  function offeredConstructs(): { item: string; label: string }[] {
+    if (!constructShown()) return [];
+    const doc = designDoc();
+    return drawnConstructs(doc, null).flatMap((d) => {
+      const f = doc.timeline.features.find((g) => g.id === d.item);
+      return d.answer.kind === "plane" && f !== undefined ? [{ item: d.item, label: f.provenance.self.label }] : [];
+    });
+  }
+
+  /**
+   * The planes Create sketch offers: the origin's, then (59a3, behind
+   * ?construct) every construction plane before the marker that is on and
+   * shown, by its name ("construct:feature-7"), drawn round where the
+   * construction itself is drawn.
+   */
+  function offeredPlanes(): OriginPlane[] {
+    if (!constructShown()) return originPlanes();
+    const doc = designDoc();
+    const planes = constructPlanes(drawnConstructs(doc, null));
+    return [...originPlanes(), ...planes.map((p) => ({ id: `${CONSTRUCT_REF}${p.id.slice("construct-".length)}`, plane: p.plane, offered: true, centred: true }))];
+  }
+
+  /** A construction plane picked (59a3): the new sketch on it (one undo step), looked at straight down; refused in the panel's words. */
+  function pickConstruct(item: string) {
+    if (mode.kind !== "pick") return;
+    let made: ReturnType<typeof addConstructSketch>;
+    try {
+      made = addConstructSketch(designDoc(), item);
+    } catch (e) {
+      return sketchBox.showError(e instanceof Error ? e.message : String(e));
+    }
+    startNewSketch(made);
   }
 
   /** A plane picked: the new sketch (one undo step), looked at straight down, ready to draw on. */
@@ -5293,6 +5346,7 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
     if (mode.kind === "pick") {
       const spot = sketchSpot(pick, lastScene);
       if (spot?.kind === "plane") pickPlane(spot.plane);
+      else if (spot?.kind === "construct") pickConstruct(spot.item);
       else if (spot) pickFace(spot);
       return;
     }
@@ -5341,7 +5395,7 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
     globalThis.addEventListener?.("keyup", onHeldKey);
     globalThis.addEventListener?.("blur", onLostFocus);
     ctx.properties.ownerDocument.addEventListener(UNIT_EVENT, onUnitChange);
-    if (mode.kind === "pick") viewport.showPlanes(originPlanes(), sketchableFaces(lastScene));
+    if (mode.kind === "pick") viewport.showPlanes(offeredPlanes(), sketchableFaces(lastScene));
     drawSketches();
     showMoveHint();
     stopWatching = ctx.selection.onChange(() => {

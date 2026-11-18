@@ -188,12 +188,12 @@ test("a construction the kernel can't make fails in its words: the top and the b
 
 test("the data: a construction saves and reads back as version 26; every break of it is refused in words", () => {
   const { doc } = insertConstruct(partDocument("box", 40, 30, 20), "offset_plane", { plane: TOP }, 5, { kind: "plane", point: [0, 0, 25], normal: [0, 0, 1], near: [20, 15, 25] });
-  assert.equal(DESIGN_VERSION, 27);
+  assert.equal(DESIGN_VERSION, 28);
   const json = JSON.parse(JSON.stringify(doc));
   assert.deepEqual(readDesignDocument(json), doc);
   assert.equal(doc.timeline.features[1].provenance.self.label, "Plane 1");
   assert.equal(doc.timeline.features[1].intent.summary, "Offset plane, 5 mm");
-  const broken = (change: (p: Record<string, unknown>, f: Record<string, unknown>) => void, version = 27) => () => {
+  const broken = (change: (p: Record<string, unknown>, f: Record<string, unknown>) => void, version = 28) => () => {
     const d = JSON.parse(JSON.stringify(doc));
     d.version = version;
     change(d.timeline.features[1].intent.parameters, d.timeline.features[1]);

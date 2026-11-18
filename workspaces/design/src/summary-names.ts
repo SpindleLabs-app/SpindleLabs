@@ -15,7 +15,8 @@ import { patternSummary } from "./pattern.ts";
 import { patternValuesOf } from "./pattern-values.ts";
 import { shellSummary } from "./shell.ts";
 import type { CombineOperation } from "./document.ts";
-import type { SketchPlane } from "./document.ts";
+import { constructPlaneItem } from "./construct-data.ts";
+import type { MirrorPlane } from "./duplicate.ts";
 
 /** Item `id`'s name as `f`'s provenance holds it, or the id when it holds none. */
 const labelIn = (f: Feature, id: string) => f.provenance.from.find((p) => p.id === id)?.label ?? id;
@@ -42,7 +43,11 @@ export function summaryNamed(f: Feature): string | null {
     const verb = f.intent.summary.startsWith("Rotate ") ? "Rotate" : f.intent.summary.startsWith("Scale ") ? "Scale" : "Move";
     return moveSummary(bodies.map((b) => labelIn(f, bodyItem(b) ?? b)), moveValues(f), verb);
   }
-  if (isDuplicateItem(f)) return duplicateSummary(bodyIn(f, text(p.body)), p.mirror as SketchPlane | undefined);
+  if (isDuplicateItem(f)) {
+    // Across an origin plane by its letters, or (59a3) across a construction plane by that item's name.
+    const across = p.mirror === undefined ? null : constructPlaneItem(p.mirror);
+    return duplicateSummary(bodyIn(f, text(p.body)), p.mirror as MirrorPlane | undefined, across === null ? undefined : labelIn(f, across));
+  }
   if (isChamferItem(f)) {
     const edges = Array.isArray(p.edges) ? p.edges.length : 0;
     const d = p.distance as number;
@@ -56,10 +61,12 @@ export function summaryNamed(f: Feature): string | null {
   if (isShellItem(f)) return shellSummary(bodyIn(f, text(p.body)), Array.isArray(p.faces) ? p.faces.length : 0, p.thickness as number);
   if (f.intent.type === "extrude" && typeof p.sketch === "string") return extrudeSummaryOf(f);
   if (isSketchItem(f) && f.provenance.from.length === 1) {
-    // "Sketch 2 on a face of Box 1": its own words, then the face's item (sketch.ts addFaceSketch).
-    const on = " on a face of ";
-    const at = f.intent.summary.indexOf(on);
-    return at < 0 ? null : `${f.intent.summary.slice(0, at)}${on}${f.provenance.from[0].label}`;
+    // "Sketch 2 on a face of Box 1" (sketch.ts addFaceSketch) or "Sketch 2 on Plane 1" (addConstructSketch): its own
+    // words, then the item it is on.
+    const at = f.intent.summary.indexOf(" on ");
+    if (at < 0) return null;
+    const on = f.intent.summary.startsWith(" on a face of ", at) ? " on a face of " : " on ";
+    return `${f.intent.summary.slice(0, at)}${on}${f.provenance.from[0].label}`;
   }
   return null;
 }

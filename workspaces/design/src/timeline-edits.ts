@@ -17,6 +17,7 @@ import type { Feature } from "@fission/core";
 import { bodyIdOf, bodyItem, combineBodies, isCombineItem, EYE_ROWS, eyeOrder, isExtrudeJoin, isHidden, isOperationExtrude, isPiece, isDuplicateItem, isMoveItem, isSketchItem, isConstructItem, makesBody, NAME_LIMIT, numberBodies, numberedWhenBuilt, operationMakers, ORIGIN_PLANES, nameKey, relabelled, shown, takenNames, type DesignDocument } from "./document.ts";
 import { faceFeature, isFacePlane } from "./face-sketch.ts";
 import { renamedSummary } from "./summary-names.ts";
+import { constructPlaneItem } from "./construct-data.ts";
 
 /** The undo step each timeline edit is recorded as, from the item's name ("Delete Sketch 1"). */
 export const TIMELINE_STEPS = {
@@ -149,7 +150,7 @@ export function hideRow(doc: DesignDocument, id: string, hide: boolean): DesignD
   if (bodyItem(id) !== null) return hideBody(doc, id, hide);
   if (!EYE_ROWS.includes(id)) {
     const item = itemIn(doc, id);
-    if (!isSketchItem(item)) return hideBody(doc, bodyIdOf(id), hide);
+    if (!isSketchItem(item) && !isConstructItem(item)) return hideBody(doc, bodyIdOf(id), hide);
   }
   if (isHidden(doc, id) === hide) return doc;
   if (!hide) return withoutHidden(doc, id);
@@ -176,10 +177,11 @@ export function usedSketchHidden(doc: DesignDocument, id: string): DesignDocumen
  */
 function link(doc: DesignDocument, f: Feature, on: Feature): string {
   if (isMoveItem(f)) return "a move of";
-  if (isDuplicateItem(f)) return "a copy of";
+  if (isDuplicateItem(f)) return isConstructItem(on) ? "mirrored across" : "a copy of";
   if (!isSketchItem(f)) return "built from";
   const plane = f.intent.parameters.plane;
   if (isFacePlane(plane) && faceFeature(plane) === on.id) return "drawn on a face of";
+  if (constructPlaneItem(plane) === on.id) return "drawn on";
   const pinned = doc.sketches.find((s) => s.id === f.id)?.pins?.some((p) => p.feature === on.id) ?? false;
   return pinned ? "snapped to an edge of" : "projecting an edge of";
 }

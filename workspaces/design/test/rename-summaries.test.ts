@@ -14,7 +14,8 @@ import { insertMove, NO_MOVE } from "../src/move.ts";
 import { insertPattern } from "../src/pattern.ts";
 import type { PatternValues } from "../src/pattern-values.ts";
 import { insertShell } from "../src/shell.ts";
-import { addFaceSketch, addSketch, drawRectangle } from "../src/sketch.ts";
+import { addConstructSketch, addFaceSketch, addSketch, drawRectangle } from "../src/sketch.ts";
+import { insertConstruct } from "../src/construct.ts";
 import { summaryNamed } from "../src/summary-names.ts";
 import { renameItem } from "../src/timeline-edits.ts";
 
@@ -114,4 +115,23 @@ test("every kind that names another item is said again exactly as made", () => {
     const f = doc.timeline.features.find((x) => x.id === id)!;
     assert.equal(summaryNamed(f), f.intent.summary, what);
   }
+});
+
+// After 59a3a (SL #832): a construction plane can be renamed too, and the descriptions naming it said again.
+const PLACED = { kind: "plane", point: [0, 0, 0], normal: [0, 0, 1], near: [0, 0, 0] } as const;
+
+test("hand-worked: Plane 1 renamed Datum; the sketch on it and the Mirror across it say Datum, the Mirror's body name kept", () => {
+  const { doc: d0, id: plane } = insertConstruct(partDocument("box", 40, 30, 20), "offset_plane", { plane: "face:feature-1/top" }, 5, PLACED);
+  const s = addConstructSketch(d0, plane);
+  assert.equal(summaryOf(s.doc, s.id), "Sketch 1 on Plane 1");
+  const m = insertDuplicates(s.doc, ["body:feature-1"], `construct:${plane}`);
+  const mirror = m.ids[0];
+  assert.equal(summaryOf(m.doc, mirror), "Mirror of Box 1 across Plane 1");
+  const after = renamed(m.doc, plane, "Datum");
+  assert.equal(summaryOf(after, s.id), "Sketch 1 on Datum");
+  assert.equal(summaryOf(after, mirror), "Mirror of Box 1 across Datum");
+  // Renaming the box changes the Mirror's body name only; the sketch on the plane is left alone.
+  const boxRenamed = renamed(m.doc, "feature-1", "Base");
+  assert.equal(summaryOf(boxRenamed, mirror), "Mirror of Base across Plane 1");
+  assert.equal(summaryOf(boxRenamed, s.id), "Sketch 1 on Plane 1");
 });

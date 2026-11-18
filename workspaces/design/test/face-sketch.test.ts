@@ -347,7 +347,7 @@ test("a file's sketch on a face is checked when it is opened: each way it can be
     ["a plane no one knows", (d) => {
       d.timeline.features[1].intent.parameters.plane = "XW";
       delete d.sketches[0].face;
-    }, /is on XW, not a plane this SpindleLabs knows \(XY, XZ, YZ or a face\)/],
+    }, /is on XW, not a plane this SpindleLabs knows \(XY, XZ, YZ, a face or a construction plane\)/],
     ["flip false", (d) => (d.timeline.features[2].intent.parameters.flip = false), /feature-5: flip must be true or left out, not false/],
     ["flip as text", (d) => (d.timeline.features[2].intent.parameters.flip = "true"), /flip must be true or left out, not true/],
     ["a kept placement that is text", (d) => (d.kept = { "feature-5": { points: [], curves: [], placement: "XZ" } }), /kept shape's placement is not an object/],
