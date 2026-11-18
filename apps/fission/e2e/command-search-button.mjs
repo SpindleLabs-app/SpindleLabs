@@ -6,7 +6,7 @@
 import assert from "node:assert/strict";
 import { launch } from "./browser.mjs";
 import { preview } from "vite";
-import { startWithBox } from "./start.mjs";
+import { pickPlane, startWithBox } from "./start.mjs";
 
 const server = await preview({ preview: { port: 4781, strictPort: true }, logLevel: "error" });
 const url = "http://localhost:4781/";
@@ -78,12 +78,16 @@ try {
     await page.waitForSelector("#command-search-input", { state: "visible" });
     await page.mouse.click(width / 2, height - 4);
     await page.waitForSelector("#command-search-input", { state: "detached" });
-    // Hidden while a sketch is edited.
-    if (width === 1280) {
-      await page.click("#create-sketch");
-      await page.waitForSelector("#plane-XY, [data-plane]", { state: "attached", timeout: 3000 }).catch(() => {});
-      await page.keyboard.press("Escape");
-    }
+    // Hidden while a sketch is edited (S does nothing there), shown again once it is finished (test audit 2026-11-18 E-6:
+    // this asserted nothing, its wait for a plane swallowed).
+    await page.evaluate(() => { document.getElementById("toolbar").scrollLeft = 0; });
+    await press("#create-sketch");
+    await pickPlane(page, "XY", touch);
+    await page.waitForFunction(() => document.querySelector("#viewport").dataset.sketching === "true", null, { timeout: 10000 });
+    assert.equal(await page.isVisible("#command-search-button"), false, `${tag}: hidden while sketching`);
+    await page.evaluate(() => document.getElementById("finish-sketch").click());
+    await page.waitForFunction(() => document.querySelector("#viewport").dataset.sketching === "false", null, { timeout: 10000 });
+    assert.equal(await page.isVisible("#command-search-button"), true, `${tag}: shown again after Finish Sketch`);
     await context.close();
   }
   assert.deepEqual(errors, [], "no page errors or console errors");

@@ -100,7 +100,7 @@ await check("picking a plane swaps the modelling buttons for the sketch's toolba
     assert.equal(await visible(page, "#finish-sketch"), false);
     await pickPlane(page, "XY", false);
     await sketching(page, true);
-    for (const sel of ["#create-sketch", "#insert", "[data-op=export_stl]"]) assert.equal(await visible(page, sel), false, `${sel} hidden while sketching`);
+    for (const sel of ["#create-sketch", "#insert", "[data-op=export_stl]", "#command-search-button"]) assert.equal(await visible(page, sel), false, `${sel} hidden while sketching`);
     for (const sel of ["#sketch-create", "#extrude", "#finish-sketch", ...TOOLS.map((t) => `#sketch-tool-${t}`)]) assert.equal(await visible(page, sel), true, `${sel} shown while sketching`);
     // Order along the bar: the tools, Extrude, Finish Sketch last and flush right (U0f: Create ▾ is the tools' name, under them).
     const xs = [];

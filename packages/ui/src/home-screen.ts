@@ -113,6 +113,8 @@ export interface HomeScreen {
    * project's, for a design the app can't open yet (an STL); null goes back to the project's.
    */
   showStandIn(lines: ArrayLike<number> | null, surface?: Surface | null): void;
+  /** For browser checks only (`?test-hooks`): the background's angle and frames on its canvas, each frame `extraMs` slower (Backdrop `probe`). */
+  probeBackdrop(extraMs: number): void;
 }
 
 const message = (e: unknown) => (e instanceof Error ? e.message : String(e));
@@ -469,6 +471,9 @@ export function homeScreen(doc: Document, parts: HomeParts): HomeScreen {
       (root.querySelector<HTMLButtonElement>("#home-carry-on") ?? root.querySelector<HTMLButtonElement>("#home-new"))?.focus();
     },
     hide,
+    probeBackdrop(extraMs) {
+      backdrop.probe(extraMs);
+    },
     showStandIn(lines, surface = null) {
       standIn = lines;
       standInFaces = lines ? surface : null;
