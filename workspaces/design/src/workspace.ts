@@ -1141,6 +1141,7 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
     failedNow = failedIds(doc, build.results, new Set(Object.keys(build.bodies)));
     noteRebuild(doc, failedNow); // what other workspaces are handed (SL #761)
     builtFor = doc;
+    builtBodies = new Set(Object.keys(build.bodies));
     slowNow = new Set(Object.keys(build.results).filter((id) => { const r = build.results[id]; return r.status === "failed" && r.cause === "timed-out"; }));
     resultsNow = build.results;
     reasonsNow = new Map(Object.entries(build.results).flatMap(([id, r]) => (r.status === "failed" && r.message ? [[id, r.message] as const] : [])));
@@ -1490,7 +1491,15 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
     // SL #760 item 5: an OK being checked goes first (it shuts the panels below), and what is selected is read after it,
     // as when pressed slowly.
     if (okChecks.size > 0) return afterOk(() => void duplicateBodies(bodies, mirror));
-    const picked = bodies ?? pickedBodies(ctx.selection.items, lastScene);
+    let picked = bodies ?? pickedBodies(ctx.selection.items, lastScene);
+    if (bodies !== undefined) {
+      // SL #820 B-4: a pasted body a later Combine used up is no longer built, so it pastes nothing, as a deleted one
+      // (`pastedBodies`); read from the design as built now, once a rebuild under way (an OK's) has ended.
+      const now = designDoc();
+      if (!(await builtNow()) || designDoc() !== now) return;
+      picked = bodies.filter((b) => builtBodies.has(b));
+      if (okChecks.size > 0) return afterOk(() => void duplicateBodies(bodies, mirror));
+    }
     if (picked.length === 0) return;
     leaveExtrude();
     leaveEdit();
@@ -1521,6 +1530,8 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
   let failedNow: ReadonlySet<string> = new Set();
   /** The design `failedNow` was last worked out for (the same design with its points followed counts, `takeIn`): an export reads nothing until it is the design as it is now (`builtNow`). */
   let builtFor: DesignDocument | null = null;
+  /** The bodies the rebuild of `builtFor` made: a paste copies only these (SL #820 B-4). */
+  let builtBodies: ReadonlySet<string> = new Set();
   /** show() calls not yet ended, and who waits for the last to end (`builtNow`). */
   let showsRunning = 0;
   const showsDone: (() => void)[] = [];
