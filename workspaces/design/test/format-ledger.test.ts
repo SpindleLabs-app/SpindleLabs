@@ -65,7 +65,9 @@ export function propertyNames(source: string, name: string): string[] {
 // join), which a version 24 reader would refuse as an unknown feature.
 // Design data version 26 (step 59a1): a timeline item may be a construction plane, axis or point (`intent.type` "construct",
 // its parameters the kind, its inputs by name, a distance or angle, and its last answer), which a version 25 reader would refuse as an unknown feature.
-const LEDGER_VERSION = 26;
+// Design data version 27 (step 35h2c): a timeline item may be a Shell (`intent.type` "shell", its parameters the body, the
+// faces left open by name and the wall thickness), which a version 26 reader would refuse as an unknown feature.
+const LEDGER_VERSION = 27;
 const LEDGER: { file: string; type: string; names: string[] }[] = [
   { file: "workspaces/design/src/document.ts", type: "DesignDocument", names: ["version", "nextId", "profiles", "sketches", "timeline", "kept", "bodies", "nextBody", "hidden", "shownPlanes"] },
   { file: "workspaces/design/src/document.ts", type: "Sketch", names: ["id", "points", "curves", "constraints", "face", "pins", "projected"] },

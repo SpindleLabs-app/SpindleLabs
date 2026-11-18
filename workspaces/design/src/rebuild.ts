@@ -36,9 +36,9 @@
 
 import { extrudeSketches, hasMoreProfiles, moreProfiles, profileParts, sameProfile, type ProfileRef } from "./extrude-profiles.ts";
 import { contactGroups, mergedOutline } from "./extrude-merge.ts";
-import { KERNEL_TOOK_TOO_LONG, KernelError, type BodyHandle, type BodySpec, type BodyView, type BooleanOp, type BooleanResult, type ChamferResult, type ChamferSize, type ConstructGiven, type ConstructMake, type Motion, type KernelTouch, type KernelThin, type Feature, type KernelCalls, type KernelInput, type Outline, type Plane, type SketchXY } from "@fission/core";
+import { KERNEL_TOOK_TOO_LONG, KernelError, type BodyHandle, type BodySpec, type BodyView, type BooleanOp, type BooleanResult, type ChamferResult, type ChamferSize, type ConstructGiven, type ConstructMake, type ShellResult, SHELL_INSIDE, type Motion, type KernelTouch, type KernelThin, type Feature, type KernelCalls, type KernelInput, type Outline, type Plane, type SketchXY } from "@fission/core";
 import { CONSTRUCT_KINDS, readConstructRef, sameAnswer, type ConstructAnswer } from "./construct-data.ts";
-import { bodyIdOf, bodyItem, bodyNumbers, buildingItems, chamferOf, constructOf, isChamferItem, isConstructItem, isPatternItem, isPiece, numberPieces, combineBodies, duplicatedBody, extrudeOperation, isCombineItem, isDuplicateItem, isOperationExtrude, isMoveItem, isSketchExtrude, isSketchItem, keptOf, ownShape, profileSizeRefused, sketchInputs, specOf, type CombineOperation, type DesignDocument, type KeptShape, type Sketch, type SketchPlane } from "./document.ts";
+import { bodyIdOf, bodyItem, bodyNumbers, buildingItems, chamferOf, constructOf, isChamferItem, isConstructItem, insideWallName, isShellItem, shellOf, isPatternItem, isPiece, numberPieces, combineBodies, duplicatedBody, extrudeOperation, isCombineItem, isDuplicateItem, isOperationExtrude, isMoveItem, isSketchExtrude, isSketchItem, keptOf, ownShape, profileSizeRefused, sketchInputs, specOf, type CombineOperation, type DesignDocument, type KeptShape, type Sketch, type SketchPlane } from "./document.ts";
 import { centredSpec, isSymmetricParams } from "./extrude-symmetric.ts";
 import { isThroughParams, throughDistance, throughWords, withDistance } from "./extrude-through.ts";
 import { carried, faceFeature, faceReference, frameNow, frameOf, isFaceSketch, movedFrame, planeWords, sketchMiddle, squared, type PlaneWarning, type SketchPlacement } from "./face-sketch.ts";
@@ -114,6 +114,8 @@ export type FeatureResult =
       held?: { cause: "lost" | "ambiguous"; slot: string; message: string };
       /** A Chamfer's (44a-app3): the kernel's edges it cut on the body it holds, and the body it made, so Edit feature previews a new size on the same body. */
       chamfered?: { edges: number[]; body: BodyHandle };
+      /** A Shell's (35h2c): the kernel's faces it opened on the body it holds, for the tool's preview of a new thickness on the same body. */
+      shelled?: { open: number[]; bodies: BodyHandle[] };
       /** A Move's (SL #583 item 2): the pieces it moved that it doesn't hold yet, new pieces of a body it holds; `followedDoc` adds them to it. */
       takes?: string[];
       /** A Combine's or an operation extrude's pieces (35f1) by id, each with the shown names of its faces as the item made them: what the data remembers a piece by when it is first numbered (hunt 11-06). */
@@ -286,6 +288,8 @@ export class BodyCache {
   private chamfers = new Map<string, { from: BodyHandle; to: ChamferResult }>();
   /** Each pattern_motions answer by its request (`patternMotions`, step 61b): no body, so kept for the cache's life. */
   private patterns = new Map<string, Motion[]>();
+  /** Each body_shell's answer by its input, open faces and thickness (`shelled`, step 35h2c): the body given and the answer, its bodies kept in `bodies` like built ones. */
+  private shells = new Map<string, { from: BodyHandle; to: ShellResult }>();
   /** Each body_move's answer by its input and moves (`moved`, 35f1f2a): the body it moved and the one it made, kept in `bodies` like built ones. */
   private moves = new Map<string, { from: BodyHandle; to: BodyHandle }>();
   /**
@@ -470,6 +474,29 @@ export class BodyCache {
   }
 
   /**
+   * `body_shell(handle, open, thickness)` once for the same body, open faces
+   * and thickness (step 35h2c): each piece is kept like built ones, freed by
+   * `keepOnly` when no rebuild holds it. Asked again once the body or any
+   * piece is gone. A refusal is not kept.
+   */
+  async shelled(handle: BodyHandle, open: readonly number[], thickness: number): Promise<ShellResult> {
+    if (this.closed) throw new Error(CLOSED);
+    const key = JSON.stringify(["shelled", handle, open, thickness]);
+    const hit = this.shells.get(key);
+    if (hit && this.keys.has(hit.from) && hit.to.bodies.every((h) => this.keys.has(h))) return hit.to;
+    return this.once(key, async () => {
+      const to = await this.kernel.call("body_shell", handle, [...open], thickness);
+      if (this.closed) {
+        for (const h of to.bodies) void this.kernel.call("body_free", h).catch(() => {});
+        throw new Error(CLOSED);
+      }
+      to.bodies.forEach((h, i) => this.keep(`${key}#${i}`, h));
+      this.shells.set(key, { from: handle, to });
+      return to;
+    });
+  }
+
+  /**
    * What a boolean step's names (`NamedStep`) are worked out from, but the meshes, as one string: the item, the
    * operation, each input's body id, handle, place in made order, kept id, frames and turned faces, and what its
    * names come from (a Combine's result's kept names, by identity; else its item and curves: the handle stands for
@@ -583,6 +610,7 @@ export class BodyCache {
     // A move whose input or answer is gone is forgotten (its answer, if still kept, is freed with the next keepOnly that drops it).
     for (const [key, m] of this.moves) if (!this.keys.has(m.from) || !this.keys.has(m.to)) this.moves.delete(key);
     for (const [key, c] of this.chamfers) if (!this.keys.has(c.from) || !this.keys.has(c.to.body)) this.chamfers.delete(key);
+    for (const [key, c] of this.shells) if (!this.keys.has(c.from) || !c.to.bodies.every((h) => this.keys.has(h))) this.shells.delete(key);
   }
 
   /**
@@ -624,6 +652,7 @@ export class BodyCache {
     this.namings = new WeakMap();
     this.moves.clear();
     this.chamfers.clear();
+    this.shells.clear();
     this.unfreed = [];
     this.wanted = new Set();
   }
@@ -1534,6 +1563,7 @@ async function buildFeature(doc: DesignDocument, f: Feature, done: Record<string
     if (isChamferItem(f)) return await chamferRun(doc, f, done, bodies, cache);
     if (isConstructItem(f)) return await constructRun(f, done, bodies, cache, kernel);
     if (isPatternItem(f)) return await patternRun(doc, f, done, bodies, cache);
+    if (isShellItem(f)) return await shellRun(doc, f, done, bodies, cache);
     if (!isSketchExtrude(f)) {
       // Save-load hunt B4: failed in words as a size the kernel refuses is, never built (a negative one came out mirrored).
       const refused = profileSizeRefused(doc, f);
@@ -1895,6 +1925,101 @@ async function chamferRun(doc: DesignDocument, f: Feature, done: Record<string, 
     ...(b.from !== undefined && { from: b.from }),
   };
   return { status: "built", holds: [b.handle], chamfered: { edges, body: out.body } };
+}
+
+/**
+ * A Shell's result (step 35h2c): greyed while the item that made its body
+ * is suppressed or greyed (Q3); failed naming it when it was deleted or
+ * isn't built, or when an earlier Combine or extrude used the body up;
+ * failed in words when one of its open faces is no longer found by its
+ * name across the design, is found on two faces (an edit split it: never
+ * guessed between), or is on another body now; else the kernel's shell
+ * (its refusal in its own words, no body changed). Named as a Cut of the
+ * body by its inside walls is (`combineNames`): the kernel's history names
+ * the inside walls by body SHELL_INSIDE, which stands for a body whose
+ * face n is the inside wall moved in from the body's face n, named
+ * `insideWallName` after that face's shown name (none when it has none).
+ * The piece keeping the body's id takes its place, any other is
+ * `body:<the Shell>/piece:<k>`, numbered and remembered by its faces as a
+ * Combine's pieces are. The Shell holds the body as it was (`holds`).
+ */
+async function shellRun(doc: DesignDocument, f: Feature, done: Record<string, FeatureResult>, bodies: Bodies, cache: BodyCache): Promise<FeatureResult> {
+  const [maker] = f.dependsOn;
+  const r = done[maker];
+  if (r?.status === "suppressed") return { status: "greyed", by: maker };
+  if (r?.status === "greyed") return { status: "greyed", by: r.by };
+  const label = f.provenance.self.label;
+  const name = f.provenance.from.find((x) => x.id === maker)?.label ?? maker;
+  const s = shellOf(f);
+  const what = isPiece(s.body) ? `a piece of ${name}` : name;
+  if (r === undefined) return { status: "failed", cause: "deleted-input", input: maker, message: `${name} was deleted, so ${label} has nothing to hollow out` };
+  if (r.status !== "built") return { status: "failed", cause: "failed-input", input: maker, message: `${name} is not built, so ${label} can't hollow it out` };
+  const b = bodies[s.body];
+  if (b === undefined) return { status: "failed", cause: "failed-input", input: maker, message: `${label} can't hollow out ${what}: an earlier Combine or extrude used it up or left no such piece` };
+  // The open faces by their names, over every body built so far, as the screen names them: exactly one face may carry each.
+  const ids = Object.keys(bodies);
+  const place = doc.timeline.features.findIndex((x) => x.id === f.id);
+  const list = await Promise.all(ids.map((k) => namedOf(k, bodies[k], cache, 0)));
+  const on = ids.indexOf(s.body);
+  const open: number[] = [];
+  for (const [k, held] of s.faces.entries()) {
+    const nth = s.faces.length === 1 ? "its open face" : `its open face ${k + 1}`;
+    const found = list.flatMap((nb, i) => nb.faces.flatMap((face, j) => (face.names.includes(held) ? [{ body: i, face: j }] : [])));
+    if (found.length === 0) return { status: "failed", cause: "error", message: `${label} can't find ${nth} on ${what} any more: an edit before it changed or removed that face` };
+    if (found.length > 1) return { status: "failed", cause: "error", message: `${label} can't tell which face of ${what} is ${nth} any more: an edit before it split it or made two faces alike` };
+    if (found[0].body !== on) return { status: "failed", cause: "error", message: `${label}'s ${nth.slice(4)} is no longer on ${what}: an edit before it moved that face onto another body` };
+    open.push(found[0].face);
+  }
+  let out: ShellResult;
+  try {
+    out = await cache.shelled(b.handle, open, s.thickness);
+  } catch (e) {
+    if (timedOut(e)) throw e;
+    if (e instanceof KernelError && (e.kind === "invalid-input" || e.kind === "non-manifold-result" || e.kind === "thin-result")) return { status: "failed", cause: "error", message: `${label} can't be made: ${e.message}`, ...(e.touches.length > 0 ? { touches: e.touches } : {}), ...(e.thin.length > 0 ? { thin: e.thin } : {}) };
+    throw e;
+  }
+  // The body as boolean-names.ts names it, its place its item's; and its inside walls as a tool's faces, named after it.
+  const target: NamedBody = { ...list[on], made: new Map(list[on].made) };
+  const made = new Map<string, readonly number[]>();
+  const insideFaces = target.faces.map((face, i) => {
+    if (face.names.length === 0) return { names: [] };
+    const wall = insideWallName(f.id, face.names[0]);
+    made.set(wall, [place, i]);
+    return { names: [wall] };
+  });
+  const inside: NamedBody = { id: `${f.id}/inside`, handle: SHELL_INSIDE, view: target.view, faces: insideFaces, made };
+  const views = await Promise.all(out.bodies.map((h) => cache.view(h)));
+  const remembered = new Map((doc.bodies ?? []).flatMap((x) => (x.faces !== undefined && isPiece(x.id) && bodyItem(x.id) === f.id ? [[x.id, x.faces] as const] : [])));
+  const named = combineNames(f.id, "subtract", target, [inside], out, views, 1, remembered);
+  if ("failed" in named) return { status: "failed", cause: "error", message: `${label} can't be made: ${named.failed}` };
+  // The inside walls lie where the body's faces were moved to, so they share its frames (its Moves); each is turned
+  // round from the face it moved in from.
+  const built = new Map<BodyHandle, BuiltBody>([[b.handle, b], [SHELL_INSIDE, b]]);
+  const seen = new Map([[b.handle, { built: b, view: target.view }], [SHELL_INSIDE, { built: b, view: target.view }]]);
+  const pieceFaces: Record<string, string[]> = {};
+  const kept: string[] = [];
+  for (const nb of named.bodies) {
+    const at = out.bodies.indexOf(nb.handle);
+    const frames = framesOfResult(out.history[at], built);
+    const reversed = reversedOfResult(out.history[at], views[at], seen);
+    const piece = nb.id !== s.body;
+    if (piece && nb.id in bodies) return { status: "failed", cause: "error", message: `${label} can't be made: two of its bodies would both be ${nb.id}, so one would be lost (a fault in SpindleLabs, not in the design)` };
+    bodies[nb.id] = {
+      feature: piece ? f.id : b.feature,
+      handle: nb.handle,
+      spec: null,
+      named: { faces: nb.faces, made: nb.made },
+      ...(frames && { frames }),
+      ...(reversed && { reversed }),
+      ...(piece ? { by: f.id, from: s.body } : { ...(b.by !== undefined && { by: b.by }), ...(b.from !== undefined && { from: b.from }) }),
+    };
+    if (piece) pieceFaces[nb.id] = shownFaces(nb.faces);
+    kept.push(nb.id);
+  }
+  // By the numbers the browser shows them with ("Body 5"); a remembered piece always has one.
+  const shown = named.renumbered.map((id) => `Body ${doc.bodies!.find((x) => x.id === id)!.number}`);
+  const warn = shown.length === 0 ? {} : { pieces: { renumbered: named.renumbered, message: `${label}'s pieces changed since they were numbered, so ${shown.join(" and ")} may now be ${shown.length === 1 ? "another piece" : "other pieces"}: check the items that use ${shown.length === 1 ? "it" : "them"}, then edit ${label} to keep its pieces as they are now` } };
+  return { status: "built", bodies: kept, holds: [b.handle], shelled: { open, bodies: [...out.bodies] }, ...(Object.keys(pieceFaces).length > 0 ? { pieceFaces } : {}), ...warn };
 }
 
 /** The origin's planes, axes and point as the kernel takes them: the planes facing as the sketch planes do (sketch.ts `planeOf`). */

@@ -47,6 +47,7 @@ export function nodeKernel(): KernelCalls {
     body_move: (body, moves) => entry.body_move(body, moves),
     body_chamfer: (body, edges, size, flip) => entry.body_chamfer(body, edges, size, flip),
     pattern_motions: (pattern) => entry.pattern_motions(pattern),
+    body_shell: (body, open, thickness) => entry.body_shell(body, open, thickness),
     body_count: () => entry.body_count(),
     body_measure: (first, second) => entry.body_measure(first, second),
     body_construct: (make) => entry.body_construct(make),

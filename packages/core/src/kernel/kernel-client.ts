@@ -1,6 +1,6 @@
 // Main-thread side of the kernel worker: every kernel call is an async
 // message, so a slow operation never freezes the UI.
-import type { BodyHandle, BodySpec, BooleanOp, Motion, BooleanResult, BuildPlate, ChamferResult, ChamferSize, BodyView, ConstructGiven, ConstructMade, ConstructMake, KernelErrorKind, KernelFailure, KernelInput, KernelThin, KernelTouch, Measured, MeasurePick, NozzleType, Outline, P1sPrintFile, SketchArc, SketchCircle, SketchLine, SketchOutline, SketchRegions, SlicedPrint, SolidReport, SliceProgress, SliceStage, StlFile, SupportStyle, PatternSpec } from "./kernel-types.ts";
+import type { BodyHandle, BodySpec, BooleanOp, Motion, BooleanResult, BuildPlate, ChamferResult, ChamferSize, ShellResult, BodyView, ConstructGiven, ConstructMade, ConstructMake, KernelErrorKind, KernelFailure, KernelInput, KernelThin, KernelTouch, Measured, MeasurePick, NozzleType, Outline, P1sPrintFile, SketchArc, SketchCircle, SketchLine, SketchOutline, SketchRegions, SlicedPrint, SolidReport, SliceProgress, SliceStage, StlFile, SupportStyle, PatternSpec } from "./kernel-types.ts";
 import { builtSize, callUnits, DEFAULT_UNIT_MS, facesSize, LIMIT_FLOOR_MS, limitMs, type BodySize } from "./time-limit.ts";
 
 /** Every operation the worker supports, with its arguments and result. */
@@ -48,6 +48,14 @@ export interface KernelOps {
    * nothing; its words name the edge or the size.
    */
   body_chamfer: { args: [body: BodyHandle, edges: number[], size: ChamferSize, flip: boolean]; result: ChamferResult };
+  /**
+   * The kept body `body` hollowed out (step 35h2c): walls `thickness` mm
+   * thick inside it, the faces `open` (its BodyView's face indices) left
+   * open. New kept bodies, one per piece, the one given left as it was;
+   * history as body_boolean's, body {@link SHELL_INSIDE} naming the inside
+   * walls. A refusal keeps nothing; its words name the face or thickness.
+   */
+  body_shell: { args: [body: BodyHandle, open: number[], thickness: number]; result: ShellResult };
   /**
    * Every copy's motion of a pattern (step 61), the original left out, in the
    * kernel's order: each a move or a turn, as body_move and a moved spec take
@@ -129,6 +137,8 @@ export const isTrap = (e: unknown): boolean => typeof WebAssembly !== "undefined
 
 /** What the call that stopped the kernel answers (and every call still waiting on it): the app then starts a fresh kernel and builds again. */
 /** What a call about a body the kernel no longer holds says (no internal number: nobody can act on one). */
+/** The body number a Shell's history gives its inside walls and edges (the kernel's `ops::shell::INSIDE`, step 35h2c); never a body's handle (they start at 1). */
+export const SHELL_INSIDE = 0;
 export const UNKNOWN_BODY_WORDS = "That body is no longer there (it was removed, or the design was rebuilt). Reload the design and try again.";
 
 export const KERNEL_RESTARTED = "The geometry kernel ran out of memory or stopped on an internal error, so it was started again.";
@@ -494,6 +504,7 @@ export class KernelClient implements KernelCalls {
     }
     if (op === "body_move") return this.move(...(args as KernelOps["body_move"]["args"]), units) as Promise<KernelOps[K]["result"]>;
     if (op === "body_chamfer") return this.chamfer(...(args as KernelOps["body_chamfer"]["args"]), units) as Promise<KernelOps[K]["result"]>;
+    if (op === "body_shell") return this.shell(...(args as KernelOps["body_shell"]["args"]), units) as Promise<KernelOps[K]["result"]>;
     if (op === "body_boolean") return this.boolean(...(args as KernelOps["body_boolean"]["args"]), units) as Promise<KernelOps[K]["result"]>;
     // Measure's picks name bodies by the app's handles: each sent as the kernel's number (35e2l2).
     if (op === "body_measure") {
@@ -547,27 +558,48 @@ export class KernelClient implements KernelCalls {
     if (unknown !== undefined) return Promise.reject(new KernelError({ kind: "unknown-body", inputs: [], message: UNKNOWN_BODY_WORDS }));
     const worker = this.worker;
     const app = new Map(held.map((h, k) => [h!.body, inputs[k]]));
-    return this.send("body_boolean", [held[0]!.body, held.slice(1).map((h) => h!.body), op], units).then((reply) => {
-      const { bodies, history } = reply as BooleanResult;
-      const handles = bodies.map((body, k) => {
-        const handle = this.nextBody++;
-        if (worker === this.worker) {
-          this.bodies.set(handle, { worker, body });
-          this.sizes.set(handle, facesSize(history[k].faces.length));
-        } else this.retired.add(handle);
-        return handle;
-      });
-      const named = (body: BodyHandle) => app.get(body) ?? body;
-      return {
-        bodies: handles,
-        history: history.map(({ faces, also, edges }) => ({
-          faces: faces.map((f) => ({ ...f, body: named(f.body) })),
-          // A face merged from several input faces lying level (kernel 36c1): the others it lies on (SL #502: dropped before).
-          ...(also !== undefined ? { also: also.map((list) => list.map((f) => ({ ...f, body: named(f.body) }))) } : {}),
-          edges: edges.map((e) => ({ along: e.along.map((a) => ({ ...a, body: named(a.body) })), crossing: e.crossing.map(([p, q]) => [{ ...p, body: named(p.body) }, { ...q, body: named(q.body) }] as [typeof p, typeof q]) })),
-        })),
-      };
+    return this.send("body_boolean", [held[0]!.body, held.slice(1).map((h) => h!.body), op], units).then((reply) => this.keepResults(reply as BooleanResult, worker, app));
+  }
+
+  /**
+   * body_shell with the app's handles (step 35h2c): the body's kernel number
+   * sent, each piece given a handle of its own, sized by its faces, the
+   * history named by the app's handles as a boolean's is; body
+   * {@link SHELL_INSIDE} (the inside walls) stays as it is.
+   */
+  private shell(body: BodyHandle, open: number[], thickness: number, units: number): Promise<ShellResult> {
+    const held = this.bodies.get(body);
+    if (!held) return Promise.reject(new KernelError({ kind: "unknown-body", inputs: [], message: UNKNOWN_BODY_WORDS }));
+    const worker = this.worker;
+    return this.send("body_shell", [held.body, open, thickness], units).then((reply) => this.keepResults(reply as ShellResult, worker, new Map([[held.body, body]])));
+  }
+
+  /**
+   * A boolean's or a shell's answer with the app's handles: each result body
+   * given a handle of its own (retired if the worker restarted meanwhile),
+   * sized by its faces, and every history body the kernel numbered as one of
+   * the inputs (`app`) named by that input's handle; any other number (a
+   * shell's inside, 0) is left as it is.
+   */
+  private keepResults({ bodies, history }: BooleanResult, worker: Worker, app: Map<number, BodyHandle>): BooleanResult {
+    const handles = bodies.map((body, k) => {
+      const handle = this.nextBody++;
+      if (worker === this.worker) {
+        this.bodies.set(handle, { worker, body });
+        this.sizes.set(handle, facesSize(history[k].faces.length));
+      } else this.retired.add(handle);
+      return handle;
     });
+    const named = (body: BodyHandle) => app.get(body) ?? body;
+    return {
+      bodies: handles,
+      history: history.map(({ faces, also, edges }) => ({
+        faces: faces.map((f) => ({ ...f, body: named(f.body) })),
+        // A face merged from several input faces lying level (kernel 36c1): the others it lies on (SL #502: dropped before).
+        ...(also !== undefined ? { also: also.map((list) => list.map((f) => ({ ...f, body: named(f.body) }))) } : {}),
+        edges: edges.map((e) => ({ along: e.along.map((a) => ({ ...a, body: named(a.body) })), crossing: e.crossing.map(([p, q]) => [{ ...p, body: named(p.body) }, { ...q, body: named(q.body) }] as [typeof p, typeof q]) })),
+      })),
+    };
   }
 
   /**
