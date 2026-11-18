@@ -10,7 +10,7 @@
 // (`barEdit`). Behaviour copied from the reference app's timeline.
 
 import type { Feature } from "@fission/core";
-import { buildingItems, duplicatedBody, greyedBy, greyedItems, isChamferItem, isCombineItem, isDuplicateItem, isMoveItem, isPiece, isSketchItem, type DesignDocument } from "./document.ts";
+import { buildingItems, duplicatedBody, greyedBy, greyedItems, isChamferItem, isCombineItem, isDuplicateItem, isMoveItem, isPiece, isShellItem, isSketchItem, type DesignDocument } from "./document.ts";
 import { canEditFeature } from "./feature-edit.ts";
 import { moveKindOf } from "./move.ts";
 import { mirrorOf } from "./duplicate.ts";
@@ -253,6 +253,8 @@ export function editOff(item: Feature): string | null {
   if (isMoveItem(item) || isCombineItem(item) || isChamferItem(item) || canEditFeature(item)) return null;
   const name = itemName(item);
   if (isSketchItem(item)) return `${name} is a sketch: open it with Edit Sketch`;
+  // Step 35h2c-app1: the Shell is saved and rebuilt, but its panel comes with the tool (35h2c-app2).
+  if (isShellItem(item)) return `${name} can't be edited yet: its panel comes with the Shell tool`;
   if (!isDuplicateItem(item)) return `${name} has nothing to edit`;
   const from = item.provenance.from[0]?.label;
   const body = from === undefined ? "a body" : isPiece(duplicatedBody(item)) ? `a piece of ${from}` : from;

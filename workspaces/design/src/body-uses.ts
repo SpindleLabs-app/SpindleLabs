@@ -15,12 +15,13 @@
 //   change is (extrude.ts `setExtrudeOperation`).
 
 import type { Feature } from "@fission/core";
-import { bodyItem, chamferOf, combineBodies, extrudeOperation, isChamferItem, isCombineItem, isDuplicateItem, isMoveItem, isPiece, type DesignDocument } from "./document.ts";
+import { bodyItem, chamferOf, combineBodies, extrudeOperation, isChamferItem, isCombineItem, isDuplicateItem, isMoveItem, isPiece, isShellItem, shellOf, type DesignDocument } from "./document.ts";
 
 /** The bodies item `f` works on, by body id: a Move's, a Combine's target and tools, a Duplicate's (Combine bug hunt 11-08), an extrude's operation's. */
 export function bodiesUsed(f: Feature): string[] {
   if (isDuplicateItem(f)) return typeof f.intent.parameters.body === "string" ? [f.intent.parameters.body] : [];
   if (isChamferItem(f)) return [chamferOf(f).body];
+  if (isShellItem(f)) return [shellOf(f).body];
   if (isMoveItem(f)) return Array.isArray(f.intent.parameters.bodies) ? (f.intent.parameters.bodies as string[]) : [];
   if (isCombineItem(f)) {
     const c = combineBodies(f);
@@ -31,11 +32,11 @@ export function bodiesUsed(f: Feature): string[] {
 
 /**
  * The bodies item `f` changes for the items after it: a Move's (placed),
- * a Chamfer's (cut back), a Combine's target (changed) and tools unless kept (used up), an
+ * a Chamfer's (cut back), a Shell's (hollowed out), a Combine's target (changed) and tools unless kept (used up), an
  * operation extrude's bodies picked. A Duplicate changes none.
  */
 export function bodiesChanged(f: Feature): string[] {
-  if (isMoveItem(f) || isChamferItem(f)) return bodiesUsed(f);
+  if (isMoveItem(f) || isChamferItem(f) || isShellItem(f)) return bodiesUsed(f);
   if (isCombineItem(f)) {
     const c = combineBodies(f);
     return c.keepTools ? [c.target] : [c.target, ...c.tools];

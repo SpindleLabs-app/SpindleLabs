@@ -440,6 +440,12 @@ function unitsOf<K extends keyof KernelOps>(op: K, args: KernelOps[K]["args"], s
     case "body_stl":
     case "body_step":
       return sizeOf(a[0] as BodyHandle)?.mesh ?? 0;
+    case "body_shell": {
+      // A shell moves every face in (a pass over the body, timed as its mesh) and cuts the body by those walls
+      // (step 35h2c): a boolean of the body with a copy of itself.
+      const body = sizeOf(a[0] as BodyHandle);
+      return body ? body.mesh + booleanUnits(body, [body]) : 0;
+    }
     case "body_boolean": {
       // An unknown handle is refused at once: the floor.
       const target = sizeOf(a[0] as BodyHandle);

@@ -365,6 +365,15 @@ export interface BooleanResult {
 }
 
 /**
+ * body_shell's answer (step 35h2c): body_boolean's shape. A face or edge
+ * named by the body given is that face or edge of it; one named by body 0
+ * (SHELL_INSIDE, kernel-client.ts) is the inside wall moved in from the given body's
+ * face of that number (turned over), or the inside edge moved in from its
+ * edge. Several bodies when the walls fall apart into pieces.
+ */
+export type ShellResult = BooleanResult;
+
+/**
  * A chamfer's size as the kernel takes it (step 44a): `{ equal: d }` the same
  * distance back along both faces, `{ two: [d1, d2] }` d1 along the first face
  * and d2 along the second, `{ angle: [d, degrees] }` d along the first face,

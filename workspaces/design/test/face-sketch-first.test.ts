@@ -22,7 +22,7 @@ const faceOf = (d: DesignDocument, id: string) => d.sketches.find((s) => s.id ==
 
 test("a new face sketch has a body frame and no first, and reads back as version 22 unchanged", () => {
   const { doc, top } = design();
-  assert.equal(DESIGN_VERSION, 24);
+  assert.equal(DESIGN_VERSION, 25);
   assert.ok(faceOf(doc, top)?.body, "drawn on a face: it records its body frame");
   assert.equal(Object.hasOwn(faceOf(doc, top)!, "first"), false);
   assert.deepEqual(readDesignDocument(json(doc)), doc);
@@ -33,7 +33,7 @@ test("hand-worked upgrade: version 21's face sketch with a body frame opens mark
   // Version 21 data is the same data said as version 21: the top sketch has `body`, so it is marked; the XY sketch has
   // no `face` at all, so nothing is added to it; everything else is as written.
   const opened = readDesignDocument({ ...json(doc), version: 21 });
-  assert.equal(opened.version, 24);
+  assert.equal(opened.version, 25);
   assert.deepEqual(faceOf(opened, top), { ...faceOf(doc, top), first: true });
   assert.equal(faceOf(opened, flat), undefined);
   assert.deepEqual({ ...opened, sketches: [] }, { ...doc, sketches: [] });
