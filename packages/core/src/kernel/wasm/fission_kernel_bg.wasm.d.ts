@@ -16,6 +16,7 @@ export const p6rou1: (a: number) => [number, number, number];
 export const pjftzm: (a: number, b: any, c: any, d: number) => [number, number, number];
 export const pprlx7: (a: number) => [number, number, number];
 export const q4m8zt: (a: any) => [number, number, number, number];
+export const q7nmxa: (a: number, b: any, c: number) => [number, number, number];
 export const qmdw4c: () => [number, number];
 export const qz3hmr: (a: number, b: number) => [number, number, number];
 export const r7w2kx: (a: any, b: any, c: any) => [number, number, number];

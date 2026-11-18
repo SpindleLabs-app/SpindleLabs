@@ -1,6 +1,5 @@
 // Browser check of the Slice page (Slice as its own page, step 1; slice-page.config.mjs), in a real Chromium.
-// - On the normal build (the page is off until released) DESIGN ▾ > Slice still opens the dialog, and #slice shows no page.
-//   `npm run e2e:slice-page` builds one with the page on (dist-slice/, E2E_DIST names another) and checks:
+// (The page has been on in the shipped build since 2026-11-18; E2E_DIST names another build.) It checks:
 // - With a box in the design, the page lists "Body 1" and says "1 body on the plate."; an empty design says nothing is there.
 // - Slice on the page slices the box through the registry's exact files: 100 layers, then 125 at 0.16 mm (20 / 0.16).
 // - Going back to Design and adding a second body, then coming back to Slice, lists both ("2 bodies on the plate.").
@@ -11,12 +10,11 @@ import assert from "node:assert/strict";
 import { existsSync, readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { preview } from "vite";
-import { launch } from "./browser.mjs";
+import { chosen, launch } from "./browser.mjs";
 import { insertPreset, startWithBox } from "./start.mjs";
 
 const DIST = process.env.E2E_DIST ? process.env.E2E_DIST.replace(/\/?$/, "/") : fileURLToPath(new URL("../dist/", import.meta.url));
-if (!existsSync(DIST + "index.html")) throw new Error("build the app first (npm run build, or npm run e2e:slice-page)");
-const WITH_PAGE = Boolean(process.env.E2E_DIST);
+if (!existsSync(DIST + "index.html")) throw new Error("build the app first (npm run build)");
 const PORT = 4618;
 const server = await preview({ build: { outDir: DIST }, preview: { port: PORT, strictPort: true }, logLevel: "error" });
 const url = `http://localhost:${PORT}/`;
@@ -25,7 +23,7 @@ const shots = process.env.SHOTS;
 const errors = [];
 let failed = 0;
 async function check(name, fn) {
-  if (process.env.ONLY && !name.includes(process.env.ONLY)) return;
+  if (!chosen(name)) return;
   try {
     await fn();
     console.log(`ok - ${name}`);
@@ -47,16 +45,6 @@ async function newPage(width = 1280, touch = false, scheme = "dark") {
   return { context, page };
 }
 
-if (!WITH_PAGE) {
-  await check("the shipped build has no Slice page yet: Slice for printing still opens its dialog", async () => {
-    const { context, page } = await newPage();
-    await startWithBox(page);
-    await page.evaluate(() => (location.hash = "#slice"));
-    await until(page, () => document.body.dataset.activeWorkspace === "slice", null, "the placeholder shown");
-    assert.equal(await page.locator(".slice-page").count(), 0, "no Slice page on the shipped build");
-    await context.close();
-  });
-} else {
   await check("the page lists the box as Body 1 on the plate", async () => {
     const { context, page } = await newPage();
     await startWithBox(page);
@@ -275,7 +263,6 @@ if (!WITH_PAGE) {
       }
     }
   });
-}
 
 assert.deepEqual(errors, [], "no page errors");
 await browser.close();

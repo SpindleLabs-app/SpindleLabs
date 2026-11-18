@@ -471,6 +471,24 @@ test("hand-worked: after G92 X/Y/Z the moves are where the nozzle really is", ()
   assert.equal(replay(["G28", "G92 Z5", "G1 Z1 F600"].join("\n")).moves[0].to.z, -4);
 });
 
+test("hand-worked: after G92 X/Y an arc's centre is where it really is (test audit D-8)", () => {
+  // G28 puts the nozzle at x 0; G92 X100 says "you are at 100". G2 X110 Y0 I5 J0: the centre is I, J from where the
+  // printer thinks it is, 100 + 5 = 105 in its numbers, so 105 − 100 = 5 really; the arc ends at 110 − 100 = 10.
+  // Clockwise round (5, 0) from angle 180° down to 0° passes over the top, (5, 5): a half turn of radius 5, 5π mm.
+  const r = replay(["G28", "G92 X100", "G2 X110 Y0 I5 J0 F600"].join("\n"));
+  assert.deepEqual(r.problems, []);
+  const m = r.moves.at(-1)!;
+  assert.deepEqual([m.to.x, m.to.y], [10, 0]);
+  assert.deepEqual(m.arc?.centre, { x: 5, y: 0 });
+  assert.equal(m.arc?.clockwise, true);
+  assert.ok(close(m.arc!.sweep, Math.PI, 1e-12));
+  assert.ok(close(m.length, 5 * Math.PI, 1e-12));
+  // Y too: G92 Y50 at y 0, then G3 X0 Y60 I0 J5 (counter-clockwise round 50 + 5 = 55 in its numbers): centre (0, 5).
+  const y = replay(["G28", "G92 Y50", "G3 X0 Y60 I0 J5 F600"].join("\n")).moves.at(-1)!;
+  assert.deepEqual(y.arc?.centre, { x: 0, y: 5 });
+  assert.deepEqual([y.to.x, y.to.y], [0, 10]);
+});
+
 test("a temperature past 500 °C is a problem and still a temperature, so the printer check sees it", () => {
   const r = replay("M104 S600");
   assert.deepEqual(r.problems.map((p) => p.kind), ["bad-temperature"]);

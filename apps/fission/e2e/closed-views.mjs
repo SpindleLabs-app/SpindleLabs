@@ -28,7 +28,7 @@
 // Run with `node e2e/closed-views.mjs` (after `npm run build`).
 import assert from "node:assert/strict";
 import { preview } from "vite";
-import { launch, untilBodies } from "./browser.mjs";
+import { assertNoErrors, launch, untilBodies, watchErrors } from "./browser.mjs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { clickPlane, EMPTY_TOP } from "./sketch-screen.mjs";
@@ -42,6 +42,7 @@ let failed = false;
 /** A fresh page with the box, the main view's context watched. */
 async function boxPage() {
   const context = await browser.newContext({ viewport: { width: 1280, height: 800 } });
+  watchErrors(context); // every uncaught exception, console.error and failed request fails the run (test audit E-7)
   const page = await context.newPage();
   const warnings = [];
   page.on("console", (m) => /WebGL context|Context Lost/i.test(m.text()) && warnings.push(m.text()));
@@ -185,6 +186,7 @@ async function round(page, first) {
 
 for (const width of [375, 1280]) {
   const context = await browser.newContext({ viewport: { width, height: 667 }, acceptDownloads: true });
+  watchErrors(context); // every uncaught exception, console.error and failed request fails the run (test audit E-7)
   try {
     const page = await context.newPage();
     await page.addInitScript(() => indexedDB.deleteDatabase("fission"));
@@ -209,6 +211,12 @@ for (const width of [375, 1280]) {
   }
 }
 
+try {
+  assertNoErrors();
+} catch (e) {
+  failed = true;
+  console.log(`FAIL ${e.message}`);
+}
 await browser.close();
 await new Promise((resolve) => server.httpServer.close(resolve));
 process.exit(failed ? 1 : 0);

@@ -1,2 +1,4 @@
 /* The top bar's gear: an icon alone, its word kept as its name out of sight (as Save's is), so the bar keeps its room at phone-landscape widths. */
 .settings-button .tool-word { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+/* In the phone's Menu list the gear's row says its word, as AI, Guide and Community do (UI review 2026-11-18, finding 10). */
+@media (max-width: 640px) { .settings-button:is(#topbar-actions > *) .tool-word { position: static; width: auto; height: auto; overflow: visible; clip-path: none; } }
