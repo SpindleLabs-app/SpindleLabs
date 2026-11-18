@@ -73,6 +73,14 @@ export function jgu9kn(p0, p1) {
     return takeFromExternrefTable0(ret[0]);
 }
 
+export function k3tq7e(p0, p1) {
+    const ret = wasm.k3tq7e(p0, p1);
+    if (ret[2]) {
+        throw takeFromExternrefTable0(ret[1]);
+    }
+    return takeFromExternrefTable0(ret[0]);
+}
+
 export function k7vbqz(p0, p1, p2, p3, p4, p5, p6, p7, p8, p9) {
     const ptr0 = passArray8ToWasm0(p0, wasm.__wbindgen_malloc);
     const len0 = WASM_VECTOR_LEN;
@@ -173,6 +181,14 @@ export function r7w2kx(p0, p1, p2) {
     return takeFromExternrefTable0(ret[0]);
 }
 
+export function rbe1a4(p0) {
+    const ret = wasm.rbe1a4(p0);
+    if (ret[2]) {
+        throw takeFromExternrefTable0(ret[1]);
+    }
+    return takeFromExternrefTable0(ret[0]);
+}
+
 export function rk7wq2(p0, p1, p2) {
     const ret = wasm.rk7wq2(p0, p1, p2);
     if (ret[2]) {
@@ -217,6 +233,14 @@ export function vicdld(p0) {
     if (ret[1]) {
         throw takeFromExternrefTable0(ret[0]);
     }
+}
+
+export function vye52n(p0) {
+    const ret = wasm.vye52n(p0);
+    if (ret[2]) {
+        throw takeFromExternrefTable0(ret[1]);
+    }
+    return takeFromExternrefTable0(ret[0]);
 }
 
 export function xqg0dt(p0, p1) {
@@ -378,6 +402,16 @@ function __wbg_get_imports() {
             const ret = result;
             return ret;
         },
+        __wbg_instanceof_Map_b2611749102d7ba3: function(arg0) {
+            let result;
+            try {
+                result = arg0 instanceof Map;
+            } catch (_) {
+                result = false;
+            }
+            const ret = result;
+            return ret;
+        },
         __wbg_instanceof_Uint8Array_828cef2aaacafc31: function(arg0) {
             let result;
             try {
@@ -477,15 +511,19 @@ function __wbg_get_imports() {
             const ret = arg0;
             return ret;
         },
-        __wbindgen_generic_0000000000000002: function(arg0, arg1) {
-            const ret = getArrayU8FromWasm0(arg0, arg1);
+        __wbindgen_generic_0000000000000002: function(arg0) {
+            const ret = arg0;
             return ret;
         },
         __wbindgen_generic_0000000000000003: function(arg0, arg1) {
+            const ret = getArrayU8FromWasm0(arg0, arg1);
+            return ret;
+        },
+        __wbindgen_generic_0000000000000004: function(arg0, arg1) {
             const ret = getStringFromWasm0(arg0, arg1);
             return ret;
         },
-        __wbindgen_generic_0000000000000004: function(arg0) {
+        __wbindgen_generic_0000000000000005: function(arg0) {
             const ret = BigInt.asUintN(64, arg0);
             return ret;
         },
