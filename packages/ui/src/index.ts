@@ -21,6 +21,7 @@ export { openElsewhere, openElsewhereWords, type OpenElsewhere } from "./open-el
 export { commandSearch, matchCommands, shellCommands, type Command, type CommandSearch } from "./command-search.ts";
 export { REPEAT_MS, repeatGuard, type RepeatGuard } from "./press-guard.ts";
 export { keepTypingVisible, takesTyping, typingHidden } from "./keep-typing-visible.ts";
+export { moreSides, SLACK, watchScrollMore } from "./scroll-more.ts";
 export { askName, GCODE_KIND, PNG_KIND, PROJECT_KIND, STL_KIND, baseNameOf, fileNameFor, pickerOf, saveFile, type FileHandle, type SaveKind, type SaveRequest, type SaveResult } from "./save-file.ts";
 export { adoptSkeleton, holdSkeleton, leaveAfter, skeleton, whileLoading, SKELETON_DELAY_MS, SKELETON_FADE_MS, type HeldSkeleton, type SkeletonShape } from "./skeleton.ts";
 export { carryOnRow, filterRows, HOME_NO_MATCH, HOME_NO_PROJECTS, homeRows, homeScreen, SHAPE_WAIT_MS, usedAt, workspacesIn, type HomeParts, type HomeProject, type HomeRow, type HomeScreen } from "./home-screen.ts";

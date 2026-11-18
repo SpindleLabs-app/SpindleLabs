@@ -33,6 +33,8 @@ export function pprlx7(p0: number): any;
 
 export function q4m8zt(p0: string): string;
 
+export function q7nmxa(p0: number, p1: any, p2: number): any;
+
 export function qmdw4c(): string;
 
 export function qz3hmr(p0: Uint8Array): any;
@@ -80,6 +82,7 @@ export interface InitOutput {
     readonly pjftzm: (a: number, b: any, c: any, d: number) => [number, number, number];
     readonly pprlx7: (a: number) => [number, number, number];
     readonly q4m8zt: (a: any) => [number, number, number, number];
+    readonly q7nmxa: (a: number, b: any, c: number) => [number, number, number];
     readonly qmdw4c: () => [number, number];
     readonly qz3hmr: (a: number, b: number) => [number, number, number];
     readonly r7w2kx: (a: any, b: any, c: any) => [number, number, number];

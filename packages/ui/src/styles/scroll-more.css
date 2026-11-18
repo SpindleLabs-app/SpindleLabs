@@ -1,0 +1,8 @@
+/* A row that scrolls sideways fades out at its right edge while more lies past it (scroll-more.ts, UI review 2026-11-18):
+   only at phone width, where the toolbar is one swiped row; the fade is the row's own mask, so its tools and taps are
+   unchanged. The left edge never fades: the toolbar's Search stays pinned there while the row scrolls under it.
+   A mask clips everything inside the row, the menus its buttons open too (fixed, drawn below it), so while a menu is
+   open (its button marked aria-expanded) there is no fade. Only the gradient's alpha counts in a mask, so currentColor stands for "fully shown". */
+@media (max-width: 640px) {
+  .scroll-more[data-more~="right"]:not(:has([aria-expanded="true"])) { -webkit-mask-image: linear-gradient(to left, transparent, currentColor 40px); mask-image: linear-gradient(to left, transparent, currentColor 40px); }
+}

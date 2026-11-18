@@ -22,6 +22,9 @@
 .settings .settings-choice:last-child { border-right: 0; }
 .settings .settings-choice[aria-checked="true"] { background: var(--look-active-fill); color: var(--look-accent-text); box-shadow: inset 0 0 0 1px var(--look-accent); }
 @media (max-width: 640px) { .settings .settings-choice { min-height: var(--look-target-touch); padding: 0 var(--look-space-2); } }
+/* A choice never breaks over two lines ("Follow device" did at 375 px, UI review 2026-11-18): a row of choices too wide
+   for its line puts them under the row's name instead. */
+@media (max-width: 640px) { .settings .settings-choice { white-space: nowrap; } .settings .settings-row:has(> .settings-choices) { flex-wrap: wrap; } }
 .settings .settings-custom { display: flex; flex-direction: column; gap: var(--look-space-2); padding: var(--look-space-3); background: var(--look-field); border: 1px solid var(--look-edge); border-radius: var(--look-radius-s); }
 .settings .settings-custom[hidden] { display: none; }
 .settings .settings-custom-row { cursor: pointer; }
