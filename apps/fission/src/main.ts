@@ -50,6 +50,15 @@ import { vectorWorkspace } from "@fission/vector";
 import { imageWorkspace } from "@fission/image";
 import { layoutWorkspace } from "@fission/layout";
 import { keptSteps } from "./kept-steps.ts";
+import { showNo3d, webglWorks } from "./no-3d.ts";
+import "./styles/no-3d.css";
+
+// No 3D drawing in this browser (bug hunt 2026-11-18 D-11): say so where the loading shapes are and start nothing, rather
+// than shimmer for good over an uncaught error. The wait never settles, so nothing below runs.
+if (!webglWorks(document)) {
+  showNo3d(document);
+  await new Promise<never>(() => {});
+}
 
 const workspaces: WorkspacePlugin[] = [
   designWorkspace,
