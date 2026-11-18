@@ -341,6 +341,7 @@ export function printView(host: HTMLElement, p: Playback): PrintView {
   let shadowLayer = Number.NaN;
   let shadowLaid = 0;
   let disposed = false;
+  let framesDrawn = 0;
   const draw = () => {
     frameRequested = false;
     if (disposed) return; // a frame asked for before dispose must not draw on the lost context
@@ -349,6 +350,9 @@ export function printView(host: HTMLElement, p: Playback): PrintView {
       shadowsStale = false;
     }
     renderer.render(scene, camera);
+    // Frames drawn, for a browser check to wait on a picture drawn after its change rather than a fixed sleep (test audit
+    // 2026-11-18 E-8). One attribute a frame, read by nothing else.
+    canvas.dataset.frames = String(++framesDrawn);
   };
   const redraw = () => {
     if (frameRequested) return;

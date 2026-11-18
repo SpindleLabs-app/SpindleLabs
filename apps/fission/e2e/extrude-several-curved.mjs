@@ -5,7 +5,7 @@
 // failed). Screenshots go to E2E_SHOTS when set. Run with `npm run e2e` (after `npm run build`).
 import assert from "node:assert/strict";
 import { mkdirSync } from "node:fs";
-import { launch } from "./browser.mjs";
+import { assertNoErrors, launch, watchErrors } from "./browser.mjs";
 import { preview } from "vite";
 import { pinProperties } from "./properties.mjs";
 import { closePanels, openPanel, sheetsClearFor } from "./start.mjs";
@@ -13,7 +13,6 @@ import { closePanels, openPanel, sheetsClearFor } from "./start.mjs";
 const server = await preview({ preview: { port: 4411, strictPort: true }, logLevel: "error" });
 const url = "http://localhost:4411/?test-hooks";
 const browser = await launch();
-const errors = [];
 const shots = process.env.E2E_SHOTS;
 if (shots) mkdirSync(shots, { recursive: true });
 
@@ -46,10 +45,7 @@ async function opened(width, touch) {
   const context = await browser.newContext({ viewport: { width, height: width > 700 ? 800 : 812 }, hasTouch: touch });
   const page = await context.newPage();
   await page.addInitScript(() => indexedDB.deleteDatabase("fission"));
-  page.on("pageerror", (e) => errors.push(e.message));
-  page.on("console", (m) => {
-    if (m.type() === "error") errors.push(m.text());
-  });
+  watchErrors(page);
   await page.goto(url + "#design");
   await page.locator("#start-hint").waitFor();
   await pinProperties(page);
@@ -151,6 +147,8 @@ try {
     assert.equal(rows, 3, "the box, the square's body and the circle's body");
     await page.context().close();
   });
+  // Any uncaught exception, console.error or failed request on any page above fails the run (test audit E-7).
+  await check("no page errors, console errors or failed requests", async () => assertNoErrors());
 } finally {
   await browser.close();
   server.httpServer.close();
