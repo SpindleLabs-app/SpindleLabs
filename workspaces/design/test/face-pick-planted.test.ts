@@ -37,7 +37,7 @@ export const FACE_PICK_PLANTS: Plant[] = [
   // The pick's joined number read as the body's own (the second body's faces land on the first's).
   { name: "joined-index-as-own", file: "face-pick", find: "  const drawn = drawnOnFace(body.view, hit.index);", replace: "  const drawn = drawnOnFace(body.view, pick.face);", caught: "differs from the model" },
   // Every plane id taken, not only the origin planes.
-  { name: "any-plane", file: "face-pick", find: "  if (pick.plane != null) return (SKETCH_PLANES as readonly string[]).includes(pick.plane) ? { kind: \"plane\", plane: pick.plane as SketchPlane } : null;", replace: "  if (pick.plane != null) return { kind: \"plane\", plane: pick.plane as SketchPlane };", caught: "sketchSpot differs from the model" },
+  { name: "any-plane", file: "face-pick", find: "    return (SKETCH_PLANES as readonly string[]).includes(pick.plane) ? { kind: \"plane\", plane: pick.plane as SketchPlane } : null;", replace: "    return { kind: \"plane\", plane: pick.plane as SketchPlane };", caught: "sketchSpot differs from the model" },
   // The faces offered to light include the curved ones.
   { name: "lights-curved", file: "face-pick", find: '?.kind === "face") faces.push', replace: '?.kind !== undefined) faces.push', caught: "sketchableFaces differs from the model" },
   // The faces offered counted from the wrong body start.

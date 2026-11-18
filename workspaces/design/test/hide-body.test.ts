@@ -82,7 +82,7 @@ test("the reader takes a hidden list in any order, and refuses each way of break
   assert.throws(refused({ 0: "feature-1" }), NOT_LIST);
   assert.throws(refused(null), NOT_LIST);
   // A sketch may be hidden since Ben's eye on everything (2026-10-29; eyes.test.ts); anything else not a solid feature is refused.
-  const NOT_HIDEABLE = (id: string) => ({ message: `Design data hides ${id}, which is not a body (by its body id), a sketch in the timeline, an origin axis or a folder` });
+  const NOT_HIDEABLE = (id: string) => ({ message: `Design data hides ${id}, which is not a body (by its body id), a sketch or construction in the timeline, an origin axis or a folder` });
   assert.throws(refused(["feature-99"]), NOT_HIDEABLE("feature-99"));
   // Version 6 (35ec): a body by its body id, never its item's id (version 5's form), a body whose item is gone, a sketch's
   // or a Move's "body", or a piece the bodies list doesn't number.
@@ -220,11 +220,11 @@ test("hand-worked: a version 5 file's eyes list items' ids; opened, each solid i
   // folder; version 6 lists the two bodies as body:feature-1 and body:feature-11, the rest unchanged, in the same order.
   const v5 = { ...structuredClone(part()), version: 5, hidden: ["feature-1", "sketch-2", "feature-11", "folder-bodies"] };
   const read = readDesignDocument(v5);
-  assert.equal(read.version, 27);
+  assert.equal(read.version, 28);
   assert.deepEqual(read.hidden, ["body:feature-1", "sketch-2", "body:feature-11", "folder-bodies"]);
   assert.deepEqual([bodyHiddenIn(read, "body:feature-1"), bodyHiddenIn(read, "body:feature-11")], [true, true]);
   // A version 5 list holding what version 5 refused is still refused, in version 6's words.
-  assert.throws(() => readDesignDocument({ ...v5, hidden: ["feature-99"] }), { message: "Design data hides feature-99, which is not a body (by its body id), a sketch in the timeline, an origin axis or a folder" });
+  assert.throws(() => readDesignDocument({ ...v5, hidden: ["feature-99"] }), { message: "Design data hides feature-99, which is not a body (by its body id), a sketch or construction in the timeline, an origin axis or a folder" });
   // And version 5 never listed body ids.
   assert.throws(() => readDesignDocument({ ...v5, hidden: ["body:feature-1"] }), { message: "Design data says version 5 but hides body:feature-1 by a body id, which version 6 brought" });
 });

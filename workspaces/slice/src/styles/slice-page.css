@@ -34,3 +34,27 @@
 .slice-page .slice-page-check input { flex: none; margin: 0; }
 .slice-page #slice-page-slice:not(#none) { background: var(--look-primary-fill); border-color: transparent; color: var(--look-on-accent); box-shadow: var(--look-primary-glow); font-weight: 600; }
 .slice-page #slice-page-preview:not(#none), .slice-page #slice-page-download:not(#none) { background: var(--look-field); color: var(--text-body); box-shadow: none; font-weight: 500; }
+
+/* The page's "first version" note and the Printer settings fold (SP5b2a), as the dialog's. */
+.slice-page .slice-page-untested {
+  margin: 4px 0 8px;
+  font-size: 12px;
+  color: var(--text-dim);
+}
+.slice-page .slice-page-settings {
+  margin: 4px 0 8px;
+}
+.slice-page .slice-page-settings > summary {
+  cursor: pointer;
+  font-weight: 600;
+  margin-bottom: 6px;
+}
+.slice-page .slice-page-settings-words {
+  display: block;
+  font-weight: 400;
+  font-size: 12px;
+  color: var(--text-dim);
+}
+.slice-page .slice-page-settings[open] > summary .slice-page-settings-words {
+  display: none; /* open, the choices say it themselves */
+}
