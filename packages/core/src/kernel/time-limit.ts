@@ -440,6 +440,12 @@ function unitsOf<K extends keyof KernelOps>(op: K, args: KernelOps[K]["args"], s
     case "body_stl":
     case "body_step":
       return sizeOf(a[0] as BodyHandle)?.mesh ?? 0;
+    case "body_shell": {
+      // A shell moves every face in (a pass over the body, timed as its mesh) and cuts the body by those walls
+      // (step 35h2c): a boolean of the body with a copy of itself.
+      const body = sizeOf(a[0] as BodyHandle);
+      return body ? body.mesh + booleanUnits(body, [body]) : 0;
+    }
     case "body_boolean": {
       // An unknown handle is refused at once: the floor.
       const target = sizeOf(a[0] as BodyHandle);
@@ -452,6 +458,11 @@ function unitsOf<K extends keyof KernelOps>(op: K, args: KernelOps[K]["args"], s
       const one = sizeOf(first.body);
       const other = second === null ? one : sizeOf(second.body);
       return one && other ? booleanUnits(one, [other]) : 0;
+    }
+    case "body_construct": {
+      // Reading a pick costs at most a look over its body (a face's centroid sums its triangles): each picked body's mesh.
+      const given = Object.values(a[0] as Record<string, unknown>).flatMap((g) => (typeof g === "object" && g !== null && Object.hasOwn(g, "pick") ? [(g as { pick: MeasurePick }).pick.body] : []));
+      return given.reduce((sum, h) => sum + (sizeOf(h)?.mesh ?? 0), 0);
     }
     case "sketch_outline":
       return sketchUnits((a[0] as unknown[]).length + (a[1] as unknown[]).length + (a[2] as unknown[]).length);

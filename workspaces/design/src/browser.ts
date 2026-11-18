@@ -7,6 +7,7 @@ import { summaryInUnit, type Feature, type GeometryReference, type Unit } from "
 import { ICONS, type IconName } from "@fission/ui";
 import { BUILD_AREA_LABEL, BUILD_AREA_ROW, BUILD_AREA_TITLE } from "@fission/print";
 import { bodyHidden, bodyIdOf, bodyItem, bodyNumbers, buildingItems, combineBodies, EYE_FOLDERS, extrudeOperation, isCombineItem, isPatternItem, isPiece, isHidden, isSketchItem, makesBody, numberedWhenBuilt, ORIGIN_PLANES, presetKinds, profileLabel, type DesignDocument } from "./document.ts";
+import { CONSTRUCT_KINDS, isConstructKind } from "./construct-data.ts";
 import { bodyReference, profileReference } from "./references.ts";
 import { sketchItem } from "./sketch.ts";
 
@@ -47,6 +48,8 @@ const ORIGIN: readonly BrowserNode[] = [
 export function itemIcons(doc: Pick<DesignDocument, "profiles">): (f: Feature) => IconName {
   const kindOf = presetKinds(doc);
   return (f) => {
+    // A construction (step 59a2): the icon of what it makes, as the origin's rows have ("plane", "axis") and the point's.
+    if (f.intent.type === "construct") return isConstructKind(f.intent.parameters.make) ? CONSTRUCT_KINDS[f.intent.parameters.make].makes : "feature";
     const name = kindOf(f) ?? f.intent.type;
     return Object.hasOwn(ICONS, name) ? (name as IconName) : "feature";
   };

@@ -1,0 +1,4 @@
+/* The empty 2D view of the Image workspace (viewer.ts showEmpty puts `image-empty` on the view; UI review 2026-11-18, finding 5): a quiet prompt near the top, so the blank gradient does not look unfinished. It sits above the middle, which stays plain background (apps/fission e2e/image.mjs reads that pixel). Wide screens; tokens only. */
+@media (min-width: 641px) {
+  .image-empty::after { content: "Open a PNG or JPEG to start"; position: absolute; left: 50%; top: 16%; transform: translateX(-50%); padding: 12px 24px; pointer-events: none; white-space: nowrap; color: var(--text-dim); font-size: 16px; background: var(--look-float); border: 1px solid var(--look-edge); border-radius: var(--look-radius-l); }
+}

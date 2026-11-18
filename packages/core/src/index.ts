@@ -1,6 +1,6 @@
 // @fission/core: the shared document model and the bridge to the kernel.
-export { isTrap, KERNEL_RESTARTED, KERNEL_SLICE_STOPPED, KERNEL_TOOK_TOO_LONG, UNKNOWN_BODY_WORDS, KernelClient, KernelError, kernelFailure, latestOnly, type KernelCalls, type KernelOps, type KernelRequest, type KernelResponse } from "./kernel/kernel-client.ts";
-export type { BodyHandle, BodySpec, BooleanOp, BooleanResult, ChamferResult, ChamferSize, EdgeFrom, FaceFrom, BuildPlate, BodyView, DisplayMesh, FaceRole, Frame, KernelErrorKind, KernelFailure, KernelInput, KernelThin, KernelTouch, Loop, MeasureFacts, MeasureGap, Measured, MeasurePick, Motion, Outline, OutlinePiece, P1sPrintFile, PatternSpec, PrintLayer, PrintPath, PrintRole, ShapeSpec, SlicedPrint, SupportStyle, SketchArc, SketchCircle, SketchLine, SketchOutline, SketchRegion, SketchRegions, SliceProgress, SliceStage, SolidPlace, SolidProblem, SolidProblemKind, SolidReport, SolidVerdict, StlFile } from "./kernel/kernel-types.ts";
+export { isTrap, KERNEL_RESTARTED, SHELL_INSIDE, KERNEL_SLICE_STOPPED, KERNEL_TOOK_TOO_LONG, UNKNOWN_BODY_WORDS, KernelClient, KernelError, kernelFailure, latestOnly, type KernelCalls, type KernelOps, type KernelRequest, type KernelResponse } from "./kernel/kernel-client.ts";
+export type { BodyHandle, BodySpec, BooleanOp, BooleanResult, ChamferResult, ChamferSize, ShellResult, ConstructGiven, ConstructMade, ConstructMake, EdgeFrom, FaceFrom, BuildPlate, BodyView, DisplayMesh, FaceRole, Frame, KernelErrorKind, KernelFailure, KernelInput, KernelThin, KernelTouch, Loop, MeasureFacts, MeasureGap, Measured, MeasurePick, Motion, Outline, OutlinePiece, P1sPrintFile, PrintLayer, PrintPath, PrintRole, ShapeSpec, SlicedPrint, SupportStyle, SketchArc, SketchCircle, SketchLine, SketchOutline, SketchRegion, SketchRegions, SliceProgress, SliceStage, SolidPlace, SolidProblem, SolidProblemKind, SolidReport, SolidVerdict, StlFile, WorldPoint, PatternSpec } from "./kernel/kernel-types.ts";
 // The ?all and ?community preview switches (preview.ts).
 export { PREVIEW_ALL, PREVIEW_ALL_KEY, PREVIEW_COMMUNITY, PREVIEW_COMMUNITY_KEY, previews, readPreviews, setPreviews, type Previews } from "./preview.ts";
 // DRAFT model interfaces (see each file).
@@ -39,7 +39,7 @@ export type { ChangeCause, ChangeNote, ChangeNoteState } from "./model/change-no
 export { ChangeNotes, noteText } from "./model/change-notes.ts";
 export type { Command, CommandSpec, ParamSpec, Parsed } from "./model/commands.ts";
 export { commandListSchema, commandSchema, MAX_EXPLANATION, parseCommand, parseCommandList } from "./model/commands.ts";
-export type { Feature, Intent, Origin, ParameterValue, ProfilesParameter, Provenance, RegionParameter, Timeline } from "./model/feature.ts";
+export type { AnswerParameter, Feature, Intent, NamesParameter, Origin, ParameterValue, ProfilesParameter, Provenance, RegionParameter, Timeline } from "./model/feature.ts";
 export { describeProvenance, WORKSPACE_NAMES, workspaceName } from "./model/feature.ts";
 export type { FileFormat, FileFormatInfo, FileHead, FileImporter, FileRoute, Identified } from "./model/files.ts";
 export { claimedFormat, FILE_FORMATS, formatInfo, HEAD_BYTES, identifyFile, routeFiles } from "./model/files.ts";

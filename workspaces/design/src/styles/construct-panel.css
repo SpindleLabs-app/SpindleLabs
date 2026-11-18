@@ -1,0 +1,43 @@
+/* The Construct panel (step 59a2, construct-panel.ts): a card at the top of
+   the properties as Chamfer's is (the mode's bright blue edge, OK filled
+   bright blue). The Type, a row for each thing the construction is made
+   from (the pick button holds its name and what fills it, then its list and
+   ×), the number, the kernel's answer or refusal, then the buttons. At phone
+   width it is the only thing in the Properties sheet while open, so the view
+   stays clear to tap faces, edges and corners. Colours are tokens only. */
+.construct-panel { border-left: 3px solid var(--look-accent, var(--accent)); padding: 4px 0 8px 10px; margin-bottom: 12px; }
+.construct-panel h2 { margin: 0 0 6px; }
+.construct-panel .construct-panel-row { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin: 6px 0; }
+.construct-panel .construct-panel-row[hidden] { display: none; }
+.construct-panel .construct-panel-legend { font-size: 0.9em; color: var(--text-b9c3d1); }
+.construct-panel .construct-panel-row select, .construct-panel .construct-panel-row input { width: 9em; min-width: 0; padding: 4px 6px; background: var(--look-field, var(--page)); border: 1px solid var(--line); color: inherit; border-radius: var(--look-radius-s, 6px); }
+.construct-panel .construct-panel-slot { display: flex; align-items: stretch; gap: 6px; margin: 6px 0; }
+.construct-panel .construct-panel-pick { flex: 1 1 auto; min-width: 0; display: flex; flex-direction: column; align-items: flex-start; gap: 2px; padding: 4px 8px; text-align: left; border: 1px solid var(--line); border-radius: var(--look-radius-s, 6px); background: var(--look-field, var(--page)); color: inherit; }
+.construct-panel .construct-panel-active .construct-panel-pick { border-color: var(--look-accent, var(--accent)); box-shadow: 0 0 0 1px var(--look-accent, var(--accent)); }
+.construct-panel .construct-panel-value { overflow-wrap: anywhere; color: var(--look-accent-text, var(--accent-text)); }
+.construct-panel .construct-panel-value.construct-panel-empty { color: var(--text-8b95a3); }
+.construct-panel .construct-panel-slot select { flex: 0 1 8em; width: 8em; min-width: 0; padding: 4px 6px; background: var(--look-field, var(--page)); border: 1px solid var(--line); color: inherit; border-radius: var(--look-radius-s, 6px); }
+.construct-panel .construct-panel-slot select[hidden], .construct-panel .construct-panel-drop[hidden] { display: none; }
+.construct-panel .construct-panel-drop { flex: none; width: 2em; }
+.construct-panel .construct-panel-note { margin: 6px 0; font-size: 0.85em; color: var(--text-8b95a3); overflow-wrap: anywhere; }
+.construct-panel .construct-panel-note[hidden] { display: none; }
+.construct-panel .construct-panel-note.bad { color: var(--danger); }
+.construct-panel .construct-panel-buttons { display: flex; gap: 6px; margin-top: 6px; }
+.construct-panel #construct-ok { background: var(--look-primary-fill, var(--accent-deep)); border-color: transparent; color: var(--look-on-accent, var(--on-accent)); font-weight: 600; box-shadow: var(--look-primary-glow, none); }
+/* The shell's `#workspace button:hover` (theme.css) outranks the rule above, as it did Combine's OK (#504). */
+.construct-panel #construct-ok:hover:not(:disabled) { background: var(--look-primary-fill, var(--accent-deep)); }
+.construct-panel button:disabled { opacity: 0.45; }
+@media (max-width: 700px), ((pointer: coarse) and (max-width: 1199px)) {
+  .construct-panel button, .construct-panel select, .construct-panel input { min-height: 44px; }
+}
+@media (max-width: 640px) {
+  /* Alone in the phone's Properties sheet: the title, the type and the rows, then the number and the buttons. */
+  .construct-panel:not([hidden]) ~ * { display: none !important; }
+  .construct-panel:not([hidden]) { padding-bottom: 6px; }
+  .construct-panel h2 { font-size: 1.05em; margin: 0 0 4px; }
+  .construct-panel .construct-panel-row { margin: 4px 0; }
+  .construct-panel .construct-panel-row select, .construct-panel .construct-panel-row input { width: 55%; }
+  .construct-panel .construct-panel-slot { flex-wrap: wrap; }
+  .construct-panel .construct-panel-slot select { flex: 1 1 40%; width: auto; }
+  .construct-panel .construct-panel-legend { font-size: 0.8em; white-space: nowrap; }
+}

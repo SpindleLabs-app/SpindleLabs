@@ -9,7 +9,7 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { preview } from "vite";
-import { launch } from "./browser.mjs";
+import { assertNoErrors, launch, watchErrors } from "./browser.mjs";
 import { pinProperties } from "./properties.mjs";
 import { chooseFile, sheetsClearFor, startWithBox } from "./start.mjs";
 
@@ -20,6 +20,7 @@ const url = `http://localhost:${PORT}/?test-hooks#design`;
 let failed = 0;
 async function check(name, fn) {
   const context = await browser.newContext({ viewport: { width: 1280, height: 800 }, acceptDownloads: true });
+  watchErrors(context); // every uncaught exception, console.error and failed request fails the run (test audit E-7)
   try {
     await fn(context);
     console.log(`ok - ${name}`);
@@ -245,6 +246,12 @@ await check("a change, then a reload 200 ms later: the change is kept, and so ar
   await volume(page, "24,000 mm³"); // and the width before it: 40 × 30 × 20
 });
 
+try {
+  assertNoErrors();
+} catch (e) {
+  failed++;
+  console.log(`not ok - ${e.message}`);
+}
 await browser.close();
 await new Promise((r) => server.httpServer.close(r));
 process.exit(failed ? 1 : 0);

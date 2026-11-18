@@ -93,7 +93,19 @@ export function shares(cmds, n, seconds = SECONDS) {
   return load.map((_, k) => cmds.filter((_, i) => owner[i] === k));
 }
 
+/** Why a share must not run with this environment, or null. Nineteen checks
+ * skip every case whose name lacks `ONLY`, so a leftover ONLY would run none
+ * of them and still pass (test audit E-11): a share runs every check. */
+export function refusal(env) {
+  return env.ONLY ? `ONLY is set (${JSON.stringify(env.ONLY)}): a share runs every check, so unset it` : null;
+}
+
 if (import.meta.url === `file://${process.argv[1]}`) {
+  const why = refusal(process.env);
+  if (why) {
+    console.log(why);
+    process.exit(1);
+  }
   const [k, n] = process.argv.slice(2).map(Number);
   if (!Number.isInteger(k) || k < 1 || k > n) throw new Error(`usage: node e2e/shard.mjs <1..n> <n>, got ${k} ${n}`);
   const mine = shares(allChecks(), n)[k - 1];

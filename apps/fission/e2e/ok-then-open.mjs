@@ -6,7 +6,7 @@
 // is Combine: Box 2 cut from Box 1 (a sixth timeline item, feature-6). The kernel's answers are held `window.kernelDelay`.
 // Run with `npm run e2e` (after `npm run build`).
 import assert from "node:assert/strict";
-import { launch } from "./browser.mjs";
+import { chosen, launch } from "./browser.mjs";
 import { chooseFile } from "./start.mjs";
 import { preview } from "vite";
 
@@ -87,7 +87,7 @@ async function combineReady(page) {
 }
 let failed = 0;
 async function check(name, fn, flags) {
-  if (process.env.ONLY && !name.startsWith(process.env.ONLY)) return;
+  if (!chosen(name, (only, n) => n.startsWith(only))) return;
   const o = await opened(flags);
   try {
     await fn(o);

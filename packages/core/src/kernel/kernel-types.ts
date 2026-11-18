@@ -365,6 +365,15 @@ export interface BooleanResult {
 }
 
 /**
+ * body_shell's answer (step 35h2c): body_boolean's shape. A face or edge
+ * named by the body given is that face or edge of it; one named by body 0
+ * (SHELL_INSIDE, kernel-client.ts) is the inside wall moved in from the given body's
+ * face of that number (turned over), or the inside edge moved in from its
+ * edge. Several bodies when the walls fall apart into pieces.
+ */
+export type ShellResult = BooleanResult;
+
+/**
  * A chamfer's size as the kernel takes it (step 44a): `{ equal: d }` the same
  * distance back along both faces, `{ two: [d1, d2] }` d1 along the first face
  * and d2 along the second, `{ angle: [d, degrees] }` d along the first face,
@@ -501,3 +510,46 @@ export interface Measured {
   centres?: MeasureGap;
   angle?: number;
 }
+
+/** A point in the world, in mm. */
+export type WorldPoint = [number, number, number];
+
+/**
+ * One thing a construction is made from (step 59): a pick on a kept body (a
+ * corner, edge or face by its kernel index, as `MeasurePick` names one, never
+ * the whole body), or a plane, axis or point given as a value (one made
+ * before, or an origin plane or axis). A given plane or axis is only its
+ * point and normal or direction: the kernel refuses any other key.
+ */
+export type ConstructGiven = { pick: MeasurePick } | { plane: { point: WorldPoint; normal: WorldPoint } } | { axis: { point: WorldPoint; direction: WorldPoint } } | { point: WorldPoint };
+
+/**
+ * What to make (step 59, the kernel's `body_construct`): its kind and its
+ * slots, each a `ConstructGiven`. Distances in mm, angles in degrees.
+ */
+export type ConstructMake =
+  | { kind: "offset_plane"; plane: ConstructGiven; distance: number }
+  | { kind: "angle_plane"; plane: ConstructGiven; line: ConstructGiven; angle: number }
+  | { kind: "mid_plane"; first: ConstructGiven; second: ConstructGiven }
+  | { kind: "plane_through_points"; first: ConstructGiven; second: ConstructGiven; third: ConstructGiven }
+  | { kind: "plane_through_line_and_point"; line: ConstructGiven; point: ConstructGiven }
+  | { kind: "axis_through_points"; first: ConstructGiven; second: ConstructGiven }
+  | { kind: "axis_along"; line: ConstructGiven }
+  | { kind: "axis_where_planes_meet"; first: ConstructGiven; second: ConstructGiven }
+  | { kind: "axis_square_to_plane"; plane: ConstructGiven; point: ConstructGiven }
+  | { kind: "point_at"; point: ConstructGiven }
+  | { kind: "point_midway"; edge: ConstructGiven }
+  | { kind: "point_centre"; round: ConstructGiven }
+  | { kind: "point_where_line_crosses"; line: ConstructGiven; plane: ConstructGiven }
+  | { kind: "point_where_planes_meet"; first: ConstructGiven; second: ConstructGiven; third: ConstructGiven };
+
+/**
+ * What `body_construct` made, in the world, each within 10 nm of what it was
+ * made from: a plane's or axis's `point` is the foot of the world's origin
+ * on it (the same however it was made), `near` a point of it beside what it
+ * was made from, where the app draws it; normals and directions are unit.
+ */
+export type ConstructMade =
+  | { kind: "plane"; point: WorldPoint; normal: WorldPoint; near: WorldPoint }
+  | { kind: "axis"; point: WorldPoint; direction: WorldPoint; near: WorldPoint }
+  | { kind: "point"; point: WorldPoint };

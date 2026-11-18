@@ -24,12 +24,18 @@ export interface RegionParameter {
 /** A Design extrude's profiles after its first (Design data version 18): each a sketch and, when it has several, the region of it. */
 export type ProfilesParameter = readonly { sketch: string; region?: RegionParameter }[];
 
+/** A Design construction's names by slot (step 59a1): each a plane, axis, point, face, edge, corner or earlier construction by name. */
+export type NamesParameter = Readonly<Record<string, string>>;
+
+/** A Design construction's last answer (step 59a1): a plane, axis or point in the world, as the kernel gave it. */
+export type AnswerParameter = { readonly kind: "plane" | "axis" | "point"; readonly point: readonly [number, number, number]; readonly normal?: readonly [number, number, number]; readonly direction?: readonly [number, number, number]; readonly near?: readonly [number, number, number] };
+
 /** What a feature is for, in words and numbers. */
 export interface Intent {
   /** e.g. "box", "extrude", later "hole", "pocket", "engrave". */
   type: string;
   /** Lengths in mm, angles in degrees; a list of ids where a feature names several things (a Design Move's bodies); a Design extrude's sketch region and its other profiles. */
-  parameters: Record<string, ParameterValue | readonly string[] | RegionParameter | ProfilesParameter>;
+  parameters: Record<string, ParameterValue | readonly string[] | RegionParameter | ProfilesParameter | NamesParameter | AnswerParameter>;
   /** One line for people, e.g. "Box: 40 × 30 × 20 mm". */
   summary: string;
   /** Optional: why it is there, e.g. "mounting hole for an M3 screw". */
