@@ -150,6 +150,14 @@ export function q4m8zt(p0) {
     }
 }
 
+export function q7nmxa(p0, p1, p2) {
+    const ret = wasm.q7nmxa(p0, p1, p2);
+    if (ret[2]) {
+        throw takeFromExternrefTable0(ret[1]);
+    }
+    return takeFromExternrefTable0(ret[0]);
+}
+
 export function qmdw4c() {
     let deferred1_0;
     let deferred1_1;
@@ -237,6 +245,14 @@ export function vicdld(p0) {
 
 export function vye52n(p0) {
     const ret = wasm.vye52n(p0);
+    if (ret[2]) {
+        throw takeFromExternrefTable0(ret[1]);
+    }
+    return takeFromExternrefTable0(ret[0]);
+}
+
+export function w3hx8e(p0, p1, p2) {
+    const ret = wasm.w3hx8e(p0, p1, isLikeNone(p2) ? 0 : addToExternrefTable0(p2));
     if (ret[2]) {
         throw takeFromExternrefTable0(ret[1]);
     }
@@ -354,6 +370,10 @@ function __wbg_get_imports() {
         },
         __wbg_apply_a910804df6e1e433: function() { return handleError(function (arg0, arg1, arg2) {
             const ret = arg0.apply(arg1, arg2);
+            return ret;
+        }, arguments); },
+        __wbg_call_187d372bd5fdd4aa: function() { return handleError(function (arg0, arg1, arg2) {
+            const ret = arg0.call(arg1, arg2);
             return ret;
         }, arguments); },
         __wbg_call_6137034ef55c9d0f: function() { return handleError(function (arg0, arg1) {

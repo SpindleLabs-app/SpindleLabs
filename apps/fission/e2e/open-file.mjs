@@ -11,10 +11,10 @@ import assert from "node:assert/strict";
 import { boot, check, fails, savedMark, status, storedProjects, volumeIs } from "./save-picker-lib.mjs";
 import { startWithBox } from "./start.mjs";
 import { pinProperties } from "./properties.mjs";
+import { chosen } from "./browser.mjs";
 
 const b = await boot(4797);
-const only = process.env.ONLY;
-const want = (k) => !only || only.includes(k);
+const want = (k) => chosen(k, (only, key) => only.includes(key));
 const mark = (page) => page.textContent("#save-status");
 async function saveFile(page) {
   const [download] = await Promise.all([page.waitForEvent("download"), page.click("#save")]);

@@ -41,7 +41,7 @@ test("a Scale or a Mirror that is not text is named as what it is, never written
   refused(m, "Design move feature-3: scale an object is not a number above 0 other than 1");
   const c = copied();
   c.timeline.features[2].intent.parameters.mirror = {};
-  refused(c, "Design duplicate feature-3 mirrors across an object, which is not an origin plane (XY, XZ or YZ)");
+  refused(c, "Design duplicate feature-3 mirrors across an object, which is not an origin plane (XY, XZ or YZ) or a construction plane");
 });
 
 test("a Copy whose name is empty gets a fresh one, Copy 1", () => {
@@ -95,7 +95,7 @@ test("version 5 to 16 data written without bodies' numbers gets the ones it show
     delete d.nextBody;
     d.version = v;
     const r = readDesignDocument(d);
-    assert.deepEqual([r.version, r.bodies, r.nextBody], [25, [{ id: "body:feature-1", number: 1 }], 2], `version ${v}`);
+    assert.deepEqual([r.version, r.bodies, r.nextBody], [28, [{ id: "body:feature-1", number: 1 }], 2], `version ${v}`);
   }
 });
 

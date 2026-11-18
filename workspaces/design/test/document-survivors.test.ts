@@ -103,7 +103,7 @@ test("a Move's body that is a list, not an id, is refused by the Move's own chec
 
 test("a body's id must start with body: (catches the ^ dropped) and its number's message names a list as a list (catches the text check made always true)", () => {
   const d = clone(partDocument("box", 40, 30, 20)) as Record<string, any>;
-  assert.equal(d.version, 25);
+  assert.equal(d.version, 28);
   const bodies = (b: unknown) => ({ ...clone(d), bodies: [b] });
   refused(bodies({ id: "xbody:feature-1", number: 1 }), 'Design body xbody:feature-1 is not "body:" and the id of an item that makes a body, or a piece of a Combine or of an extrude that joins, cuts or intersects');
   refused(bodies({ id: "body:feature-1", number: [1] }), "Design body body:feature-1's number a list is not a counting number");
@@ -120,9 +120,9 @@ test("the eyes can't hide a Move (catches the solid-or-sketch check made always 
   const d = clone(insertMove(partDocument("box", 40, 30, 20), ["body:feature-1"], { ...NO_MOVE, x: 10 }).doc) as Record<string, any>;
   // Version 6 lists a body by its body id (35ec): a Move's "body" is refused either way, the box's body reads.
   d.hidden = ["body:feature-2"];
-  refused(d, "Design data hides body:feature-2, which is not a body (by its body id), a sketch in the timeline, an origin axis or a folder");
+  refused(d, "Design data hides body:feature-2, which is not a body (by its body id), a sketch or construction in the timeline, an origin axis or a folder");
   d.hidden = ["feature-2"];
-  refused(d, "Design data hides feature-2, which is not a body (by its body id), a sketch in the timeline, an origin axis or a folder");
+  refused(d, "Design data hides feature-2, which is not a body (by its body id), a sketch or construction in the timeline, an origin axis or a folder");
   d.hidden = ["body:feature-1"];
   assert.deepEqual(reread(d).hidden, ["body:feature-1"]);
 });
@@ -166,7 +166,7 @@ test("upgrading version 5: a hidden Move keeps its item id, so the refusal names
   assert.deepEqual(reread(d).hidden, ["body:feature-1"]);
   // A Move makes no body, so "feature-3" stays as written and is refused as such; the mutants turn it into "body:feature-3".
   d.hidden = ["feature-3"];
-  refused(d, "Design data hides feature-3, which is not a body (by its body id), a sketch in the timeline, an origin axis or a folder");
+  refused(d, "Design data hides feature-3, which is not a body (by its body id), a sketch or construction in the timeline, an origin axis or a folder");
 });
 
 test("upgrading version 5: a hidden entry that is a list is refused as a list, not read as the text it turns into (catches `typeof id === \"string\"` made true)", () => {
@@ -174,7 +174,7 @@ test("upgrading version 5: a hidden entry that is a list is refused as a list, n
   // String(["body:feature-1"]) is "body:feature-1", a body id, which version 5 never wrote: the mutant refuses it with that
   // message; the real check skips anything not text and the hidden check refuses it as a list.
   d.hidden = [["body:feature-1"]];
-  refused(d, "Design data hides a list, which is not a body (by its body id), a sketch in the timeline, an origin axis or a folder");
+  refused(d, "Design data hides a list, which is not a body (by its body id), a sketch or construction in the timeline, an origin axis or a folder");
   // A text body id in version 5 is refused by the upgrade (the control: the check is there and names it).
   d.hidden = ["body:feature-1"];
   refused(d, "Design data says version 5 but hides body:feature-1 by a body id, which version 6 brought");
@@ -216,11 +216,11 @@ test("hiding a piece of an item that isn't there is refused by the hidden check,
   d.bodies.push({ id: "body:feature-2/piece:1", number: 3 });
   d.nextBody = 4;
   // The control: feature-2 exists but is no Combine (35f1: a piece is a Combine's), so the hidden check refuses its piece.
-  refused(d, "Design data hides body:feature-2/piece:1, which is not a body (by its body id), a sketch in the timeline, an origin axis or a folder");
+  refused(d, "Design data hides body:feature-2/piece:1, which is not a body (by its body id), a sketch or construction in the timeline, an origin axis or a folder");
   // feature-7 is no item: the hidden check refuses it there (the mutant lets it through to the list's check).
   d.hidden = ["body:feature-7/piece:1"];
   d.bodies[2].id = "body:feature-7/piece:1";
-  refused(d, "Design data hides body:feature-7/piece:1, which is not a body (by its body id), a sketch in the timeline, an origin axis or a folder");
+  refused(d, "Design data hides body:feature-7/piece:1, which is not a body (by its body id), a sketch or construction in the timeline, an origin axis or a folder");
 });
 
 test("upgrading version 5: only solids' item ids become body ids; a hidden entry naming no item stays as written (catches the non-solid branch's [] made a list of one text)", () => {
@@ -230,5 +230,5 @@ test("upgrading version 5: only solids' item ids become body ids; a hidden entry
   // Worked by hand: "Stryker was here" names no item, so the real upgrade keeps it as written and the hidden check
   // refuses that text; the mutant would turn it into "body:Stryker was here" and refuse that instead.
   d.hidden = ["Stryker was here"];
-  refused(d, "Design data hides Stryker was here, which is not a body (by its body id), a sketch in the timeline, an origin axis or a folder");
+  refused(d, "Design data hides Stryker was here, which is not a body (by its body id), a sketch or construction in the timeline, an origin axis or a folder");
 });

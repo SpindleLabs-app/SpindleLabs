@@ -145,6 +145,12 @@ test("angles the kernel can't tell from a full turn or from no turn are refused 
 test("the centre is three numbers in model space (±100 km)", () => {
   ok(round({ centre: [0, 1e8, 0] })), ok(round({ centre: [-1e8, 0, 0] })), ok(round({ centre: [0, 0.9e8, 0] }));
   assert.equal(patternProblem(round({ centre: [0, 1.1e8, 0] })), "The centre must be within 100 km (100,000,000 mm) of the origin.");
+  // The minus side too (test audit D-10): 0.9 × and 1.1 × 100 km below zero on each axis.
+  for (const axis of [0, 1, 2]) {
+    const at = (c: number) => round({ centre: [0, 1, 2].map((k) => (k === axis ? c : 0)) as [number, number, number] });
+    ok(at(-0.9e8));
+    assert.equal(patternProblem(at(-1.1e8)), "The centre must be within 100 km (100,000,000 mm) of the origin.", `axis ${axis}`);
+  }
   assert.equal(patternProblem(round({ centre: [0, 0] as unknown as [number, number, number] })), "Type the centre in mm.");
   assert.equal(patternProblem(round({ centre: [0, 0, 0, 0] as unknown as [number, number, number] })), "Type the centre in mm.");
 });

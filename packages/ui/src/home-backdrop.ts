@@ -1323,6 +1323,12 @@ export interface Backdrop {
   /** Whether drawing it has been too slow on this computer (a timed window over SLOW_MS): the screen suggests gentle motion. */
   readonly slowed: boolean;
   readonly mode: "live" | "still" | "off";
+  /**
+   * For the browser check only (?test-hooks): from now on the canvas carries the turntable's angle (data-yaw, radians) and
+   * how many moving frames were drawn (data-frames), and each timed frame counts `extraMs` more than it took, standing in
+   * for a slow computer (under a paused clock a draw takes 0 ms).
+   */
+  probe(extraMs: number): void;
 }
 
 interface Env {
@@ -1511,6 +1517,9 @@ export function homeBackdrop(canvas: HTMLCanvasElement, env: Env = { win: window
   let story = 0;
   const costs: number[] = [];
   let drawn = 0;
+  /** The browser check's extra milliseconds a frame (`probe`), or null: then nothing is reported. */
+  let probing: number | null = null;
+  let framesDrawn = 0;
   const motion = win.matchMedia?.("(prefers-reduced-motion: reduce)");
   const nav = win.navigator as Navigator & { deviceMemory?: number; connection?: { saveData?: boolean } };
   const weak = lowEnd({ cores: nav.hardwareConcurrency, memory: nav.deviceMemory, saveData: nav.connection?.saveData });
@@ -1648,6 +1657,7 @@ export function homeBackdrop(canvas: HTMLCanvasElement, env: Env = { win: window
     const push = top.length > 0 && !calm ? extrudeAmount(seconds) : 0;
     const pushed = push.toFixed(2);
     if (canvas.dataset.extrude !== pushed) canvas.dataset.extrude = pushed; // what the browser check waits on
+    if (probing !== null) canvas.dataset.yaw = yaw.toFixed(5);
     const lifted = (z: number) => (top.length > 0 && Math.abs(z - topZ) < 1e-3 ? z + push : z);
     const atRaw = (x: number, y: number, z: number) => {
       const p = project(x, y, z, yaw, pitch);
@@ -2095,7 +2105,8 @@ export function homeBackdrop(canvas: HTMLCanvasElement, env: Env = { win: window
     const begun = win.performance.now();
     story = Math.max(0, (now - t0) / 1000); // a frame can be stamped a moment before the start
     draw(story);
-    const cost = win.performance.now() - begun;
+    const cost = win.performance.now() - begun + (probing ?? 0);
+    if (probing !== null) canvas.dataset.frames = String(++framesDrawn);
     // The first frames after a start are not timed; then the middle of each SLOW_WINDOW decides (a few slow frames on a
     // busy page are not a slow computer).
     if (++drawn <= WARM_FRAMES) return;
@@ -2209,6 +2220,9 @@ export function homeBackdrop(canvas: HTMLCanvasElement, env: Env = { win: window
     },
     get slowed() {
       return slowed;
+    },
+    probe(extraMs) {
+      probing = extraMs;
     },
     get mode() {
       return canvas.dataset.backdrop as "live" | "still" | "off";

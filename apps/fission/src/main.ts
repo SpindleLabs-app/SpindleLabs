@@ -27,6 +27,7 @@ import { bringForward, forget, MAX_PROJECT_NAME, rename as renameKept, keepStora
 import { listedProjects } from "./projects.ts";
 import { startPrintLog } from "./print-log.ts";
 import { versionList, versionTime, type VersionPlace } from "@fission/ui";
+import { watchScrollMore } from "@fission/ui";
 import { createAssistant } from "./assistant.ts";
 import { startOffline } from "./offline.ts";
 import { openLatest, watchKernel } from "./kernel-lost.ts";
@@ -320,6 +321,8 @@ if (__TEST_HOOKS__ && new URLSearchParams(location.search).has("test-hooks"))
       historyBusy: () => ctx.history.working(), // held work running by itself, not a question waiting on the person (SL #397)
       // The home screen's turning picture shows these edges instead of the open project's (e2e/home-backdrop.mjs, STL=).
       homeStandIn: (lines: number[] | null, surface?: { positions: number[]; indices: number[] } | null) => home?.showStandIn(lines, surface),
+      // The home picture reports its angle and frames, each frame counted `ms` slower (e2e/home-backdrop.mjs, run under a paused clock).
+      backdropCost: (ms: number) => home?.probeBackdrop(ms),
     },
   });
 
@@ -359,12 +362,14 @@ const PRISTINE: Record<PaneId, Slots> = {
 };
 /** Four empty slots shaped like `pane`'s as the page first had them. */
 const emptySlots = (pane: PaneId): Slots => Object.fromEntries(SLOT_KEYS.map((key) => [key, PRISTINE[pane][key].cloneNode(false) as HTMLElement])) as Slots;
-const pool = new WarmPool<WorkspaceId, PaneId, { slots: Slots; view: MountedWorkspace }>({
+const pool = new WarmPool<WorkspaceId, PaneId, { slots: Slots; view: MountedWorkspace; unwatch: () => void }>({
   mount(pane, id) {
     const slots = emptySlots(pane);
     placeSlots(pane, slots);
+    // At phone width the toolbar is one row you swipe: its edge fades while tools lie past it (@fission/ui scroll-more.ts).
+    const unwatch = watchScrollMore(slots.toolbar);
     const view = workspaces.find((w) => w.id === id)!.mount(paneCtx(pane, slots));
-    return { slots, view };
+    return { slots, view, unwatch };
   },
   sleep(pane, _id, { view }) {
     view.sleep?.();
@@ -374,7 +379,10 @@ const pool = new WarmPool<WorkspaceId, PaneId, { slots: Slots; view: MountedWork
     placeSlots(pane, slots);
     view.wake?.();
   },
-  unmount: (_pane, _id, { view }) => view.unmount(), // asleep: its slots are already out of the page
+  unmount: (_pane, _id, { view, unwatch }) => {
+    unwatch();
+    view.unmount(); // asleep: its slots are already out of the page
+  },
 });
 // DESIGN ▾ (U0f2b): one button naming the page on screen, its menu the
 // workspaces listed (listed-workspaces.ts: Design and Slice in the public
@@ -599,7 +607,8 @@ if (everyWorkspace) {
   toggle.setAttribute("aria-pressed", "false");
   toggle.addEventListener("click", () => {
     if (split) return closeSplit();
-    const id = defaultSplit(splitEntries, shownWorkspace())?.id;
+    // Split opens beside Design with Image, as before the Slice page was a working workspace; Slice is one pick away in the choice.
+    const id = (defaultSplit(splitEntries.filter((e) => e.id !== "slice"), shownWorkspace()) ?? defaultSplit(splitEntries, shownWorkspace()))?.id;
     if (id) mountSplit(id);
   });
   $("viewport").append(toggle);
@@ -1827,8 +1836,10 @@ phone.addEventListener("change", () => {
       // Combine's operation and OK once its target and a tool are picked (or an edited Combine's), its hint over the view gone (35f1d).
       (props.querySelector("#combine-panel:not([hidden])") !== null && document.querySelector("#combine-hint[hidden]") !== null) ||
       // Chamfer's size boxes and OK once an edge is picked, its hint over the view gone (44a-app2).
-      (props.querySelector("#chamfer-panel:not([hidden])") !== null && document.querySelector("#chamfer-hint[hidden]") !== null);
-    const again = props.querySelector<HTMLElement>("#combine-panel:not([hidden])")?.dataset.shows ?? "";
+      (props.querySelector("#chamfer-panel:not([hidden])") !== null && document.querySelector("#chamfer-hint[hidden]") !== null) ||
+      // Construct's rows, lists and number (step 59a2): the sheet opens with it, a tap on the view puts it away to pick.
+      props.querySelector("#construct-panel:not([hidden])") !== null;
+    const again = (props.querySelector<HTMLElement>("#combine-panel:not([hidden])") ?? props.querySelector<HTMLElement>("#construct-panel:not([hidden])"))?.dataset.shows ?? "";
     const restarted = now && again !== "" && again !== shows;
     shows = again;
     if (now === wanted && !(turned && now) && !restarted) return;

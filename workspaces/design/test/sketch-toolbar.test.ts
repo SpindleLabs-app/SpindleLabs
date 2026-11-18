@@ -307,7 +307,7 @@ test("the sketch panel no longer has tool buttons (they moved to the toolbar), o
   const slot = doc.createElement("aside");
   doc.body.append(slot);
   const noop = () => {};
-  const panel = sketchPanel(slot, { pickPlane: noop, cancel: noop, grid: noop, gridSnap: noop, finish: noop, extrude: noop, lookAt: noop });
+  const panel = sketchPanel(slot, { pickPlane: noop, pickConstruct: noop, cancel: noop, grid: noop, gridSnap: noop, finish: noop, extrude: noop, lookAt: noop });
   panel.showEditing("Sketch 1", "10", false, "circle");
   assert.equal(slot.querySelectorAll("[id^=sketch-tool-]").length, 0);
   assert.match(slot.querySelector("#sketch-help")!.textContent!, /^Click the centre/);

@@ -1148,6 +1148,7 @@ export class ViewportView {
     this.image!.sheet = { mesh, texture, widthMm: sheet.widthMm, heightMm: sheet.heightMm };
     this.host.scene.add(mesh);
     this.element.dataset.image = `${image.width} x ${image.height} px, ${+sheet.widthMm.toPrecision(12)} x ${+sheet.heightMm.toPrecision(12)} mm`; // read by the e2e test
+    this.element.classList.remove("image-empty");
     if (first) this.frameImage();
   }
 
@@ -1158,6 +1159,7 @@ export class ViewportView {
     this.enter2d(layer);
     this.removeSheet();
     this.element.dataset.image = "none"; // read by the e2e test
+    this.element.classList.add("image-empty"); // styles/image-empty.css: the prompt over an empty view
   }
 
   /** Switches this view to the top-down 2D mode on `layer`, keeping its 3D camera to give back; does nothing more when already there. */
@@ -1182,6 +1184,7 @@ export class ViewportView {
     this.image = null;
     freeImageLayers.push(layer);
     delete this.element.dataset.image;
+    this.element.classList.remove("image-empty");
     this.camera.layers.set(0);
     this.cube.element.hidden = false;
     this.controls.enableRotate = true;
@@ -1933,7 +1936,8 @@ export class Viewer implements SharedViewport {
     // own blending when it is not `transparent` only for CustomBlending, so the alpha is mixed by hand.
     const behindBody = { transparent: false, blending: THREE.CustomBlending, blendSrc: THREE.SrcAlphaFactor, blendDst: THREE.OneMinusSrcAlphaFactor, depthTest: false, depthWrite: false };
     for (const p of planes) {
-      const corners: SketchXY[] = [[0, 0], [2 * half, 0], [2 * half, 2 * half], [0, 2 * half]];
+      const from = p.centred ? -half : 0;
+      const corners: SketchXY[] = [[from, from], [from + 2 * half, from], [from + 2 * half, from + 2 * half], [from, from + 2 * half]];
       const world = corners.map((c) => toWorld(p.plane, c));
       const g = new THREE.BufferGeometry();
       g.setAttribute("position", new THREE.Float32BufferAttribute(world.flat(), 3));
@@ -1966,8 +1970,10 @@ export class Viewer implements SharedViewport {
     clearGroup(this.originPlanes);
     const half = Math.max(10, 0.8 * this.bodyFraming().radius);
     const behindBody = { transparent: false, blending: THREE.CustomBlending, blendSrc: THREE.SrcAlphaFactor, blendDst: THREE.OneMinusSrcAlphaFactor, depthTest: false, depthWrite: false };
-    for (const { plane } of shown.planes) {
-      const world = ([[0, 0], [2 * half, 0], [2 * half, 2 * half], [0, 2 * half]] as SketchXY[]).map((c) => toWorld(plane, c));
+    for (const { plane, centred } of shown.planes) {
+      const lo = centred === true ? -half : 0;
+      const hi = centred === true ? half : 2 * half;
+      const world = ([[lo, lo], [hi, lo], [hi, hi], [lo, hi]] as SketchXY[]).map((c) => toWorld(plane, c));
       const g = new THREE.BufferGeometry();
       g.setAttribute("position", new THREE.Float32BufferAttribute(world.flat(), 3));
       g.setIndex([0, 1, 2, 0, 2, 3]);

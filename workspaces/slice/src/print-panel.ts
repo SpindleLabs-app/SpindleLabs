@@ -28,7 +28,10 @@ import {
   PRICE_KEY,
   readPrice,
   rememberedPrice,
+  settingsLine,
   settingsWords,
+  rememberedSettingsOpen,
+  SETTINGS_OPEN_KEY,
   WARM_UP_KEY,
   PLATE_OPTIONS,
   printFileName,
@@ -131,17 +134,51 @@ export function printPanel(doc: Document, parts: PrintPanelParts): PrintPanel {
   heading.textContent = "Print";
   element.append(heading);
 
+  // First version, not test-printed (placeholders never pretend to work): the page says so until a real test print passes (H3a).
+  const untested = doc.createElement("p");
+  untested.id = "slice-page-untested";
+  untested.className = "slice-page-untested";
+  untested.textContent = "First version: these files haven't been test-printed yet, so open one in your printer's slicer or a G-code viewer to check it before printing it.";
+  // The printer's settings (file, plate, nozzle, quality, walls, infill, fits) fold into one section, closed to a line of
+  // words unless left open (remembered); Supports, Warm-up loop and Better grip are per print, so they stay outside it
+  // and out of the presets (Ben, 2026-11-16, as the dialog).
+  const settings = doc.createElement("details");
+  settings.id = "slice-page-settings";
+  settings.className = "slice-page-settings";
+  const settingsSummary = doc.createElement("summary");
+  const settingsName = doc.createElement("span");
+  settingsName.textContent = "Printer settings";
+  const settingsWordsEl = doc.createElement("span");
+  settingsWordsEl.className = "slice-page-settings-words";
+  settingsSummary.append(settingsName, settingsWordsEl);
+  const choicesBox = doc.createElement("div");
+  choicesBox.className = "slice-page-settings-choices";
+  settings.append(settingsSummary, choicesBox);
+  settings.open = rememberedSettingsOpen(parts.storage);
+  settings.addEventListener("toggle", () => {
+    try {
+      (parts.storage as Storage | null)?.setItem?.(SETTINGS_OPEN_KEY, settings.open ? "open" : "closed");
+    } catch {
+      // storage blocked: it still stays as left for this page
+    }
+  });
+  const showSettings = () => {
+    settingsWordsEl.textContent = settingsLine({ layerHeight: choices.layerHeight, walls: choices.walls, infill: choices.infill, format, plate, nozzle });
+  };
+  element.append(untested, settings);
+
   const controls: HTMLSelectElement[] = [];
   /** Puts every control back to what the state says (a preset was picked); each choice and tick adds its own. */
   const syncs: (() => void)[] = [];
   /** Marks the preset picked as changed (set once the presets bar exists). */
   let presetsChanged = () => {};
-  const addChoice = <T>(c: Choice<T>): HTMLSelectElement => {
+  const addChoice = <T>(c: Choice<T>, id: string, into: HTMLElement = element): HTMLSelectElement => {
     const label = doc.createElement("label");
     label.className = "slice-page-choice";
     label.append(doc.createTextNode(c.label));
     const select = doc.createElement("select");
     select.className = "dark-select";
+    select.id = id;
     c.options.forEach((o, i) => {
       const opt = doc.createElement("option");
       opt.value = String(i);
@@ -152,22 +189,23 @@ export function printPanel(doc: Document, parts: PrintPanelParts): PrintPanel {
     select.addEventListener("change", () => {
       c.pick(c.options[Number(select.value)].value);
       presetsChanged();
+      showSettings();
     });
-    syncs.push(() => (select.value = String(Math.max(0, c.options.findIndex((o) => o.value === c.read())))));
+    syncs.push(() => {
+      select.value = String(Math.max(0, c.options.findIndex((o) => o.value === c.read())));
+      showSettings();
+    });
     label.append(select);
     controls.push(select);
-    element.append(label);
+    into.append(label);
     return select;
   };
   let showHint: () => void = () => undefined;
   const numbers = (list: readonly number[], unit: string) => list.map((v) => ({ label: `${v}${unit}`, value: v }));
-  addChoice({ label: "Quality", options: QUALITY_OPTIONS, current: choices.layerHeight, read: () => choices.layerHeight, pick: (v: number) => (choices = { ...choices, layerHeight: v }) });
-  addChoice({ label: "Walls", options: numbers(WALL_OPTIONS, ""), current: choices.walls, read: () => choices.walls, pick: (v: number) => (choices = { ...choices, walls: v }) });
-  addChoice({ label: "Infill", options: numbers(INFILL_OPTIONS, " %"), current: choices.infill, read: () => choices.infill, pick: (v: number) => (choices = { ...choices, infill: v }) });
   addChoice({ label: "Supports", options: SUPPORT_OPTIONS, current: choices.supports, read: () => choices.supports, pick: (v: PrintChoices["supports"]) => {
       choices = { ...choices, supports: v };
       showHint(); // the hint offers the other way once the choice changes
-    } });
+    } }, "slice-page-supports");
 
   // The file: the P1S's own print file (plate and nozzle matter to it only) or plain G-code for another printer.
   const plateSelect: { el: HTMLSelectElement | null } = { el: null };
@@ -185,8 +223,8 @@ export function printPanel(doc: Document, parts: PrintPanelParts): PrintPanel {
       format = v;
       plateAndNozzleMatter();
     },
-  });
-  plateSelect.el = addChoice({ label: "Build plate", options: PLATE_OPTIONS, current: plate, read: () => plate, pick: (v: BuildPlate) => (plate = v) });
+  }, "slice-page-format", choicesBox);
+  plateSelect.el = addChoice({ label: "Build plate", options: PLATE_OPTIONS, current: plate, read: () => plate, pick: (v: BuildPlate) => (plate = v) }, "slice-page-plate", choicesBox);
   nozzleSelect.el = addChoice({
     label: "Nozzle",
     options: NOZZLE_OPTIONS,
@@ -200,7 +238,10 @@ export function printPanel(doc: Document, parts: PrintPanelParts): PrintPanel {
         // storage blocked: the choice still holds for this page
       }
     },
-  });
+  }, "slice-page-nozzle", choicesBox);
+  addChoice({ label: "Quality", options: QUALITY_OPTIONS, current: choices.layerHeight, read: () => choices.layerHeight, pick: (v: number) => (choices = { ...choices, layerHeight: v }) }, "slice-page-quality", choicesBox);
+  addChoice({ label: "Walls", options: numbers(WALL_OPTIONS, ""), current: choices.walls, read: () => choices.walls, pick: (v: number) => (choices = { ...choices, walls: v }) }, "slice-page-walls", choicesBox);
+  addChoice({ label: "Infill", options: numbers(INFILL_OPTIONS, " %"), current: choices.infill, read: () => choices.infill, pick: (v: number) => (choices = { ...choices, infill: v }) }, "slice-page-infill", choicesBox);
 
   const button = doc.createElement("button");
   button.type = "button";
@@ -371,7 +412,8 @@ export function printPanel(doc: Document, parts: PrintPanelParts): PrintPanel {
     : null;
   fitsRow.hidden = fits === null;
   fitsOpen.addEventListener("click", () => fits?.ask());
-  element.insertBefore(fitsRow, button);
+  settings.append(fitsRow);
+  showSettings();
   const showProgress = (): (() => void) => {
     meter.removeAttribute("value");
     stage.textContent = progressWords(null);

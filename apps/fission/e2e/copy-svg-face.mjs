@@ -5,7 +5,7 @@
 // The top face is the control. Needs `?test-hooks` for the camera.
 import assert from "node:assert/strict";
 import { mkdirSync } from "node:fs";
-import { launch, browserName } from "./browser.mjs";
+import { assertNoErrors, browserName, launch, watchErrors } from "./browser.mjs";
 import { decodePng } from "./png.mjs";
 import { preview } from "vite";
 import { pinProperties } from "./properties.mjs";
@@ -14,7 +14,6 @@ import { chooseShape, closePanels, gridSnapOn, openPanel, sheetsClearFor, startW
 const server = await preview({ preview: { port: 4399, strictPort: true }, logLevel: "error" });
 const url = "http://localhost:4399/?test-hooks";
 const browser = await launch();
-const errors = [];
 const shots = process.env.E2E_SHOTS;
 if (shots) mkdirSync(shots, { recursive: true });
 
@@ -32,10 +31,7 @@ async function fresh(width = 1280, touch = false) {
         if (log.length > 40) log.shift();
       }, true);
   });
-  page.on("pageerror", (e) => errors.push(e.message));
-  page.on("console", (m) => {
-    if (m.type() === "error") errors.push(m.text());
-  });
+  watchErrors(page);
   await page.goto(url + "#design");
   await startWithBox(page); // a new project starts empty (U0c): the 40 × 30 × 20 box, inserted
   return sheetsClearFor(page); // phone: an open sheet (U5) is closed before the timeline, Undo, Redo or the view's buttons are pressed
@@ -294,6 +290,8 @@ try {
     await lCopy(page, "bottom");
     await page.context().close();
   });
+  // Any uncaught exception, console.error or failed request on any page above fails the run (test audit E-7).
+  await check("no page errors, console errors or failed requests", async () => assertNoErrors());
 } finally {
   await browser.close();
   await server.close();
