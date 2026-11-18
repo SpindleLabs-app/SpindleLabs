@@ -1125,6 +1125,9 @@ const projects = listedProjects(document, {
 /** A new, empty project in place of the open one (the home screen's New, and "+" on the design tabs). */
 async function startNewProject(keepNow = false) {
   await started;
+  // An OK still being checked lands in the project left behind first, as Open waits (app bug hunt 2026-11-18, E-3:
+  // the home screen's New project dropped it without a word).
+  await okLanded();
   openings++; // a project still opening is never kept or counted as reopened
   endOffer();
   guard.finished();

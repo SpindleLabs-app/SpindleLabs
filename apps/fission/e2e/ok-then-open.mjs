@@ -1,7 +1,7 @@
 // Browser check: OK, then another project opened (Open… of a file, File > Projects in this browser > Open) while the
 // kernel still checks the OK (app-wide hunt 2026-11-14, S-1). The step was dropped from the project left behind with
 // no question and no word; a reload or close asks in this state (SL #708 item 1) and the design tabs wait for it.
-// Rule: Open waits for the OK, so the step is in the project left behind.
+// Rule: Open waits for the OK, so the step is in the project left behind; so does the home screen's New project (R3).
 // The design is combine.mjs's: Box 1 40 × 30 × 20, Box 2 the same moved (20, 15, 10), Box 3 moved 100 along x; the step
 // is Combine: Box 2 cut from Box 1 (a sixth timeline item, feature-6). The kernel's answers are held `window.kernelDelay`.
 // Run with `npm run e2e` (after `npm run build`).
@@ -47,7 +47,7 @@ async function openFile(page, file, n) {
   await page.setInputFiles("#open-file", { name: `${file.name}.spindle`, mimeType: "application/json", buffer: Buffer.from(JSON.stringify(file)) });
   await until(page, (n) => document.querySelectorAll("#timeline li[data-item]").length === n, n, `${file.name} open`);
 }
-async function opened() {
+async function opened(flags = "combine") {
   const context = await browser.newContext({ viewport: { width: 1280, height: 800 }, acceptDownloads: true });
   const page = await context.newPage();
   await page.addInitScript(() => {
@@ -66,7 +66,12 @@ async function opened() {
   const asked = [];
   page.on("pageerror", (e) => errors.push(e.message));
   page.on("dialog", (d) => (asked.push(`${d.type()}: ${d.message().slice(0, 80)}`), d.accept().catch(() => {})));
-  await page.goto(`http://localhost:${PORT}/?test-hooks&combine#design`);
+  await page.goto(`http://localhost:${PORT}/?test-hooks&${flags}#design`);
+  if (flags === "all") {
+    // The home screen comes first there: closed, as a person would to reach the design.
+    await page.locator("#home-close").waitFor({ timeout: 40000 });
+    await page.click("#home-close");
+  }
   await page.locator("#start-hint").waitFor();
   return { context, page, errors, asked };
 }
@@ -81,9 +86,9 @@ async function combineReady(page) {
   await page.selectOption("#combine-operation", "cut");
 }
 let failed = 0;
-async function check(name, fn) {
+async function check(name, fn, flags) {
   if (process.env.ONLY && !name.startsWith(process.env.ONLY)) return;
-  const o = await opened();
+  const o = await opened(flags);
   try {
     await fn(o);
     console.log(`ok - ${name}`);
@@ -156,6 +161,29 @@ try {
     console.log(`  R2: at Open ${JSON.stringify(busy)}; said ${JSON.stringify(told)}; browser dialogs ${JSON.stringify(asked)}; the project left behind holds [${left}]`);
     assert.equal(left, `${ALL} feature-6`, "the Combine is in the project left behind, as stored");
   });
+  // App bug hunt 2026-11-18, E-3: the home screen's New project (behind ?all) did not wait, as Open did.
+  for (const held of [0, 1500]) {
+    await check(`R3 (${held ? `kernel held ${held} ms` : "control: the OK landed first"}): Combine's OK, then File > Home… > New project: the Combine is in the project left behind`, async ({ page }) => {
+      await openFile(page, FILE("Left behind"), 5);
+      await calm(page);
+      const first = await projectId(page);
+      await combineReady(page);
+      await page.evaluate((d) => (window.kernelDelay = d), held);
+      await page.click("#combine-ok");
+      if (held) await until(page, () => document.getElementById("combine-ok")?.dataset.busy === "1", null, "OK busy while the kernel checks", 5000);
+      else await until(page, () => document.getElementById("combine-panel")?.hidden === true, null, "the Combine recorded");
+      await chooseFile(page, "file-home");
+      await page.locator("#home-new").waitFor();
+      await page.click("#home-new");
+      await page.evaluate(() => (window.kernelDelay = 0));
+      await page.waitForTimeout(held ? 5000 : 500);
+      await rebuilt(page);
+      await page.waitForTimeout(1500);
+      const left = await itemsStored(page, first);
+      console.log(`  R3 held ${held}: the project left behind holds [${left}]`);
+      assert.equal(left, `${ALL} feature-6`, "the Combine is in the project left behind, as stored");
+    }, "all");
+  }
 } finally {
   await browser.close();
   await server.close?.();
