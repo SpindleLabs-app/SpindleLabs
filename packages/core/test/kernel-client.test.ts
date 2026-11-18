@@ -415,6 +415,32 @@ function withFakeDocument<T>(fn: (page: { hidden: boolean; fire(type: string): v
   return fn(page).finally(() => (g.document = real));
 }
 
+test("a page already hidden before the call (no event while it waits) keeps its healthy kernel (test audit D-9)", (t) =>
+  withFakeDocument((page) =>
+    withFakeWorker(
+      async (client, old) => {
+        t.mock.timers.enable({ apis: ["setTimeout", "Date"], now: 1_000_000 });
+        let heard = 0;
+        client.onRestart(() => heard++);
+        old.ready(1);
+        // The tab went to the background before the call was made, so no visibilitychange or freeze fires while it
+        // waits, and the timer is on time: only document.hidden says the worker got no CPU time.
+        page.hidden = true;
+        const call = client.call("body_count");
+        t.mock.timers.tick(DEADLINE * 1.1);
+        t.mock.timers.tick(DEADLINE * 1.1);
+        assert.equal(old.terminated, false, "a hidden page is not blamed on the kernel");
+        assert.equal(heard, 0);
+        // Shown again, it answers within its limit and is used.
+        page.hidden = false;
+        t.mock.timers.tick(DEADLINE * 0.9);
+        old.answer(1, 0);
+        assert.equal(await call, 0);
+      },
+      { floorMs: DEADLINE },
+    ),
+  ));
+
 test("a phone that sleeps mid-call does not make a healthy kernel 'take too long' (hidden page, frozen page, late timer)", (t) =>
   withFakeDocument((page) =>
     withFakeWorker(
@@ -531,6 +557,24 @@ test("a started kernel that crashes in the middle of a call is started again, ne
     const next = client.call("body_count");
     fresh.answer((fresh.posted[0] as { id: number }).id, 0);
     assert.equal(await next, 0, "later calls work on the fresh kernel");
+  }));
+
+test("a crash or trap while a slice waits says the kernel restarted, never that the slice was stopped (test audit D-7)", () =>
+  withFakeWorker(async (client, old) => {
+    old.ready(1);
+    // A slice running and an edit behind it; the worker crashes (out of memory, say): nobody pressed Stop, so both
+    // fail as restarted. "The slice was stopped." would tell the user they stopped it and hide the restart.
+    const sliced = client.call("slice_stl", new Uint8Array(84), 0.2, 2, 15, "off");
+    const edit = client.call("body_count");
+    assert.equal(old.fail("Uncaught Error: planted crash"), true);
+    await assert.rejects(sliced, (e: KernelError) => e.message === KERNEL_RESTARTED);
+    await assert.rejects(edit, (e: KernelError) => e.message === KERNEL_RESTARTED);
+    // The same for a trap the kernel reports on the slice's own call.
+    const fresh = FakeWorker.last;
+    fresh.ready(1);
+    const again = client.call("print_file_stl", new Uint8Array(84), 0.2, 2, 15, "off", "textured", "standard", true, false);
+    fresh.reply(stoppedReply((fresh.posted[0] as { id: number }).id));
+    await assert.rejects(again, (e: KernelError) => e.message === KERNEL_RESTARTED);
   }));
 
 test("the default floor is 10 s: a quick call on a busy device is never cut short at 9 s", (t) =>
