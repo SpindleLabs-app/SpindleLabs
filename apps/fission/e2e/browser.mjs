@@ -63,6 +63,30 @@ export function assertNoErrors(what = "no page errors, console errors or failed 
   if (seen.length) throw new Error(`${what}, but ${seen.length}:\n  ${seen.join("\n  ")}`);
 }
 
+/** Checks chosen under ONLY so far in this file. */
+let chosenCount = 0;
+let onlyArmed = false;
+/**
+ * Whether the check `name` runs: always, unless ONLY is set, then when `match(ONLY, name)` (by default, its name holds
+ * ONLY). With ONLY set, a file in which no check was chosen fails as it exits ("ONLY matched nothing"), so a stray ONLY
+ * (an env file, a matrix variable) never runs zero checks and reads "all passed" (test audit 2026-11-18 E-11).
+ */
+export function chosen(name, match = (only, n) => n.includes(only)) {
+  const only = process.env.ONLY;
+  if (!only) return true;
+  if (!onlyArmed) {
+    onlyArmed = true;
+    process.on("exit", () => {
+      if (chosenCount > 0) return;
+      console.log(`not ok - ONLY=${JSON.stringify(only)} matched no check in this file: nothing was tested`);
+      process.exitCode = 1;
+    });
+  }
+  const yes = Boolean(match(only, name));
+  if (yes) chosenCount++;
+  return yes;
+}
+
 /** Launches the chosen browser; `args`, command-line switches for Chromium (e2e/kernel-restart.mjs caps WebAssembly memory). */
 export function launch(args = []) {
   // E2E_CHROMIUM runs the Chromium checks on another build, for example CI's

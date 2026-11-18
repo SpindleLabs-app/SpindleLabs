@@ -124,3 +124,31 @@ test("hand-worked: watchErrors records each kind of error but the allowed and th
   assert.throws(() => assertNoErrors(), /but 4:\n {2}uncaught: boom\n/);
   assertNoErrors(); // the list was emptied by the failure: a later check is not failed again by the same errors
 });
+
+// Test audit 2026-11-18 E-11: a check that skips by ONLY goes through browser.mjs's chosen(), so a file where ONLY matched
+// nothing fails instead of printing "all passed" having run no check.
+test("every check that reads ONLY does it through chosen()", () => {
+  for (const [f, src] of Object.entries(sources)) {
+    if (f === "browser.mjs" || f === "checks.test.mjs" || !allChecks().map(fileOf).includes(f)) continue;
+    assert.ok(!/process\.env\.ONLY/.test(src), `${f} reads ONLY itself: use chosen(name) from browser.mjs`);
+  }
+});
+
+test("hand-worked: ONLY matching no check fails the file as it exits; matching one, or unset, does not", async () => {
+  const { spawnSync } = await import("node:child_process");
+  const browser = new URL("./browser.mjs", import.meta.url).href;
+  // A file of two checks, "alpha one" and "beta two", that prints what it ran and exits 0 itself.
+  const file = `import { chosen } from ${JSON.stringify(browser)};
+    for (const n of ["alpha one", "beta two"]) if (chosen(n)) console.log("ran " + n);
+    process.exit(0);`;
+  const run = (only) => spawnSync(process.execPath, ["--input-type=module", "-e", file], { env: { ...process.env, ONLY: only }, encoding: "utf8" });
+  const none = run("gamma");
+  assert.equal(none.status, 1, "ONLY=gamma: no check chosen, so the file fails");
+  assert.match(none.stdout, /not ok - ONLY="gamma" matched no check in this file/);
+  const one = run("beta");
+  assert.equal(one.status, 0);
+  assert.equal(one.stdout, "ran beta two\n");
+  const all = run("");
+  assert.equal(all.status, 0);
+  assert.equal(all.stdout, "ran alpha one\nran beta two\n");
+});
