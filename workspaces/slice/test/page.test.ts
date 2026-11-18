@@ -403,6 +403,25 @@ test("a printer preset picked puts every setting in (the selects, ticks, file, p
   assert.match(doc.querySelector(".slice-page-fits-words")?.textContent ?? "", /High Flow/, "the fits line follows the nozzle");
 });
 
+test("a printer preset picked straight after a download lets the next press through: it asks for different settings (found by the merge queue's slice-presets check)", async () => {
+  const stored = new Map<string, string>();
+  const settings = { layerHeight: 0.12, walls: 4, infill: 40, supports: "off", warmUp: true, betterGrip: false, format: "p1s", plate: "smooth", nozzle: "standard" };
+  stored.set("spindlelabs.slice.presets", JSON.stringify({ version: 1, presets: [{ id: "p-1", name: "Strong", printer: "bambu-p1s", settings, updatedAt: 1 }] }));
+  const storage = { getItem: (k: string) => stored.get(k) ?? null, setItem: (k: string, v: string) => void stored.set(k, v) };
+  const saved: unknown[] = [];
+  const { doc, panel } = panelIn(
+    async () => ({ layers: 5, filamentMm: 1, filamentG: 1, printTimeS: 60, unprintedVolume: 0, package: new Uint8Array([1]) }),
+    objects,
+    { storage, save: async (r) => (saved.push(r), { status: "saved", name: "x.gcode.3mf" }) },
+  );
+  await panel.download();
+  const list = doc.querySelector("#slice-presets-list") as unknown as HTMLSelectElement;
+  list.value = "p-1";
+  list.dispatchEvent(new (doc.defaultView as unknown as { Event: typeof Event }).Event("change"));
+  await panel.download();
+  assert.equal(saved.length, 2);
+});
+
 test("Printer fits: the row shows only where the page can save a test piece, says typical sizes until measured, and its button opens the calibration", () => {
   const without = panelIn(async () => ({}));
   assert.equal((without.doc.querySelector(".slice-page-fits") as unknown as HTMLElement).hidden, true);

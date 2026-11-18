@@ -389,6 +389,8 @@ export function printPanel(doc: Document, parts: PrintPanelParts): PrintPanel {
   const applyPreset = (v: Parameters<typeof presetSettingsOf>[0] & object) => {
     const x = presetSettingsOf(v);
     if (!x) return;
+    downloadRepeats.reset(); // other settings: the next press asks for something new
+    previewRepeats.reset();
     choices = { ...choices, layerHeight: x.layerHeight, walls: x.walls, infill: x.infill }; // supports, warm-up loop and Better grip are per print: a preset leaves them
     format = x.format;
     plate = x.plate;
@@ -587,6 +589,8 @@ export function printPanel(doc: Document, parts: PrintPanelParts): PrintPanel {
     if (running || flipTo === null) return;
     const to = flipTo;
     choices = { ...choices, supports: to };
+    downloadRepeats.reset();
+    previewRepeats.reset();
     for (const sync of syncs) sync();
     presetsChanged();
     showHint();
