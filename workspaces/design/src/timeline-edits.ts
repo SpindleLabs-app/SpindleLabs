@@ -16,6 +16,7 @@ import { bodyWords, readings, shapings } from "./body-uses.ts";
 import type { Feature } from "@fission/core";
 import { bodyIdOf, bodyItem, combineBodies, isCombineItem, EYE_ROWS, eyeOrder, isExtrudeJoin, isHidden, isOperationExtrude, isPiece, isDuplicateItem, isMoveItem, isSketchItem, isConstructItem, makesBody, NAME_LIMIT, numberBodies, numberedWhenBuilt, operationMakers, ORIGIN_PLANES, nameKey, relabelled, shown, takenNames, type DesignDocument } from "./document.ts";
 import { faceFeature, isFacePlane } from "./face-sketch.ts";
+import { renamedSummary } from "./summary-names.ts";
 
 /** The undo step each timeline edit is recorded as, from the item's name ("Delete Sketch 1"). */
 export const TIMELINE_STEPS = {
@@ -299,19 +300,20 @@ export function renameItem(doc: DesignDocument, id: string, typed: string): Rena
     const other = doc.timeline.features.find((f) => f.id !== id && nameKey(itemName(f)) === nameKey(name))!;
     return { refused: "taken", message: `${itemName(other)} is already the name of another item: each item needs its own name, since messages name items by them` };
   }
-  return { doc: withTimeline(doc, renamedInWords(relabelled(doc.timeline.features, id, name), id, old, name), doc.timeline.marker) };
+  return { doc: withTimeline(doc, renamedInWords(doc.timeline.features, relabelled(doc.timeline.features, id, name), id), doc.timeline.marker) };
 }
 
 /**
- * The features with the old name `old` of item `id` said as `name` in the descriptions of the items made from it (their
- * provenance names it): "Mirror of Base across the YZ plane", "Move Base by …", "Cut Box 2 from Base" (SL #524 item 1, as
- * Fusion names an item by its name now). Only the whole name: renaming "Box 1" leaves "Box 10" alone.
+ * The features after a rename (`after`, their provenance naming item `id` anew) with the descriptions of the items made
+ * from it said again with the new name: "Mirror of Base across the YZ plane", "Move Base by …", "Cut Box 2 from Base"
+ * (SL #524 item 1, as Fusion names an item by its name now). Each description is said again from its own kind's words
+ * (summary-names.ts), never by replacing text, so renaming "Box" leaves "Box 2" alone and an item named "XY" or "5"
+ * changes no plane or number (SL #819); a description that can't be said again from its parameters stays as it is.
  */
-function renamedInWords(features: readonly Feature[], id: string, old: string, name: string): Feature[] {
-  const whole = new RegExp(`(?<![\\p{L}\\p{N}])${old.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}(?![\\p{L}\\p{N}])`, "gu");
-  return features.map((f) => {
+function renamedInWords(before: readonly Feature[], after: Feature[], id: string): Feature[] {
+  return after.map((f, i) => {
     if (f.id === id || !f.provenance.from.some((p) => p.workspace === "design" && p.id === id)) return f;
-    const summary = f.intent.summary.replace(whole, () => name);
+    const summary = renamedSummary(before[i], f);
     return summary === f.intent.summary ? f : { ...f, intent: { ...f.intent, summary } };
   });
 }
