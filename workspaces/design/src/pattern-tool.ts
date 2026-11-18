@@ -12,7 +12,7 @@
 import type { DisplayMesh, Motion } from "@fission/core";
 import { bodiesChanged } from "./body-uses.ts";
 import type { DesignDocument } from "./document.ts";
-import { FULL_TURN, KERNEL_INPUT_WORDS, PATTERN_AXES, type PatternAxis, type PatternValues } from "./pattern-values.ts";
+import { FULL_TURN, KERNEL_INPUT_WORDS, PATTERN_AXES, turnAxisItem, type PatternAxis, type PatternValues, type TurnAxis } from "./pattern-values.ts";
 import type { Scene } from "./scene.ts";
 
 type Point = [number, number, number];
@@ -34,7 +34,8 @@ export interface PatternTyped {
   direction2: PatternAxis;
   spacing2: string;
   count2: string;
-  axis: PatternAxis;
+  /** X, Y, Z or a construction axis ("construct:<id>", step 59a3b), which has no centre. */
+  axis: TurnAxis;
   centre: [string, string, string];
   count3: string;
   angle: string;
@@ -48,13 +49,15 @@ const numberOf = (text: string): number => (text.trim() === "" ? 0 : Number(text
  * The boxes as a Pattern's values, for `patternProblem` to judge: a row's
  * direction, spacing and count; a grid's with its second direction; round
  * an axis, the centre, count and angle, an empty angle being a full turn
- * (Fusion's default). Counts are read as typed, so "2.5" is refused in
+ * (Fusion's default); round a construction axis no centre (its line is
+ * where it turns, 59a3b), whatever the hidden centre boxes hold. Counts are read as typed, so "2.5" is refused in
  * `patternProblem`'s words, never rounded.
  */
 export function readPatternBoxes(t: PatternTyped): PatternValues {
   if (t.kind === "circular") {
     const angle = t.angle.trim() === "" ? FULL_TURN : Number(t.angle.trim());
-    return { kind: "circular", axis: t.axis, centre: t.centre.map(numberOf) as Point, count: numberOf(t.count3), angle, join: t.join };
+    const centre = turnAxisItem(t.axis) === null ? { centre: t.centre.map(numberOf) as Point } : {};
+    return { kind: "circular", axis: t.axis, ...centre, count: numberOf(t.count3), angle, join: t.join };
   }
   const row = { kind: "linear" as const, direction: t.direction, spacing: numberOf(t.spacing), count: numberOf(t.count), join: t.join };
   return t.kind === "grid" ? { ...row, direction2: t.direction2, spacing2: numberOf(t.spacing2), count2: numberOf(t.count2) } : row;
@@ -65,7 +68,9 @@ export function typedOf(v: PatternValues, base: PatternTyped): PatternTyped {
   const text = (n: number) => String(n);
   if (v.kind === "circular") {
     const full = Math.abs(v.angle) === FULL_TURN && v.angle > 0;
-    return { ...base, kind: "circular", axis: v.axis, centre: v.centre.map(text) as [string, string, string], count3: text(v.count), angle: full ? "" : text(v.angle), join: v.join };
+    // Round a construction axis the centre boxes keep what they held (hidden; a switch back to X, Y or Z shows them).
+    const centre = v.centre === undefined ? base.centre : (v.centre.map(text) as [string, string, string]);
+    return { ...base, kind: "circular", axis: v.axis, centre, count3: text(v.count), angle: full ? "" : text(v.angle), join: v.join };
   }
   const grid = v.direction2 !== undefined;
   return { ...base, kind: grid ? "grid" : "row", direction: v.direction, spacing: text(v.spacing), count: text(v.count), ...(grid ? { direction2: v.direction2!, spacing2: text(v.spacing2!), count2: text(v.count2!) } : {}), join: v.join };
