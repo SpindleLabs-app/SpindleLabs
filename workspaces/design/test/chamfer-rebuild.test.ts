@@ -248,7 +248,7 @@ test("the reader refuses each break of a Chamfer, and version 23 data holding on
   assert.doesNotThrow(broken((_, p) => (p.angle = 0.9 * 90)));
   assert.throws(broken((_, p) => (p.angle = 1.1 * 90)), { message: `${at}'s size: its angle ${1.1 * 90} is not between 0 and 90 degrees` });
   // Version 23 data without one opens as 24.
-  assert.equal(readDesignDocument({ ...JSON.parse(JSON.stringify(d0)), version: 23 }).version, 24);
+  assert.equal(readDesignDocument({ ...JSON.parse(JSON.stringify(d0)), version: 23 }).version, 25);
 });
 
 test("the rest of Design reads a Chamfer: the AI's timeline line, the change notes' name, Edit feature on (44a-app3 opens the Chamfer panel on it)", async () => {

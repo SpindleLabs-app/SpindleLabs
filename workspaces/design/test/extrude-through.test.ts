@@ -184,8 +184,8 @@ test("the data: version 23 holds through and reads back the same; the reader ref
   assert.throws(() => readDesignDocument(withParams((p) => ({ ...p, symmetric: true }))), { message: `Design feature ${cut.id} goes through all and is symmetric: Through all goes one way from its sketch` });
   // Controls: version 22 without it opens, upgraded; Intersect through all opens.
   const { through: _, ...plain } = saved.timeline.features.at(-1).intent.parameters;
-  assert.equal(readDesignDocument(withParams(() => plain, 22)).version, 24);
-  assert.equal(readDesignDocument(withParams((p) => ({ ...p, operation: "intersect" }))).version, 24);
+  assert.equal(readDesignDocument(withParams(() => plain, 22)).version, 25);
+  assert.equal(readDesignDocument(withParams((p) => ({ ...p, operation: "intersect" }))).version, 25);
 });
 
 const { Window } = await import("happy-dom");

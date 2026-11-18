@@ -30,6 +30,7 @@ export const entry = {
   body_move: k.hq3vzt,
   body_chamfer: k.pjftzm,
   body_measure: k.zt5kqw,
+  body_construct: k.vye52n,
   body_count: k.urxw0w,
   slice_stl: k.uq4cun,
   print_file_stl: k.k7vbqz,

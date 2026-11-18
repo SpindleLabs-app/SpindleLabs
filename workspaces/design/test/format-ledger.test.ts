@@ -60,7 +60,10 @@ export function propertyNames(source: string, name: string): string[] {
 // through every body it picks, its length worked out on each rebuild), which a version 22 reader would stop at its distance.
 // Design data version 24 (step 44a): a timeline item may be a Chamfer (`intent.type` "chamfer", its parameters a body, the
 // edges by their design-wide names, a distance, a second distance or an angle, and flip), which a version 23 reader would refuse as an unknown feature.
-const LEDGER_VERSION = 24;
+// Design data version 25 (step 59a1): a timeline item may be a construction plane, axis or point (`intent.type` "construct",
+// its parameters the kernel's kind, the names of what it is made from by slot, a distance or angle, and its last answer),
+// which a version 24 reader would refuse as an unknown feature.
+const LEDGER_VERSION = 25;
 const LEDGER: { file: string; type: string; names: string[] }[] = [
   { file: "workspaces/design/src/document.ts", type: "DesignDocument", names: ["version", "nextId", "profiles", "sketches", "timeline", "kept", "bodies", "nextBody", "hidden", "shownPlanes"] },
   { file: "workspaces/design/src/document.ts", type: "Sketch", names: ["id", "points", "curves", "constraints", "face", "pins", "projected"] },

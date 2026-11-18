@@ -17,6 +17,7 @@ import { isFit, type Fit } from "@fission/print";
 import { NewerFormatError, XY_PLANE } from "@fission/core";
 import { faceFeature, isFacePlane, squared, worldFrame, type SketchFace, type SketchPlacement } from "./face-sketch.ts";
 import { isHeldDesignName, ruleFiveName } from "./design-edges.ts";
+import { answerProblem, CONSTRUCT_ANGLE_MAX, CONSTRUCT_DISTANCE_MAX, CONSTRUCT_KINDS, constructInputs, isConstructKind, kindNumber, readConstructRef, type ConstructAnswer, type ConstructKind } from "./construct-data.ts";
 import type { SketchPin } from "./face-edges.ts";
 import type { SketchProjection } from "./projection.ts";
 import { outline, SHAPE_LABELS, type ProfileKind, type ShapeKind } from "./profiles.ts";
@@ -271,7 +272,7 @@ export type Marker = string;
 
 export interface DesignDocument {
   /** Version of this part of the project file (see docs/project-format.md). */
-  version: 24;
+  version: 25;
   /** The number the next new id gets. Ids are never reused, even after a delete (docs/document-model.md, section 2). */
   nextId: number;
   profiles: ReadyProfile[];
@@ -669,8 +670,29 @@ export const isExtrudeJoin = (f: Feature) => isOperationExtrude(f) && f.intent.p
  */
 export const numberedWhenBuilt = (bodyId: string, item: Feature | undefined): boolean => isPiece(bodyId) || (item !== undefined && bodyId === bodyIdOf(item.id) && isExtrudeJoin(item));
 
-/** Whether an item makes a body of its own: anything but a sketch, a Move, a Combine or an extrude with an operation (a Duplicate's copy is its own body). */
-export const makesBody = (f: Feature) => !isSketchItem(f) && !actsOnBodies(f) && !isOperationExtrude(f);
+/**
+ * A construction plane, axis or point (step 59a1; Design data version 25):
+ * `make` a kind of construct-data.ts `CONSTRUCT_KINDS`, `inputs` what it is
+ * made from by slot, each a name (construct-data.ts: an origin plane, axis or
+ * point, a face, an edge, a corner or an earlier construction), the number
+ * its kind needs (`distance` in mm or `angle` in degrees), and `answer`, its
+ * last answer, where it is held when a name is lost (rebuild.ts
+ * `constructRun`; `followedDoc` keeps it up to date). It makes no body, and
+ * depends on exactly the items its names are named after (`constructInputs`).
+ */
+export const isConstructItem = (f: Feature) => f.intent.type === "construct";
+
+/** A construction's kind, names by slot, number and last answer. */
+export function constructOf(f: Feature): { make: ConstructKind; inputs: Record<string, string>; distance?: number; angle?: number; answer: ConstructAnswer } {
+  const p = f.intent.parameters;
+  return { make: p.make as ConstructKind, inputs: { ...(p.inputs as unknown as Record<string, string>) }, ...(typeof p.distance === "number" && { distance: p.distance }), ...(typeof p.angle === "number" && { angle: p.angle }), answer: p.answer as unknown as ConstructAnswer };
+}
+
+/** A construction's parameters: always these, and the number its kind needs (`distance` or `angle`). */
+export const CONSTRUCT_PARAMS = ["make", "inputs", "answer"] as const;
+
+/** Whether an item makes a body of its own: anything but a sketch, a construction, a Move, a Combine or an extrude with an operation (a Duplicate's copy is its own body). */
+export const makesBody = (f: Feature) => !isSketchItem(f) && !isConstructItem(f) && !actsOnBodies(f) && !isOperationExtrude(f);
 
 /** Whether an item's own faces can be named in the design (pinned to, projected): one that makes a body, or an extrude with an operation (its faces carried onto the bodies it joined or cut). */
 const namesOwnBodyFaces = (f: Feature) => makesBody(f) || isOperationExtrude(f);
@@ -1460,6 +1482,7 @@ export function withRuledNames(doc: DesignDocument): DesignDocument {
   const kindOf = presetKinds(doc);
   const base = (f: Feature): string => {
     if (isSketchItem(f)) return "Sketch";
+    if (isConstructItem(f)) return constructBase(f);
     if (isMoveItem(f)) return "Move";
     if (isCombineItem(f)) return "Combine";
     if (isDuplicateItem(f)) return "Copy";
@@ -1658,6 +1681,59 @@ function checkChamfer(d: Partial<DesignDocument>, f: Feature, byId: ReadonlyMap<
   if (f.dependsOn.length !== 1 || f.dependsOn[0] !== maker) throw new Error(`${at} must depend on exactly the item that made the body it chamfers (${maker})`);
 }
 
+/** A construction's base name: "Plane", "Axis" or "Point" by what its kind makes ("Plane 1"). */
+export function constructBase(f: Feature): string {
+  const make = f.intent.parameters.make;
+  if (!isConstructKind(make)) return "Item";
+  return { plane: "Plane", axis: "Axis", point: "Point" }[CONSTRUCT_KINDS[make].makes];
+}
+
+/** Why a construction's number can't be, in words, or null: a distance at most CONSTRUCT_DISTANCE_MAX mm either way, an angle at most CONSTRUCT_ANGLE_MAX degrees either way. */
+export function constructNumberProblem(kind: ConstructKind, p: Readonly<Record<string, unknown>>): string | null {
+  const need = kindNumber(kind);
+  const said = (v: unknown) => (typeof v === "string" ? JSON.stringify(v) : shown(v));
+  for (const k of ["distance", "angle"] as const) if (k !== need && Object.hasOwn(p, k)) return `it has ${k === "distance" ? "a distance" : "an angle"}, which ${kind} doesn't take`;
+  if (need === "distance" && !(isFiniteNumber(p.distance) && Math.abs(p.distance) <= CONSTRUCT_DISTANCE_MAX)) return `its distance ${said(p.distance)} is not a number of mm up to ${CONSTRUCT_DISTANCE_MAX} either way`;
+  if (need === "angle" && !(isFiniteNumber(p.angle) && Math.abs(p.angle) <= CONSTRUCT_ANGLE_MAX)) return `its angle ${said(p.angle)} is not a number of degrees up to ${CONSTRUCT_ANGLE_MAX} either way`;
+  return null;
+}
+
+/**
+ * A construction, checked (step 59a1): its parameters `CONSTRUCT_PARAMS` and
+ * its kind's number; a kind the kernel makes; exactly its kind's slots, each
+ * a name construct-data.ts reads, an earlier construction one before it (or
+ * deleted since: the item is then held at its last answer); its number
+ * (`constructNumberProblem`); its last answer one of what its kind makes;
+ * and `dependsOn` exactly `constructInputs`.
+ */
+function checkConstruct(f: Feature, byId: ReadonlyMap<string, { item: Feature; at: number }>): void {
+  const at = `Design construction ${f.id}`;
+  const p = f.intent.parameters;
+  for (const key of Object.keys(p)) if (!(CONSTRUCT_PARAMS as readonly string[]).includes(key) && key !== "distance" && key !== "angle") throw new Error(`${at} has a parameter ${JSON.stringify(key)} a construction doesn't have`);
+  const make: unknown = p.make;
+  if (!isConstructKind(make)) throw new Error(`${at} makes ${typeof make === "string" ? JSON.stringify(make) : shown(make)}, which is not a construction this SpindleLabs makes`);
+  if (!isRecord(p.inputs)) throw new Error(`${at} has no inputs`);
+  const given: Record<string, unknown> = p.inputs;
+  const slots: readonly string[] = CONSTRUCT_KINDS[make].slots;
+  for (const key of Object.keys(given)) if (!slots.includes(key)) throw new Error(`${at} has an input ${JSON.stringify(key)}, which ${make} doesn't take`);
+  const here = byId.get(f.id)!.at;
+  for (const slot of slots) {
+    const name: unknown = given[slot];
+    if (!Object.hasOwn(given, slot)) throw new Error(`${at} has no ${slot}`);
+    const ref = readConstructRef(name);
+    if (ref === null) throw new Error(`${at}'s ${slot} ${typeof name === "string" ? JSON.stringify(name) : shown(name)} is not a name of a plane, axis, point, face, edge or corner`);
+    if (ref.kind !== "construct") continue;
+    const there = byId.get(ref.item);
+    if (there === undefined ? !ID_SHAPE.test(ref.item) : there.at >= here || !isConstructItem(there.item)) throw new Error(`${at}'s ${slot} names ${ref.item}, which is not a construction before it in the timeline`);
+  }
+  const problem = constructNumberProblem(make, p);
+  if (problem !== null) throw new Error(`${at}: ${problem}`);
+  const wrong = answerProblem(p.answer, CONSTRUCT_KINDS[make].makes);
+  if (wrong !== null) throw new Error(`${at}'s last answer: ${wrong}`);
+  const inputs = constructInputs(given, make);
+  if (f.dependsOn.length !== inputs.length || inputs.some((id, k) => f.dependsOn[k] !== id)) throw new Error(`${at} must depend on exactly the items it is made from (${inputs.length === 0 ? "none" : inputs.join(", ")})`);
+}
+
 function isBodyOf(d: Partial<DesignDocument>, byId: ReadonlyMap<string, { item: Feature }>, id: string): boolean {
   const maker = bodyItem(id);
   if (maker === null) return false;
@@ -1775,6 +1851,12 @@ function hasVersion21Fields(d: Record<string, unknown>): boolean {
 }
 
 /** Whether version 22 data has a Through all extrude (Ben 2026-11-14), which only version 23 holds. */
+/** Whether version 24 data has a construction (step 59a1), which only version 25 brought. */
+function hasVersion25Fields(d: Record<string, unknown>): boolean {
+  const features = isRecord(d.timeline) && Array.isArray(d.timeline.features) ? d.timeline.features : [];
+  return features.some((f) => isRecord(f) && isRecord(f.intent) && f.intent.type === "construct");
+}
+
 /** Whether version 23 data has a Chamfer (step 44a), which only version 24 brought. */
 function hasVersion24Fields(d: Record<string, unknown>): boolean {
   const features = isRecord(d.timeline) && Array.isArray(d.timeline.features) ? d.timeline.features : [];
@@ -1981,7 +2063,7 @@ function checkMore(more: unknown, f: Feature, i: number, byId: ReadonlyMap<strin
 }
 
 /** The Design data version this SpindleLabs writes; readDesignDocument upgrades older data to it. */
-export const DESIGN_VERSION = 24;
+export const DESIGN_VERSION = 25;
 
 export function readDesignDocument(data: unknown): DesignDocument {
   if (!isRecord(data)) throw new Error("Design data is missing");
@@ -2066,10 +2148,13 @@ export function readDesignDocument(data: unknown): DesignDocument {
   const v23 = v22.version === 22 ? { ...v22, version: 23 } : v22;
   // Version 24 (step 44a) brings the Chamfer, which no version 23 reader builds; other version 23 data is read as it is.
   if (v23.version === 23 && hasVersion24Fields(v23)) throw new Error(`Design data says version ${shown(given)} but has a Chamfer, which version 24 brought`);
-  const d = (v23.version === 23 ? { ...v23, version: 24 } : v23) as Partial<DesignDocument>;
+  const v24 = v23.version === 23 ? { ...v23, version: 24 } : v23;
+  // Version 25 (step 59a1) brings construction planes, axes and points, which no version 24 reader builds; other version 24 data is read as it is.
+  if (v24.version === 24 && hasVersion25Fields(v24)) throw new Error(`Design data says version ${shown(given)} but has a construction plane, axis or point, which version 25 brought`);
+  const d = (v24.version === 24 ? { ...v24, version: 25 } : v24) as Partial<DesignDocument>;
   // Text quoted, so "5" (text) never reads as the 5 it is not (app sweep, finding 25).
   // A whole number above DESIGN_VERSION is from a newer SpindleLabs (kept by the unsaved-changes journal for it); anything else is wrong.
-  if (d.version !== DESIGN_VERSION) throw new (Number.isSafeInteger(d.version) && d.version! > DESIGN_VERSION ? NewerFormatError : Error)(`Design data version ${typeof d.version === "string" ? JSON.stringify(d.version) : shown(d.version)} is not one this SpindleLabs reads (1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23 or 24)`);
+  if (d.version !== DESIGN_VERSION) throw new (Number.isSafeInteger(d.version) && d.version! > DESIGN_VERSION ? NewerFormatError : Error)(`Design data version ${typeof d.version === "string" ? JSON.stringify(d.version) : shown(d.version)} is not one this SpindleLabs reads (1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24 or 25)`);
   // An empty timeline is an empty design (24f4: everything deleted), shown with no body.
   if (!Array.isArray(d.profiles) || !Array.isArray(d.timeline?.features)) throw new Error("Design data has no timeline");
   if (!Array.isArray(d.sketches)) throw new Error("Design data has no sketches list");
@@ -2205,8 +2290,8 @@ export function readDesignDocument(data: unknown): DesignDocument {
     ...d.sketches.flatMap((s) => [...s.points.map((p) => p.id), ...s.curves.map((c) => c.id), ...(s.projected ?? []).map((p) => p.id), ...s.constraints.map((c) => c.id)]),
   ];
   // A kept shape holds a sketch's old ids (some may still be in the sketch): never repeated by a new id, so the counter is above them too.
-  // So does a move's deleted body, so no new body takes its id and is moved by it.
-  const kept = [...Object.values(d.kept ?? {}).flatMap((k) => [...k.points.map((p) => p.id), ...k.curves.map((c) => c.id)]), ...d.timeline.features.filter((f) => actsOnBodies(f) || isOperationExtrude(f)).flatMap((f) => f.dependsOn)];
+  // So does a move's deleted body, so no new body takes its id and is moved by it, and a construction's deleted input (step 59a1).
+  const kept = [...Object.values(d.kept ?? {}).flatMap((k) => [...k.points.map((p) => p.id), ...k.curves.map((c) => c.id)]), ...d.timeline.features.filter((f) => actsOnBodies(f) || isOperationExtrude(f) || isConstructItem(f)).flatMap((f) => f.dependsOn)];
   for (const id of kept) {
     const n = idNumber(id);
     if (n !== null && n >= d.nextId!) throw new Error(`Design data's nextId ${d.nextId} is not above ${id}, so a new id could repeat it`);
@@ -2242,6 +2327,7 @@ export function readDesignDocument(data: unknown): DesignDocument {
   for (const f of d.timeline.features) {
     if (isDuplicateItem(f)) checkDuplicate(d, f, byId);
     else if (isChamferItem(f)) checkChamfer(d, f, byId);
+    else if (isConstructItem(f)) checkConstruct(f, byId);
   }
   // An extrude's operation and its bodies (Design data version 10).
   for (const f of d.timeline.features) if (isOperationExtrude(f)) checkOperation(d, f, byId);
@@ -2307,6 +2393,8 @@ function asking(document: DesignDocument): Asked {
 /** What an item is built on, of the items in the timeline: a sketch's (`sketchInputs`); an extrude of a sketch, the sketch, then (with an operation) the items that made its bodies; else nothing. */
 function inputsOf(a: Asked, f: Feature): Feature[] {
   if (isSketchItem(f)) return sketchInputs(f, a.contents.get(f.id)).flatMap((id) => a.byId.get(id) ?? []);
+  // A construction is greyed by what it is made from, as a sketch by its face; it builds, followed or held, as a sketch does.
+  if (isConstructItem(f)) return f.dependsOn.flatMap((id) => a.byId.get(id) ?? []);
   if (onBodies(f)) return f.dependsOn.flatMap((id) => a.byId.get(id) ?? []);
   // Every sketch it extrudes a profile of (version 18: several), the first profile's first.
   const sketches = isSketchExtrude(f) ? extrudeSketches(f).flatMap((id) => a.sketches.get(id) ?? []) : [];
@@ -2400,7 +2488,7 @@ function walk(document: DesignDocument): { building: Set<Feature>; greyed: Map<F
     // An extrude's sketches: one per profile's sketch, each once (version 18), the first profile's first.
     const extruded = isSketchExtrude(f) ? extrudeSketches(f) : [];
     const own = extruded.flatMap((id) => sketches.get(id) ?? []);
-    const inputs = isSketchItem(f) ? sketchInputs(f, contents.get(f.id)).flatMap((id) => byId.get(id) ?? []) : onBodies(f) ? f.dependsOn.flatMap((id) => byId.get(id) ?? []) : [...own, ...makersOf(byId, f)];
+    const inputs = isSketchItem(f) ? sketchInputs(f, contents.get(f.id)).flatMap((id) => byId.get(id) ?? []) : onBodies(f) || isConstructItem(f) ? f.dependsOn.flatMap((id) => byId.get(id) ?? []) : [...own, ...makersOf(byId, f)];
     // Each profile's sketch, or its own kept shape when the sketch is gone (version 20: one per profile, `profileParts`).
     const partBuilds = (part: Feature) => {
       const input = sketches.get(part.intent.parameters.sketch);

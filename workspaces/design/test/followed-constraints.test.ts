@@ -120,5 +120,5 @@ test("#517 version 17: version 16 data holding a constraint on a followed point 
   const { doc: top, id } = onTop();
   const made = drawRectangle(top, id, [5, 5], [15, 15]);
   const free = JSON.parse(JSON.stringify(squaredRectangle(made.doc, id, made.ids)));
-  assert.equal(readDesignDocument({ ...free, version: 16 }).version, 24);
+  assert.equal(readDesignDocument({ ...free, version: 16 }).version, 25);
 });

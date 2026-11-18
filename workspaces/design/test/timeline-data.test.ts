@@ -65,13 +65,13 @@ function fixtureProblem(read: (data: unknown) => DesignDocument): string | null 
   return null;
 }
 
-test("the real version 2 file (saved by main before 25d1) opens as version 24 with every id kept, and reopens byte-identical", () => {
+test("the real version 2 file (saved by main before 25d1) opens as version 25 with every id kept, and reopens byte-identical", () => {
   assert.equal(JSON.parse(REAL_V2).workspaces.design.version, 2);
   assert.equal(fixtureProblem(readDesignDocument), null);
   const doc = projectFromJson(REAL_V2, DESIGN).workspaces.design as DesignDocument;
   assert.deepEqual(partOf(doc), { shape: "sketch-extrude", sizes: { height: 10 } });
   // Saved, it is version 6 (the current one).
-  assert.equal(JSON.parse(projectToJson(projectFromJson(REAL_V2, DESIGN))).workspaces.design.version, 24);
+  assert.equal(JSON.parse(projectToJson(projectFromJson(REAL_V2, DESIGN))).workspaces.design.version, 25);
 });
 
 test("the fixture test fails for a migration broken on purpose, each way", () => {
