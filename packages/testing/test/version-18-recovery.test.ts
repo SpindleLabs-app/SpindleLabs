@@ -33,7 +33,7 @@ function journal() {
 
 const nextIdOf = (p: Project) => (p.workspaces.design as { nextId: number }).nextId;
 
-test("a version 18 Design project opens, read up to version 27", async () => {
+test("a version 18 Design project opens, read up to version 28", async () => {
   const kv = memoryKeyValue();
   const store = projectStore(kv, DESIGN);
   await store.save("p", part(18, 5), new Date(1000));

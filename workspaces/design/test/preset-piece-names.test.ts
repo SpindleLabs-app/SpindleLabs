@@ -128,8 +128,8 @@ test("an old file (version 6) naming the L-bracket's side, a pin and a projected
   assert.ok(pin.name.includes("side:l-bracket-piece-2") && pin.name.includes("side:l-bracket-piece-3"), pin.name);
   assert.ok(projected.edge.includes("side:l-bracket-piece-2"), projected.edge);
   const json = projectToJson({ ...emptyProject(), workspaces: { design: today.doc } });
-  assert.ok(json.includes('"version": 27') || json.includes('"version":27'), "saved as version 27");
-  const old = json.replaceAll("l-bracket-piece-", "piece-").replace(/"version": ?27/, '"version": 6');
+  assert.ok(json.includes('"version": 28') || json.includes('"version":28'), "saved as version 28");
+  const old = json.replaceAll("l-bracket-piece-", "piece-").replace(/"version": ?28/, '"version": 6');
   assert.ok(old.includes(JSON.stringify(OLD_SIDE)) && !old.includes("l-bracket-piece"), "every name as version 6 wrote it");
   // Opened: version 27 (7 to 8, 8 to 9, 9 to 10, 10 to 11, 12 to 13, 13 to 14, 14 to 15 and, with no Extrude Join, 15 to 16 and, with no constraint on a followed point, 16 to 17 and, with no extrude of several profiles, 17 to 18 and, with no face sketch, 18 to 19 and, with no kept shapes, 19 to 20 and, with no symmetric extrude, 20 to 21, and, with no Through all extrude, 22 to 27 change no field; 11 to 12 adds fields this file has none of), every name as today writes it, so it is the design saved, exactly.
   const opened = projectFromJson(old, DESIGN).workspaces.design as DesignDocument;
