@@ -143,12 +143,12 @@ export interface PairRelation {
 /**
  * What a pair's answer means for the person, or null when there is nothing to say (the parts lie apart). `mark` is set
  * when both parts are marked on the bed: they overlap, or they are too close to tell a touch from an overlap. Parts
- * that only touch are said, not marked: their cuts would share a line, which is the person's to judge.
+ * that only touch are said, not marked: their cuts would meet (at a point, along a line or all but), which is the person's to judge.
  */
 export function pairWords(aLabel: string, bLabel: string, r: PartsRelation): { words: string; mark: boolean } | null {
   if (r.relation === "apart") return null;
   if (r.relation === "overlap") return { words: `${aLabel} and ${bLabel} overlap.`, mark: true };
-  if (r.relation === "touch") return { words: `${aLabel} and ${bLabel} touch: their cuts would share a line.`, mark: false };
+  if (r.relation === "touch") return { words: `${aLabel} and ${bLabel} touch: their cuts would meet.`, mark: false };
   if (r.meet) return { words: `${aLabel} and ${bLabel} touch or overlap: they are too close to tell which.`, mark: true };
   return { words: `Couldn't check whether ${aLabel} and ${bLabel} overlap: ${r.why ?? "no answer came back"}.`, mark: false };
 }

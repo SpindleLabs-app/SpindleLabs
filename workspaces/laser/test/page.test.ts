@@ -5,6 +5,7 @@ import assert from "node:assert/strict";
 import { createSelection, RepresentationRegistry, type Outline, type WorkspaceContext } from "@fission/core";
 import { emptyBedNote, flatScene, laserWorkspace, layOut, layoutWords, mountLaserPage, OUTLINES_LISTER, pairWords, readLaserData, readParts, setLaserShown, sheetSvg, type PartsRelation, type Relate, type SaveText } from "../src/index.ts";
 import { nodeKernel } from "../../../packages/testing/src/node-kernel.ts";
+import { partsRelation } from "../src/overlap.ts";
 
 const { Window } = await import("happy-dom");
 
@@ -517,6 +518,17 @@ test("places a project holds are used as they are, and ones that are not usable 
   mounted.unmount();
 });
 
+// App bug hunt 11-18 C-2 (SL #820): two parts meeting only at a corner were told "their cuts would share a line"; they
+// share one point. A touch also covers a corner on an edge, tangent circles and a gap under 0.001 mm (overlap.ts), so
+// the words must hold for every one of them: the cuts meet, nothing more is promised.
+test("parts that touch only at a corner are not told their cuts share a line (SL #820 C-2)", async () => {
+  const square = (x: number, y: number): Outline => ({ outer: { path: { corners: [x, y, x + 10, y, x + 10, y + 10, x, y + 10], bulges: [] } }, holes: [] });
+  // Squares 0..10 and 10..20 on both axes: they meet at the one point (10, 10), where both corners sit, and nowhere else.
+  const r = await partsRelation(nodeKernel(), square(0, 0), square(10, 10));
+  assert.equal(r.relation, "touch");
+  assert.deepEqual(pairWords("Sketch 1", "Sketch 2", r), { words: "Sketch 1 and Sketch 2 touch: their cuts would meet.", mark: false });
+});
+
 // Overlap warnings (L1b2). The page asks about each pair whose boxes overlap or all but touch; the answer is the kernel's
 // (overlap.test.ts), stood in for here by `answer` except in the last test.
 
@@ -525,7 +537,7 @@ const tick = () => new Promise((r) => setTimeout(r, 0));
 test("the words for a pair: overlapping and too-close-to-tell are marked on the parts, a touch and a failed check are only said, apart says nothing", () => {
   assert.equal(pairWords("A", "B", { relation: "apart" }), null);
   assert.deepEqual(pairWords("A", "B", { relation: "overlap" }), { words: "A and B overlap.", mark: true });
-  assert.deepEqual(pairWords("A", "B", { relation: "touch" }), { words: "A and B touch: their cuts would share a line.", mark: false });
+  assert.deepEqual(pairWords("A", "B", { relation: "touch" }), { words: "A and B touch: their cuts would meet.", mark: false });
   assert.deepEqual(pairWords("A", "B", { relation: "unknown", why: "x", meet: true }), { words: "A and B touch or overlap: they are too close to tell which.", mark: true });
   assert.deepEqual(pairWords("A", "B", { relation: "unknown", why: "the kernel stopped" }), { words: "Couldn't check whether A and B overlap: the kernel stopped.", mark: false });
 });
@@ -570,7 +582,7 @@ test("a touch is said but not marked; too close to tell is said and marked; a ch
   const { path, type, words, mounted } = await withPicked(undefined, undefined, () => answer());
   type("x", "63"); // b's left side on a's right side: the boxes touch, so the pair is asked about
   await tick();
-  assert.equal(words(), "2 parts on the bed. Sketch a and Sketch b touch: their cuts would share a line.");
+  assert.equal(words(), "2 parts on the bed. Sketch a and Sketch b touch: their cuts would meet.");
   assert.equal(path("a").getAttribute("class"), "laser-flat-part laser-flat-part-cut");
   answer = async () => ({ relation: "unknown", why: "an edge lies along another", meet: true });
   type("x", "62");
@@ -614,7 +626,7 @@ test("hand-worked, on the real kernel: a part inside another overlaps it, one sh
   await settled("2 parts on the bed. Sketch a and Sketch b overlap.");
   // At x = 63 its left side lies on a's right side, x = 63, from y = 3 to 13: a shared line, no shared area.
   type("x", "63");
-  await settled("2 parts on the bed. Sketch a and Sketch b touch: their cuts would share a line.");
+  await settled("2 parts on the bed. Sketch a and Sketch b touch: their cuts would meet.");
   // At x = 62.5 it reaches 0.5 mm into a: 0.5 × 10 = 5 mm² in both.
   type("x", "62.5");
   await settled("2 parts on the bed. Sketch a and Sketch b overlap.");
