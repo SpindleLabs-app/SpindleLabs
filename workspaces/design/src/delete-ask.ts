@@ -85,8 +85,10 @@ export function deleteWords(before: DesignDocument, after: DesignDocument, id: s
   const built = before.timeline.features.filter((f) => isSketchExtrude(f) && staying.some((s) => f.dependsOn.includes(s.id))).map(itemName);
   // A Move has no shape of its own: with nothing left to move it fails; else it moves the rest and shows a warning (SL #506 item 4).
   const moving = users.filter(isMoveItem);
+  // What fails with it makes no body for a Move to take either: a Combine on it as target (SL #760 item 3, #820).
+  const failing = new Set(users.filter((f) => !isMoveItem(f) && !keeps.includes(itemName(f)) && !staying.includes(f) && !holding.includes(f)).map((f) => f.id));
   const moves = moving.map((m) => {
-    const others = [...new Set(movedBodies(m).map((b) => bodyItem(b)).filter((f) => f !== undefined && f !== id))].flatMap((f) => {
+    const others = [...new Set(movedBodies(m).map((b) => bodyItem(b)).filter((f) => f !== undefined && f !== id && !failing.has(f)))].flatMap((f) => {
       const other = before.timeline.features.find((x) => x.id === f);
       return other ? [itemName(other)] : [];
     });
