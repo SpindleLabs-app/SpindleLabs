@@ -94,6 +94,10 @@ export function cardFacts(doc: DesignDocument, f: Feature, item: TimelineBarItem
     // Mirror body (35e2) is a Duplicate across a plane.
     kind = mirrorOf(f) === undefined ? "Duplicate" : "Mirror body";
     details = [summary, "A new body, following its source's sizes"];
+  } else if (type === "pattern") {
+    // "3 of Box 1 in a row along X, 10 mm apart": its summary, the copies being new bodies (step 61b).
+    kind = "Pattern";
+    details = [summary];
   } else if (type === "chamfer") {
     // "1 edge of Box 1, 2 mm": its summary without the verb the kind says (44a-app3).
     kind = "Chamfer";
