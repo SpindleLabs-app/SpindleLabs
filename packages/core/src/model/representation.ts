@@ -157,6 +157,8 @@ export interface LeftOut {
   readonly hidden: readonly string[];
 }
 export type LeftOutOf = (project: Project) => LeftOut;
+/** Brings what a workspace's list says up to date with the project's data (a rebuild no one has made yet), for `settled`. */
+export type Settler = (project: Project) => Promise<void>;
 
 export class RepresentationRegistry {
   private leftOuts = new Map<string, LeftOutOf>();
@@ -165,6 +167,7 @@ export class RepresentationRegistry {
   private listers = new Map<string, Lister>();
   private importers = new Map<FileFormat, FileImporter>();
   private finders = new Map<string, FaceFinder>();
+  private settlers = new Map<string, Settler>();
 
   /** Says that objects of `type` can describe themselves as `kind`. */
   registerProducer(type: string, kind: RepresentationKind, producer: Producer): void {
@@ -189,6 +192,22 @@ export class RepresentationRegistry {
   /** What workspace `workspace`'s list leaves out in `project`: nothing when it says nothing. */
   leftOutOf(workspace: string, project: Project): LeftOut {
     return this.leftOuts.get(workspace)?.(project) ?? { failed: [], hidden: [] };
+  }
+
+  /** Says how to bring workspace `workspace`'s list up to date with a project's data; one per workspace. */
+  registerSettler(workspace: string, settler: Settler): void {
+    if (this.settlers.has(workspace)) throw new Error(`${workspace} already has a settler`);
+    this.settlers.set(workspace, settler);
+  }
+
+  /**
+   * Waits until `objectsOf(workspace, project)` and `leftOutOf` say what the workspace itself would show for the
+   * project's data as it is now (app bug hunt 2026-11-18, C-1: Design's list is right only once a rebuild of that very
+   * design has been made, and Design is not on screen after a reload, an Open or an Undo in another workspace). Ask it
+   * before listing; at once when the workspace has no settler.
+   */
+  async settled(workspace: string, project: Project): Promise<void> {
+    await this.settlers.get(workspace)?.(project);
   }
 
   /** What workspace `workspace` offers in `project`, in its own order; none when it lists nothing (or the project holds nothing of it). */
