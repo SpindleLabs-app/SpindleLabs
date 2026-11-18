@@ -80,7 +80,7 @@ export function resultLines(r: Result): { label: string; words: string }[] {
   const kind = m.strengthKind === "yield" ? "yield strength" : "breaking strength";
   return [
     { label: "Biggest bend", words: `${figure(r.answer.maxDisplacement)} mm` },
-    { label: "Biggest stress", words: `${figure(r.answer.maxVonMises)} MPa (${r.material.name}'s ${kind}: ${mpaWords(strength)}${m.printed ? ", across the layers" : ""})` },
+    { label: "Biggest stress", words: `${figure(r.answer.maxVonMises)} MPa, the highest found anywhere in the part (${r.material.name}'s ${kind}: ${mpaWords(strength)}${m.printed ? ", across the layers" : ""})` },
   ];
 }
 

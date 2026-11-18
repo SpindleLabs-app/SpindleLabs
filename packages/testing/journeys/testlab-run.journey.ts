@@ -38,6 +38,7 @@ function setUp(start: DesignDocument) {
   let mesh: DisplayMesh | null = null;
   let colours: readonly number[] | null = null;
   const viewport = {
+    element: el(), // the view's element: TestLab's picking hint goes in it (T5c5a)
     onPick: null as ((p: ViewportPick) => void) | null,
     showBody: (m: DisplayMesh) => void (mesh = m),
     showColourMap: (c: readonly number[] | null) => void (colours = c),

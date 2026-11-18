@@ -1,0 +1,44 @@
+/* The Pattern panel (step 61c, pattern-panel.ts): a card at the top of the
+   properties as Combine's and Chamfer's are (the mode's bright blue edge, OK
+   filled bright blue). The picked bodies, the type, the kind's boxes, Join,
+   the preview's state, the refusal and the buttons. At phone width it is the
+   only thing in the Properties sheet while open, in as few rows as fit, so
+   the view stays clear to tap bodies. Colours are tokens only. */
+.pattern-panel { border-left: 3px solid var(--look-accent, var(--accent)); padding: 4px 0 8px 10px; margin-bottom: 12px; }
+.pattern-panel h2 { margin: 0 0 6px; }
+.pattern-panel .pattern-panel-bodies { margin: 0 0 6px; color: var(--look-accent-text, var(--accent-text)); overflow-wrap: anywhere; }
+.pattern-panel .pattern-panel-bodies.pattern-panel-empty { color: var(--text-8b95a3); }
+.pattern-panel .pattern-panel-row { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin: 6px 0; }
+.pattern-panel .pattern-panel-row[hidden], .pattern-panel .pattern-panel-note[hidden] { display: none; }
+.pattern-panel .pattern-panel-legend { font-size: 0.9em; color: var(--text-b9c3d1); }
+.pattern-panel .pattern-panel-fields { display: flex; gap: 4px; width: 9em; min-width: 0; }
+.pattern-panel #pattern-centre-row .pattern-panel-fields { width: 12em; }
+.pattern-panel .pattern-panel-row select, .pattern-panel .pattern-panel-row input { flex: 1 1 0; width: 100%; min-width: 0; padding: 4px 6px; background: var(--look-field, var(--page)); border: 1px solid var(--line); color: inherit; border-radius: var(--look-radius-s, 6px); }
+.pattern-panel .pattern-panel-join { display: flex; align-items: center; gap: 6px; margin: 6px 0; }
+.pattern-panel .pattern-panel-join input { flex: none; margin: 0; }
+.pattern-panel .pattern-panel-buttons { display: flex; gap: 6px; margin-top: 6px; }
+.pattern-panel #pattern-ok { background: var(--look-primary-fill, var(--accent-deep)); border-color: transparent; color: var(--look-on-accent, var(--on-accent)); font-weight: 600; box-shadow: var(--look-primary-glow, none); }
+/* The shell's `#workspace button:hover` (theme.css) outranks the rule above, as it did Combine's OK (#504). */
+.pattern-panel #pattern-ok:hover:not(:disabled) { background: var(--look-primary-fill, var(--accent-deep)); }
+.pattern-panel button:disabled { opacity: 0.45; }
+/* Edit feature's note on the bodies and why there is no preview: quiet words; a refusal in red. */
+.pattern-panel .pattern-panel-note { margin: 0 0 6px; font-size: 0.85em; color: var(--text-8b95a3); }
+.pattern-panel .pattern-panel-note.bad { color: var(--danger); font-size: 0.9em; }
+@media (max-width: 700px), ((pointer: coarse) and (max-width: 1199px)) {
+  .pattern-panel button, .pattern-panel select, .pattern-panel input:not([type="checkbox"]), .pattern-panel .pattern-panel-join { min-height: 44px; }
+  .pattern-panel .pattern-panel-join input { width: 22px; height: 22px; }
+}
+@media (max-width: 640px) {
+  /* Alone in the phone's Properties sheet: the title and bodies, then the boxes two to a row (the centre a whole row), then the buttons. */
+  .pattern-panel:not([hidden]) ~ * { display: none !important; }
+  .pattern-panel:not([hidden]) { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 8px; padding-bottom: 6px; }
+  .pattern-panel h2 { font-size: 1.05em; margin: 0; }
+  .pattern-panel .pattern-panel-bodies { margin: 0; flex: 1 1 auto; }
+  .pattern-panel .pattern-panel-row { flex: 1 1 calc(50% - 4px); margin: 0; min-width: 0; }
+  .pattern-panel #pattern-centre-row { flex-basis: 100%; }
+  .pattern-panel .pattern-panel-fields, .pattern-panel #pattern-centre-row .pattern-panel-fields { width: auto; flex: 1 1 auto; }
+  .pattern-panel .pattern-panel-legend { font-size: 0.8em; white-space: nowrap; }
+  .pattern-panel .pattern-panel-join { margin: 0; }
+  .pattern-panel #pattern-error, .pattern-panel .pattern-panel-note { flex: 1 1 100%; margin: 0; }
+  .pattern-panel .pattern-panel-buttons { flex: 1 1 100%; margin: 0; }
+}

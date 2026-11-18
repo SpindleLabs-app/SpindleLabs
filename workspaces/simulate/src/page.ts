@@ -17,7 +17,7 @@
 // with the numbers in the panel (results.ts), and a curved part or any other
 // refusal is said in the kernel's words. Results stay in memory: a set-up
 // change takes them away, a design edit marks them out of date.
-// Styles: src/styles/testlab-page.css, src/styles/testlab-results.css.
+// Styles: src/styles/testlab-page.css, src/styles/testlab-results.css, src/styles/testlab-view-hint.css.
 
 import type { AnalysisOverlay, FaceReference, ListedObject, MountedWorkspace, OverlaySeverity, ViewportPick, WorkspaceContext } from "@fission/core";
 import { KernelError, KERNEL_TEST_STOPPED, materialLibrary } from "@fission/core";
@@ -90,6 +90,18 @@ export function pickedFace(now: StudyNow, index: number | null): HeldFace | { re
   return { ref, label: now.faces.labels[index] };
 }
 
+/**
+ * The short hint over the view while faces are picked (T5c5: on a phone the
+ * Properties sheet is put away while picking, so its words can't be seen),
+ * or null when nothing is being picked. Pure.
+ */
+export function pickHint(picking: Picking, study: Study | null): string | null {
+  if (picking === null || study === null) return null;
+  if (picking.kind === "held") return "Tap the faces to hold. Tap a held face to let it go.";
+  const i = study.loads.findIndex((l) => l.id === picking.load);
+  return i < 0 ? null : `Tap the faces Load ${i + 1} pushes. Tap a pushed face to let it go.`;
+}
+
 /** The page's mounting. */
 export function mountTestLabPage(ctx: WorkspaceContext): MountedWorkspace {
   const doc = ctx.toolbar.ownerDocument;
@@ -124,6 +136,25 @@ export function mountTestLabPage(ctx: WorkspaceContext): MountedWorkspace {
     ctx.projectChanged(label);
   };
   const study = (): Study | null => data().studies[0] ?? null;
+
+  // The picking hint over the view (T5c5), as Design's Measure has.
+  const viewHint = doc.createElement("p");
+  viewHint.id = "testlab-view-hint"; // read by the e2e test
+  viewHint.className = "testlab-view-hint";
+  viewHint.hidden = true;
+  viewHint.setAttribute("role", "status");
+  ctx.viewport.element.append(viewHint);
+  const showViewHint = () => {
+    const words = awake ? pickHint(picking, study()) : null;
+    viewHint.hidden = words === null;
+    viewHint.textContent = words ?? "";
+    // On a phone the overlays' legend ("Held here") sits where the hint's pill would (theme.css, 112 px down), so the
+    // hint goes just under it, however many lines it has; on a wide screen the hint is above it.
+    const legend = ctx.viewport.element.querySelector<HTMLElement>(".overlay-legend");
+    const phone = doc.defaultView?.matchMedia?.("(max-width: 640px)").matches ?? false;
+    const under = words !== null && phone && legend !== null && !legend.hidden && legend.offsetHeight > 0;
+    viewHint.style.top = under ? `${legend.offsetTop + legend.offsetHeight + 8}px` : "";
+  };
 
   const el = <K extends keyof HTMLElementTagNameMap>(tag: K, cls?: string, text?: string): HTMLElementTagNameMap[K] => {
     const e = doc.createElement(tag);
@@ -181,7 +212,10 @@ export function mountTestLabPage(ctx: WorkspaceContext): MountedWorkspace {
       else {
         set();
         result = null; // faces are picked on the part as it is, not bent
-        panel.dispatchEvent(new Event("properties-conceal", { bubbles: true })); // a phone puts its Properties sheet away so the body can be tapped (main.ts)
+        // A phone puts its Properties sheet away so the body can be tapped (main.ts). The page's own window's Event, so a
+        // test's stand-in page takes it too (a Node Event threw there, skipping the redraw below).
+        const PageEvent = (doc.defaultView as (Window & typeof globalThis) | null)?.Event ?? Event;
+        panel.dispatchEvent(new PageEvent("properties-conceal", { bubbles: true }));
       }
       draw();
     });
@@ -329,6 +363,7 @@ export function mountTestLabPage(ctx: WorkspaceContext): MountedWorkspace {
     else panel.append(el("p", "testlab-page-note", "A simulation: real prints are weaker across their layers."));
     drawBodies();
     paint();
+    showViewHint(); // after the overlays: on a phone it goes under their legend
   };
 
   /** The progress line while a Run works. */
@@ -509,12 +544,12 @@ export function mountTestLabPage(ctx: WorkspaceContext): MountedWorkspace {
         const test = stressTestOf(s, on, mechanical);
         if ("refused" in test) return test;
         if (run.cancelled) return { stopped: true as const };
-        return { answer: await ctx.kernel.call("stress_test", lent.handle, test) };
+        return { answer: await ctx.kernel.call("stress_test", lent.handle, test), strength: test.strength };
       });
       if (run.cancelled || "stopped" in out) said = STOPPED;
       else if ("refused" in out) said = `Not run: ${out.refused}`;
       else {
-        const wrong = answerProblem(out.answer);
+        const wrong = answerProblem(out.answer, out.strength);
         if (wrong !== null) said = wrong;
         else {
           got = resultOf(out.answer, { name: material.name, mechanical });
@@ -554,6 +589,7 @@ export function mountTestLabPage(ctx: WorkspaceContext): MountedWorkspace {
     sleep() {
       awake = false;
       picking = null; // picking ends when TestLab is left; it never waits for a tap on another workspace's view
+      showViewHint();
       ctx.viewport.onPick = null;
       for (const id of shownOverlays) ctx.viewport.clearOverlay(id);
       shownOverlays = [];
@@ -575,6 +611,7 @@ export function mountTestLabPage(ctx: WorkspaceContext): MountedWorkspace {
       }
       list.remove();
       panel.remove();
+      viewHint.remove();
     },
   };
 }

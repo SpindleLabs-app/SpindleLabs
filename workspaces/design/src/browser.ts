@@ -6,7 +6,7 @@
 import { summaryInUnit, type Feature, type GeometryReference, type Unit } from "@fission/core";
 import { ICONS, type IconName } from "@fission/ui";
 import { BUILD_AREA_LABEL, BUILD_AREA_ROW, BUILD_AREA_TITLE } from "@fission/print";
-import { bodyHidden, bodyIdOf, bodyItem, bodyNumbers, buildingItems, combineBodies, EYE_FOLDERS, extrudeOperation, isCombineItem, isConstructItem, isPiece, isHidden, isSketchItem, makesBody, numberedWhenBuilt, ORIGIN_PLANES, presetKinds, profileLabel, type DesignDocument } from "./document.ts";
+import { bodyHidden, bodyIdOf, bodyItem, bodyNumbers, buildingItems, combineBodies, EYE_FOLDERS, extrudeOperation, isCombineItem, isConstructItem, isPiece, isHidden, isSketchItem, makesBody, numberedWhenBuilt, ORIGIN_PLANES, presetKinds, profileLabel, type DesignDocument, isPatternItem } from "./document.ts";
 import { CONSTRUCT_KINDS, isConstructKind } from "./construct-data.ts";
 import { bodyReference, profileReference } from "./references.ts";
 import { sketchItem } from "./sketch.ts";
@@ -110,6 +110,11 @@ export function designBodies(document: DesignDocument, failed: ReadonlySet<strin
       const { target, tools, keepTools } = combineBodies(f);
       if (![target, ...tools].every((b) => out.has(b))) continue;
       if (!keepTools) for (const t of tools) out.delete(t);
+      for (const piece of pieces.get(f.id) ?? []) if (!failed.has(piece)) out.set(piece, { body: piece, feature: f });
+    } else if (isPatternItem(f)) {
+      // A Pattern (61b) keeps every body it copies, whole or with its copies joined in, under its own id, and adds the
+      // copies the data numbers for it that the rebuild made (a joined copy is no body of its own, so never numbered).
+      if (!(f.intent.parameters.bodies as string[]).every((b) => out.has(b))) continue;
       for (const piece of pieces.get(f.id) ?? []) if (!failed.has(piece)) out.set(piece, { body: piece, feature: f });
     } else {
       // An extrude with an operation (version 10): its own body never stays.
