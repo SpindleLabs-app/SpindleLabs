@@ -1,5 +1,5 @@
 // Browser check of the print preview and its time-lapse (H2b, H2c): with
-// the 40 × 30 × 20 mm box built, Slice for printing > Preview opens the
+// the 40 × 30 × 20 mm box built, the Slice page's Preview opens the
 // print in 3D over the page: 100 layers of 0.2 mm, the legend naming the
 // walls and infill, the finished part drawn (the middle of the view is not
 // the background). The Show card's switches hide kinds of line (the walls
@@ -17,7 +17,8 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { preview } from "vite";
 import { launch } from "./browser.mjs";
-import { chooseFile, startWithBox } from "./start.mjs";
+import { openSlice, pick, picked } from "./slice-page-lib.mjs";
+import { startWithBox } from "./start.mjs";
 
 const server = await preview({ preview: { port: 4197, strictPort: true }, logLevel: "error" });
 const url = "http://localhost:4197/";
@@ -126,11 +127,9 @@ for (const [width, tap] of [[1280, false], [375, true]]) {
     const page = await fresh(width, tap);
     const press = (sel, timeout) => (tap ? page.tap(sel, { timeout }) : page.click(sel, { timeout }));
     try {
-      await chooseFile(page, "file-slice-print", tap);
-      await page.waitForSelector("#slice-print-dialog[open]");
-      await press("#slice-print-preview");
+      await openSlice(page, tap);
+      await press("#slice-page-preview");
       await page.waitForSelector("#print-preview[open] #print-preview-view canvas", { timeout: 60000 });
-      assert.equal(await page.$eval("#slice-print-dialog", (d) => d.open), false, "the slice dialog gives way");
       assert.equal(await page.getAttribute("#print-preview-layers", "max"), "100", "20 mm / 0.2 mm");
       assert.equal(await page.textContent("#print-preview-layer-words"), "Layer 100 of 100 · 20.00 mm");
       const legend = await page.$$eval("#print-preview-legend li", (ls) => ls.map((l) => l.textContent));
@@ -239,13 +238,12 @@ for (const [width, tap] of [[1280, false], [375, true]]) {
       await page.setInputFiles("#open-file", { name: "plate.spindle", mimeType: "application/octet-stream", buffer: plateOnColumn });
       await page.waitForFunction((all) => [...document.querySelectorAll("#timeline li[data-item]")].map((li) => li.dataset.item).join() === all.join(), PLATE_ITEMS, { timeout: 15000 });
       await page.waitForFunction(() => document.querySelector("#viewport")?.dataset.rebuilding === "false", null, { timeout: 15000 });
-      await chooseFile(page, "file-slice-print", tap);
-      await page.waitForSelector("#slice-print-dialog[open]");
-      assert.equal(await page.$eval("#slice-print-supports", (c) => c.value), "off", "supports start off");
-      await page.selectOption("#slice-print-supports", "normal");
-      assert.equal(await page.$eval("#slice-print-supports", (c) => c.value), "normal");
+      await openSlice(page, tap);
+      assert.equal(await picked(page, "supports"), "Off", "supports start off");
+      await pick(page, "supports", "Normal");
+      assert.match(await picked(page, "supports"), /^Normal/);
       if (shots) await page.screenshot({ path: `${shots}/print-preview-${width}-supports-normal.png` });
-      await press("#slice-print-preview");
+      await press("#slice-page-preview");
       await page.waitForSelector("#print-preview[open] #print-preview-view canvas", { timeout: 60000 });
       // 12 mm / 0.2 mm = 60 layers.
       assert.equal(await page.getAttribute("#print-preview-layers", "max"), "60");
@@ -273,11 +271,9 @@ for (const [width, tap] of [[1280, false], [375, true]]) {
       await page.keyboard.press("Escape");
       await page.waitForFunction(() => !document.getElementById("print-preview"));
       // Tree supports (P5d3): the same plate, branches instead of columns, still green, still 60 layers.
-      if (!(await page.$("#slice-print-dialog[open]"))) await chooseFile(page, "file-slice-print", tap);
-      await page.waitForSelector("#slice-print-dialog[open]");
-      await page.selectOption("#slice-print-supports", "tree");
+      await pick(page, "supports", "Tree");
       if (shots) await page.screenshot({ path: `${shots}/print-preview-${width}-supports-tree-picked.png` });
-      await press("#slice-print-preview");
+      await press("#slice-page-preview");
       await page.waitForSelector("#print-preview[open] #print-preview-view canvas", { timeout: 60000 });
       assert.equal(await page.getAttribute("#print-preview-layers", "max"), "60");
       assert.ok((await page.$$eval("#print-preview-legend li", (ls) => ls.map((l) => l.textContent))).includes("Support"), "tree legend has Support");

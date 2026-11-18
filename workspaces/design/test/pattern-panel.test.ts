@@ -192,3 +192,34 @@ test("the spacing follows the picked bodies until it is typed in; an edited Patt
   panel.followSpacing(along);
   assert.equal($<HTMLInputElement>("pattern-spacing").value, "40", "an edit keeps its own");
 });
+
+test("59a3b: the Axis list offers the construction axes after X, Y and Z; one picked hides the centre and hands back no centre", () => {
+  const { panel, $, shownRows, choose } = setup();
+  panel.setAxes([{ axis: "construct:feature-3", label: "Axis 1" }, { axis: "construct:feature-5", label: "Axis 2" }]);
+  panel.show(["Body 1"], 15);
+  choose("pattern-kind", "circular");
+  const options = () => [...$<HTMLSelectElement>("pattern-axis").options].map((o) => [o.value, o.textContent]);
+  assert.deepEqual(options(), [["X", "X"], ["Y", "Y"], ["Z", "Z"], ["construct:feature-3", "Axis 1"], ["construct:feature-5", "Axis 2"]]);
+  assert.deepEqual(shownRows(), ["pattern-axis-row", "pattern-centre-row", "pattern-count3-row", "pattern-angle-row"]);
+  choose("pattern-axis", "construct:feature-5");
+  assert.deepEqual(shownRows(), ["pattern-axis-row", "pattern-count3-row", "pattern-angle-row"], "no centre to type: the axis says where it turns");
+  assert.deepEqual(readPatternBoxes(panel.typed), { kind: "circular", axis: "construct:feature-5", count: 6, angle: 360, join: false });
+  // The list offered again (an Undo, say) keeps the axis chosen while it is still offered; X once it is not.
+  panel.setAxes([{ axis: "construct:feature-5", label: "Axis 2" }]);
+  assert.equal($<HTMLSelectElement>("pattern-axis").value, "construct:feature-5");
+  panel.setAxes([]);
+  assert.equal($<HTMLSelectElement>("pattern-axis").value, "X");
+  assert.deepEqual(shownRows(), ["pattern-axis-row", "pattern-centre-row", "pattern-count3-row", "pattern-angle-row"]);
+});
+
+test("59a3b: Edit feature on a Pattern round an axis no longer offered keeps it in the list by name, marked, still chosen", () => {
+  const { panel, $, shownRows } = setup();
+  panel.setAxes([]);
+  panel.show(["Body 1"], undefined, { id: "feature-9", name: "Pattern 1", bodies: ["body:feature-1"], values: { kind: "circular", axis: "construct:feature-3", count: 4, angle: 90, join: false }, axisName: "Axis 1" });
+  const axis = $<HTMLSelectElement>("pattern-axis");
+  assert.equal(axis.value, "construct:feature-3");
+  assert.equal(axis.selectedOptions[0].textContent, "Axis 1 (can't be used now)");
+  assert.deepEqual(shownRows(), ["pattern-axis-row", "pattern-count3-row", "pattern-angle-row"]);
+  assert.equal($<HTMLInputElement>("pattern-angle").value, "90");
+  assert.deepEqual(readPatternBoxes(panel.typed), { kind: "circular", axis: "construct:feature-3", count: 4, angle: 90, join: false });
+});

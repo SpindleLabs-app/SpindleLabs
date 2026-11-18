@@ -6,7 +6,8 @@
 import assert from "node:assert/strict";
 import { preview } from "vite";
 import { launch } from "./browser.mjs";
-import { chooseFile, startWithBox } from "./start.mjs";
+import { openSlice } from "./slice-page-lib.mjs";
+import { startWithBox } from "./start.mjs";
 
 const server = await preview({ preview: { port: 4301, strictPort: true }, logLevel: "error" });
 const url = "http://localhost:4301/";
@@ -50,6 +51,7 @@ const settle = (page) => page.waitForTimeout(1500);
 /** `count` clicks `gap` ms apart at the middle of `sel`, as an impatient hand does: straight at the screen, so a press on a
  * button disabled by the first one does nothing, as for a person (page.click would wait for it to come back). */
 async function mash(page, sel, count, gap, tap = false) {
+  await page.locator(sel).scrollIntoViewIfNeeded();
   const b = await page.locator(sel).boundingBox();
   const [x, y] = [b.x + b.width / 2, b.y + b.height / 2];
   for (let i = 0; i < count; i++) {
@@ -83,22 +85,21 @@ await check("1280 px: a double-click on Save downloads the project once; mashing
 
 for (const [width, tap] of [[1280, false], [375, true]]) {
   const at = `${width} px${tap ? ", taps" : ""}`;
-  await check(`${at}: a double press, or ten presses 150 ms apart, on Slice and download saves one print file; a press later saves another`, async () => {
+  await check(`${at}: a double press, or ten presses 150 ms apart, on the Slice page's Slice and download saves one print file; a press later saves another`, async () => {
     const page = await fresh(width, tap);
     try {
       const names = downloads(page);
-      await chooseFile(page, "file-slice-print", tap);
-      await page.waitForSelector("#slice-print-dialog[open]");
-      const saved = () => page.waitForFunction(() => document.getElementById("slice-print-status")?.textContent.startsWith("Saved") && !document.getElementById("slice-print-go").disabled);
-      await mash(page, "#slice-print-go", 2, 80, tap);
+      await openSlice(page, tap);
+      const saved = () => page.waitForFunction(() => document.getElementById("slice-page-status")?.textContent.startsWith("Saved") && !document.getElementById("slice-page-download").disabled);
+      await mash(page, "#slice-page-download", 2, 80, tap);
       await saved();
       await settle(page);
       assert.equal(names.length, 1, `one file for a double press: ${names}`);
-      await mash(page, "#slice-print-go", 10, 150, tap);
+      await mash(page, "#slice-page-download", 10, 150, tap);
       await saved();
       await settle(page);
       assert.equal(names.length, 2, `ten quick presses are one more file: ${names}`);
-      await (tap ? page.tap("#slice-print-go") : page.click("#slice-print-go"));
+      await (tap ? page.tap("#slice-page-download") : page.click("#slice-page-download"));
       await saved();
       await settle(page);
       assert.equal(names.length, 3, `a press on its own slices and saves again: ${names}`);

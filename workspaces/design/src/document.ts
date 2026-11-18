@@ -21,7 +21,7 @@ import { answerProblem, constructPlaneItem, CONSTRUCT_ANGLE_MAX, CONSTRUCT_REF, 
 import type { SketchPin } from "./face-edges.ts";
 import type { SketchProjection } from "./projection.ts";
 import { outline, SHAPE_LABELS, type ProfileKind, type ShapeKind } from "./profiles.ts";
-import { patternParamsProblem } from "./pattern-values.ts";
+import { patternParamsProblem, turnAxisItem } from "./pattern-values.ts";
 import { extrudeSketches, hasMoreProfiles, isMoreKeptKey, keptKey, MORE_PROFILES_LIMIT, profileParts, sameProfile, type ProfileRef } from "./extrude-profiles.ts";
 
 /** A ready-made outline on a plane (until the sketcher, step 21, adds sketches next to these). */
@@ -282,7 +282,7 @@ export type Marker = string;
 
 export interface DesignDocument {
   /** Version of this part of the project file (see docs/project-format.md). */
-  version: 28;
+  version: 29;
   /** The number the next new id gets. Ids are never reused, even after a delete (docs/document-model.md, section 2). */
   nextId: number;
   profiles: ReadyProfile[];
@@ -1855,7 +1855,17 @@ function checkPattern(d: Partial<DesignDocument>, f: Feature, byId: ReadonlyMap<
     once.add(id);
     if (!makers.includes(maker!)) makers.push(maker!);
   }
-  if (f.dependsOn.length !== makers.length || f.dependsOn.some((x, i) => x !== makers[i])) throw new Error(`${at} must depend on exactly the items that made the bodies it patterns (${makers.join(", ")}), in that order`);
+  // Round a construction axis (step 59a3b): an axis made before it in the timeline (or deleted since: the rebuild fails it in
+  // words), depended on after the bodies' items.
+  const axis = p.kind === "circular" ? turnAxisItem(p.axis) : null;
+  if (axis !== null) {
+    const there = byId.get(axis);
+    if (there === undefined ? !ID_SHAPE.test(axis) : there.at >= byId.get(f.id)!.at || !isConstructItem(there.item) || CONSTRUCT_KINDS[there.item.intent.parameters.make as ConstructKind]?.makes !== "axis")
+      throw new Error(`${at} turns round ${JSON.stringify(p.axis)}, which is not a construction axis before it in the timeline`);
+  }
+  const want = axis === null ? makers : [...makers, axis];
+  if (f.dependsOn.length !== want.length || f.dependsOn.some((x, i) => x !== want[i]))
+    throw new Error(axis === null ? `${at} must depend on exactly the items that made the bodies it patterns (${makers.join(", ")}), in that order` : `${at} must depend on exactly the items that made the bodies it patterns (${makers.join(", ")}), in that order, then the construction it turns round (${axis})`);
 }
 
 /**
@@ -2049,6 +2059,12 @@ function hasVersion28Fields(d: Record<string, unknown>): boolean {
   }
   if ((Array.isArray(d.sketches) ? d.sketches : []).some((s) => isRecord(s) && Object.hasOwn(s, "drawn"))) return true;
   return (Array.isArray(d.hidden) ? d.hidden : []).some((id) => id === EYE_FOLDERS.constructions || constructs.has(id));
+}
+
+/** Whether version 28 data has a Pattern round a construction axis (step 59a3b), which only version 29 brought. */
+function hasVersion29Fields(d: Record<string, unknown>): boolean {
+  const features = isRecord(d.timeline) && Array.isArray(d.timeline.features) ? d.timeline.features : [];
+  return features.some((f) => isRecord(f) && isRecord(f.intent) && f.intent.type === "pattern" && isRecord(f.intent.parameters) && typeof f.intent.parameters.axis === "string" && f.intent.parameters.axis.startsWith(CONSTRUCT_REF));
 }
 
 function hasVersion23Fields(d: Record<string, unknown>): boolean {
@@ -2251,7 +2267,7 @@ function checkMore(more: unknown, f: Feature, i: number, byId: ReadonlyMap<strin
 }
 
 /** The Design data version this SpindleLabs writes; readDesignDocument upgrades older data to it. */
-export const DESIGN_VERSION = 28;
+export const DESIGN_VERSION = 29;
 
 export function readDesignDocument(data: unknown): DesignDocument {
   if (!isRecord(data)) throw new Error("Design data is missing");
@@ -2349,10 +2365,14 @@ export function readDesignDocument(data: unknown): DesignDocument {
   // Version 28 (step 59a3) lets a sketch sit on a construction plane, a Mirror go across one, and an eye hide one or the
   // Construction folder, which no version 27 reader holds; other version 27 data is read as it is.
   if (v27.version === 27 && hasVersion28Fields(v27)) throw new Error(`Design data says version ${shown(given)} but uses a construction plane or its eye, which version 28 brought`);
-  const d = (v27.version === 27 ? { ...v27, version: 28 } : v27) as Partial<DesignDocument>;
+  const v28 = v27.version === 27 ? { ...v27, version: 28 } : v27;
+  // Version 29 (step 59a3b) lets a Pattern turn round a construction axis, which no version 28 reader holds; other
+  // version 28 data is read as it is.
+  if (v28.version === 28 && hasVersion29Fields(v28)) throw new Error(`Design data says version ${shown(given)} but has a Pattern round a construction axis, which version 29 brought`);
+  const d = (v28.version === 28 ? { ...v28, version: 29 } : v28) as Partial<DesignDocument>;
   // Text quoted, so "5" (text) never reads as the 5 it is not (app sweep, finding 25).
   // A whole number above DESIGN_VERSION is from a newer SpindleLabs (kept by the unsaved-changes journal for it); anything else is wrong.
-  if (d.version !== DESIGN_VERSION) throw new (Number.isSafeInteger(d.version) && d.version! > DESIGN_VERSION ? NewerFormatError : Error)(`Design data version ${typeof d.version === "string" ? JSON.stringify(d.version) : shown(d.version)} is not one this SpindleLabs reads (1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27 or 28)`);
+  if (d.version !== DESIGN_VERSION) throw new (Number.isSafeInteger(d.version) && d.version! > DESIGN_VERSION ? NewerFormatError : Error)(`Design data version ${typeof d.version === "string" ? JSON.stringify(d.version) : shown(d.version)} is not one this SpindleLabs reads (1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28 or 29)`);
   // An empty timeline is an empty design (24f4: everything deleted), shown with no body.
   if (!Array.isArray(d.profiles) || !Array.isArray(d.timeline?.features)) throw new Error("Design data has no timeline");
   if (!Array.isArray(d.sketches)) throw new Error("Design data has no sketches list");

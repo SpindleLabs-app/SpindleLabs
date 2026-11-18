@@ -5,7 +5,7 @@
 import { KernelError, chordLabel, parseChord, summaryInUnit, wordsInUnit, latestOnly, NO_HIGHLIGHT, playback, ORIGIN_AT_FIRST, type AnalysisOverlay, type OriginPlane, type BodyHandle, type BodySpec, type ChamferSize, type MoveKind, type BodyView, type ExtrudeArrow, type OfferedProfile, type SketchPointer, type SketchXY, type Command, type Feature, type Framing, type Plane, type GeometryReference, type MountedWorkspace, type Selected, type SharedViewport, type WorkspaceContext, type WorkspaceId, type WorkspacePlugin, type HistoryStep, withWorkspaceDocument, type DisplayMesh } from "@fission/core";
 import { needsRefit, printView, snapDistance } from "@fission/viewport";
 import type { ShapeKind } from "./profiles.ts";
-import { bodyHidden, isConstructItem, bodyIdOf, bodyItem, bodyNumbers, combineBodies, EYE_FOLDERS, CHAMFER_MAX, isChamferItem, isShellItem, shellOf, isCombineItem, extrudeOperation, insertAt, isHidden, isMoveItem, isOperationExtrude, isPiece, isSketchExtrude, numberPieces, isSketchItem, ORIGIN_AXES, ORIGIN_PLANES as EYE_PLANES, builds, ownShape, originDrawn, partFeature, partOf, readDesignDocument, shapeOf, withPartAt, SKETCH_PLANES, type ChamferSizing, type DesignDocument, type MoveParam, type PartKind, isPatternItem } from "./document.ts";
+import { bodyHidden, constructOf, isConstructItem, bodyIdOf, bodyItem, bodyNumbers, combineBodies, EYE_FOLDERS, CHAMFER_MAX, isChamferItem, isShellItem, shellOf, isCombineItem, extrudeOperation, insertAt, isHidden, isMoveItem, isOperationExtrude, isPiece, isSketchExtrude, numberPieces, isSketchItem, ORIGIN_AXES, ORIGIN_PLANES as EYE_PLANES, builds, ownShape, originDrawn, partFeature, partOf, readDesignDocument, shapeOf, withPartAt, SKETCH_PLANES, type ChamferSizing, type DesignDocument, type MoveParam, type PartKind, isPatternItem } from "./document.ts";
 import { alreadyPicked, arrowOf, DEFAULT_DISTANCE, distanceRefused, DISTANCE_STEP, extrudeSketch, NO_SKETCH, NO_USABLE_SKETCH, PICK_PROFILE_STATUS, extrudeStep, featureBuild, featureSpec, previewSpec, setExtrudeDistance, setExtrudeOperation, setExtrudeSymmetric, setExtrudeThrough, signedDistance, symmetricDrag, ZERO_OK } from "./extrude.ts";
 import { extrudePanel } from "./extrude-panel.ts";
 import { throughDistance, throughWords } from "./extrude-through.ts";
@@ -37,7 +37,7 @@ import { chamferArrow, refusedEdges, snapChamfer, wedgeMesh } from "./chamfer-ar
 import { patternShown } from "./pattern-flag.ts";
 import { patternPanel } from "./pattern-panel.ts";
 import { copiesMesh, editPreviewOff, patternHintWords, readPatternBoxes, refusalWords, startSpacing } from "./pattern-tool.ts";
-import { changedPattern, editablePattern, insertPattern, PATTERN_STEP, patternProblem, patternRequest } from "./pattern.ts";
+import { changedPattern, editablePattern, insertPattern, PATTERN_STEP, patternProblem, patternRequest, turnAxes, turnAxisItem, turnAxisProblem } from "./pattern.ts";
 import { constructShown } from "./construct-flag.ts";
 import { constructView } from "./construct-view.ts";
 import { KIND_GROUPS, kindTitle } from "./construct-tool.ts";
@@ -4824,8 +4824,14 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
       patternBox.followSpacing((axis) => startSpacing(boxes, axis));
     }
     const values = readPatternBoxes(patternBox.typed);
-    const problem = patternProblem(values);
     const editing = patternBox.editing;
+    // Round a construction axis (59a3b): one this Pattern can use, turned round as the design last answered it.
+    const doc = designDoc();
+    const around = values.kind === "circular" ? turnAxisItem(values.axis) : null;
+    const axisItem = around === null ? undefined : doc.timeline.features.find((f) => f.id === around);
+    const at = editing === null ? insertAt(doc) : doc.timeline.features.findIndex((f) => f.id === editing);
+    const axisProblem = values.kind === "circular" ? turnAxisProblem(doc, values.axis, at) : null;
+    const problem = patternProblem(values) ?? (axisProblem === null ? null : `${axisProblem.charAt(0).toUpperCase()}${axisProblem.slice(1)}.`);
     const off = editing === null ? null : editPreviewOff(designDoc(), editing, resultsNow);
     const hides = editing !== null && off === null ? editing : null;
     if (hides !== patternHides) (patternHides = hides), showBodies(lastScene);
@@ -4837,7 +4843,7 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
     const bodiesAsked = [...patternBodies];
     let got: Awaited<ReturnType<typeof patternAsk>>;
     try {
-      got = await patternAsk(patternRequest(values));
+      got = await patternAsk(patternRequest(values, axisItem === undefined ? undefined : constructOf(axisItem).answer));
     } catch (e) {
       if (patternOpenings !== opened || !patternBox.shown) return;
       if (!(e instanceof KernelError) || e.kind !== "invalid-input") return drawPatternCopies(null), patternBox.showPreview(null, e instanceof Error ? e.message : String(e), true);
@@ -4865,8 +4871,11 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
     if (mode.kind !== "none") leaveSketch();
     leaveCombine(); // which puts an open Chamfer, Pattern and Measure away too
     patternOpenings++;
+    // The construction axes it can turn round (59a3b): before the marker for a new one, before it for an edited one.
+    const doc = designDoc();
+    patternBox.setAxes(turnAxes(doc, id === null ? insertAt(doc) : doc.timeline.features.findIndex((f) => f.id === id)));
     if (id !== null) {
-      const edit = editablePattern(designDoc(), id);
+      const edit = editablePattern(doc, id);
       patternBodies = edit.bodies;
       ctx.selection.clear();
       patternBox.show(edit.bodies.map(patternLabel), undefined, edit);
@@ -6249,6 +6258,9 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
       toolsChanged();
       listen();
       showStart();
+      // The Slice page may have ticked or unticked the warm-up loop or Better grip meanwhile: what is remembered counts again.
+      printExtras = null;
+      refreshArea();
       showBuildAreaWords();
       showRefusals();
       showPrintCheck();

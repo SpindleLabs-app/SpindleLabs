@@ -9,7 +9,8 @@
 import assert from "node:assert/strict";
 import { preview } from "vite";
 import { launch } from "./browser.mjs";
-import { chooseFile, openPanel, reloadEmpty, startWithBox } from "./start.mjs";
+import { openPanel, reloadEmpty, startWithBox } from "./start.mjs";
+import { openSlice } from "./slice-page-lib.mjs";
 import { pinProperties } from "./properties.mjs";
 
 const server = await preview({ preview: { port: 4207, strictPort: true }, logLevel: "error" });
@@ -80,13 +81,14 @@ for (const [width, height, tap] of [[1280, 800, false], [393, 852, true]]) {
       await page.waitForFunction(() => document.querySelector(".build-area")?.textContent.includes("250 mm wide, 257.9 mm with the warm-up loop"));
       assert.match(await page.textContent(".build-area"), /Turn Warm-up loop off in Slice for printing and they fit\.$/);
       if (tap) await page.evaluate(() => document.querySelector("#properties-toggle")?.getAttribute("aria-expanded") === "true" && document.querySelector("#properties-toggle").click());
-      await chooseFile(page, "file-slice-print", tap);
-      await page.waitForSelector("#slice-print-dialog[open]");
-      await press("#slice-print-warm-up");
+      await openSlice(page, tap);
+      await press("#slice-page-warm-up");
+      await page.evaluate(() => (location.hash = "#design"));
       await page.waitForFunction(() => document.querySelector("[data-build-area]")?.dataset.buildArea === "fits");
-      await press("#slice-print-warm-up");
+      await openSlice(page, tap);
+      await press("#slice-page-warm-up");
+      await page.evaluate(() => (location.hash = "#design"));
       await page.waitForFunction(() => document.querySelector("[data-build-area]")?.dataset.buildArea === "outside");
-      await press("#slice-print-close");
       // Kept on reload (this browser's setting): a new part shows it at once.
       await reloadEmpty(page);
       await startWithBox(page, tap);
