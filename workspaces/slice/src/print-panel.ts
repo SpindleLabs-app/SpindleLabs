@@ -4,7 +4,7 @@
 // hands them out as data), never from Design's code; the engine calls are @fission/print's. Styles: src/styles/slice-page.css.
 
 import { GCODE_KIND } from "@fission/ui";
-import type { BuildPlate, KernelCalls, SliceProgress, ListedObject, RepresentationRegistry } from "@fission/core";
+import type { BuildPlate, KernelCalls, SliceProgress, SupportStyle, ListedObject, RepresentationRegistry } from "@fission/core";
 import {
   costWords,
   fileCrawl,
@@ -48,6 +48,7 @@ import {
   unprintedWords,
   WALL_OPTIONS,
   printWords,
+  supportsHint,
   type PrintChoices,
 } from "@fission/print";
 
@@ -158,11 +159,15 @@ export function printPanel(doc: Document, parts: PrintPanelParts): PrintPanel {
     element.append(label);
     return select;
   };
+  let showHint: () => void = () => undefined;
   const numbers = (list: readonly number[], unit: string) => list.map((v) => ({ label: `${v}${unit}`, value: v }));
   addChoice({ label: "Quality", options: QUALITY_OPTIONS, current: choices.layerHeight, read: () => choices.layerHeight, pick: (v: number) => (choices = { ...choices, layerHeight: v }) });
   addChoice({ label: "Walls", options: numbers(WALL_OPTIONS, ""), current: choices.walls, read: () => choices.walls, pick: (v: number) => (choices = { ...choices, walls: v }) });
   addChoice({ label: "Infill", options: numbers(INFILL_OPTIONS, " %"), current: choices.infill, read: () => choices.infill, pick: (v: number) => (choices = { ...choices, infill: v }) });
-  addChoice({ label: "Supports", options: SUPPORT_OPTIONS, current: choices.supports, read: () => choices.supports, pick: (v: PrintChoices["supports"]) => (choices = { ...choices, supports: v }) });
+  addChoice({ label: "Supports", options: SUPPORT_OPTIONS, current: choices.supports, read: () => choices.supports, pick: (v: PrintChoices["supports"]) => {
+      choices = { ...choices, supports: v };
+      showHint(); // the hint offers the other way once the choice changes
+    } });
 
   // The file: the P1S's own print file (plate and nozzle matter to it only) or plain G-code for another printer.
   const plateSelect: { el: HTMLSelectElement | null } = { el: null };
@@ -260,9 +265,31 @@ export function printPanel(doc: Document, parts: PrintPanelParts): PrintPanel {
   price.value = String(pricePerKg);
   priceWrap.append(doc.createTextNode("A$ per kg"), price);
   cost.append(costText, priceWrap);
+  // The supports hint after a slice (the dialog's, Ben 2026-11-04): recommended or not by the overhangs, and one button that
+  // flips the Supports choice when it disagrees. It shows with the cost line and goes with it.
+  const hint = doc.createElement("div");
+  hint.className = "slice-page-supports-hint";
+  hint.hidden = true;
+  const hintWords = doc.createElement("span");
+  hintWords.className = "slice-page-supports-hint-words";
+  const flip = doc.createElement("button");
+  flip.className = "slice-page-supports-flip";
+  flip.type = "button";
+  hint.append(hintWords, flip);
+  let flipTo: SupportStyle | null = null;
   let costOf: PrintFacts | null = null;
+  showHint = () => {
+    const h = costOf?.overhangMm2 === undefined ? null : supportsHint(costOf.overhangMm2, choices.supports !== "off");
+    hint.hidden = h === null;
+    hint.dataset.recommended = String(h?.recommended ?? false);
+    hintWords.textContent = h?.words ?? "";
+    flipTo = h?.flip?.to ?? null;
+    flip.hidden = h?.flip == null;
+    flip.textContent = h?.flip?.label ?? "";
+  };
   const showCost = (print: PrintFacts | null) => {
     costOf = print;
+    showHint();
     const words = print === null ? null : costWords(print, pricePerKg);
     cost.hidden = words === null;
     costText.textContent = words ?? "";
@@ -291,7 +318,7 @@ export function printPanel(doc: Document, parts: PrintPanelParts): PrintPanel {
   stage.className = "slice-page-stage";
   stage.setAttribute("role", "status");
   bar.append(meter, stage);
-  element.append(button, previewButton, download, bar, status, cost);
+  element.append(button, previewButton, download, bar, status, hint, cost);
   // Printer presets: the settings saved under a name in this browser (slice-presets.ts, shared with the dialog), picked
   // in the heading's line; picking one puts its settings in, and any change marks it changed.
   const applyPreset = (v: Parameters<typeof presetSettingsOf>[0] & object) => {
@@ -482,6 +509,16 @@ export function printPanel(doc: Document, parts: PrintPanelParts): PrintPanel {
       if (live) busy(false);
     }
   };
+  // One tap switches Supports to what the hint says; the next slice uses it.
+  flip.addEventListener("click", () => {
+    if (running || flipTo === null) return;
+    const to = flipTo;
+    choices = { ...choices, supports: to };
+    for (const sync of syncs) sync();
+    presetsChanged();
+    showHint();
+    status.textContent = to !== "off" ? "Supports turned on (Normal). Slice again to make the file with them." : "Supports turned off. Slice again to make the file without them.";
+  });
   button.addEventListener("click", () => void slice());
   download.addEventListener("click", () => void downloadFile());
   previewButton.addEventListener("click", () => void previewPrint());
