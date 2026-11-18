@@ -408,6 +408,7 @@ export function printPanel(doc: Document, parts: PrintPanelParts): PrintPanel {
   const fitsRow = doc.createElement("p");
   fitsRow.className = "slice-page-fits";
   const fitsWords = doc.createElement("span");
+  fitsWords.id = "slice-page-fits-words";
   fitsWords.className = "slice-page-fits-words";
   const fitsOpen = doc.createElement("button");
   fitsOpen.type = "button";
