@@ -172,7 +172,7 @@ test("an open face an edit split in two is never guessed between: the Shell fail
 test("the Shell's data: written as version 27, read back the same; every part checked; version 26 data holding one refused", () => {
   const { doc: d0, body } = cube();
   const { doc, id } = insertShell(d0, body, ["face:feature-1/top"], 1);
-  assert.equal(DESIGN_VERSION, 28);
+  assert.equal(DESIGN_VERSION, 29);
   const saved = JSON.parse(JSON.stringify(doc));
   assert.deepEqual(readDesignDocument(saved), doc);
   assert.deepEqual(shellOf(doc.timeline.features.find((f) => f.id === id)!), { body, faces: ["face:feature-1/top"], thickness: 1 });
@@ -199,7 +199,7 @@ test("the Shell's data: written as version 27, read back the same; every part ch
   const old = { ...JSON.parse(JSON.stringify(doc)), version: 26 };
   assert.throws(() => readDesignDocument(old), /Design data says version 26 but has a Shell, which version 27 brought/);
   // Version 26 data with no Shell reads as it is.
-  assert.equal(readDesignDocument({ ...JSON.parse(JSON.stringify(d0)), version: 26 }).version, 28);
+  assert.equal(readDesignDocument({ ...JSON.parse(JSON.stringify(d0)), version: 26 }).version, 29);
 });
 
 test("the wall thickness's limits, 1 um and 1 km, at 0.9 x and 1.1 x: inside allowed, outside refused by insertShell and by the reader", () => {

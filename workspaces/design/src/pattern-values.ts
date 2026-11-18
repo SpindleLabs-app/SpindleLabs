@@ -5,13 +5,25 @@
 // the item in; rebuild.ts builds it).
 
 import type { PatternSpec } from "@fission/core";
+import { constructPlaneItem, CONSTRUCT_REF, type ConstructAnswer } from "./construct-data.ts";
 
 /** A value from a file, for a message (document.ts `shown`'s rule): text as it is, anything else by kind, never its own toString. */
 const shown = (x: unknown): string => (typeof x === "object" && x !== null ? (Array.isArray(x) ? "a list" : "an object") : String(x));
 
-/** The axes a pattern runs along or round (the origin's, until construction axes, step 59). */
+/** The origin's axes a pattern runs along or round. */
 export const PATTERN_AXES = ["X", "Y", "Z"] as const;
 export type PatternAxis = (typeof PATTERN_AXES)[number];
+
+/**
+ * What a pattern turns round (step 59a3b): an origin axis, or a construction
+ * axis by its name, "construct:feature-7" (behind ?construct). Round a
+ * construction axis the Pattern keeps no centre: the axis's own line says
+ * where it turns, found again on every rebuild.
+ */
+export type TurnAxis = PatternAxis | `${typeof CONSTRUCT_REF}${string}`;
+
+/** The construction a Pattern turns round ("construct:feature-7" → "feature-7"), or null for an origin axis or anything else. */
+export const turnAxisItem = (axis: unknown): string | null => constructPlaneItem(axis);
 
 /** The most instances a pattern makes, the original included: the kernel's MAX_INSTANCES (all fit one Join). */
 export const MAX_INSTANCES = 256;
@@ -40,11 +52,15 @@ export interface LinearValues {
   count2?: number;
 }
 
-/** Instances round an axis through `centre`: over a full turn (`angle` 360) or a partial angle (degrees, negative the other way). */
+/**
+ * Instances round an axis: an origin axis through `centre`, or a
+ * construction axis (no centre: its line is where it turns); over a full
+ * turn (`angle` 360) or a partial angle (degrees, negative the other way).
+ */
 export interface CircularValues {
   kind: "circular";
-  axis: PatternAxis;
-  centre: [number, number, number];
+  axis: TurnAxis;
+  centre?: [number, number, number];
   count: number;
   angle: number;
 }
@@ -100,10 +116,16 @@ export function patternProblem(v: PatternValues): string | null {
       if (s2 !== null) return s2;
     }
   } else {
-    if (!PATTERN_AXES.includes(v.axis)) return `${shown(v.axis)} is not X, Y or Z.`;
+    const construct = turnAxisItem(v.axis) !== null;
+    if (!construct && !PATTERN_AXES.includes(v.axis as PatternAxis)) return `${shown(v.axis)} is not X, Y, Z or a construction axis.`;
     if (!whole(v.count)) return "Type how many, a whole number from 2.";
-    if (!Array.isArray(v.centre) || v.centre.length !== 3 || !v.centre.every(finite)) return "Type the centre in mm.";
-    if (v.centre.some((c) => Math.abs(c) > MAX_COORD)) return `The centre must be within 100 km (${MAX_COORD.toLocaleString("en")} mm) of the origin.`;
+    if (construct) {
+      // The axis's own line is where it turns: a centre too would be a second answer to the same question.
+      if (v.centre !== undefined) return "A construction axis says where it turns: a pattern round one has no centre.";
+    } else {
+      if (!Array.isArray(v.centre) || v.centre.length !== 3 || !v.centre.every(finite)) return "Type the centre in mm.";
+      if (v.centre.some((c) => Math.abs(c) > MAX_COORD)) return `The centre must be within 100 km (${MAX_COORD.toLocaleString("en")} mm) of the origin.`;
+    }
     if (!finite(v.angle) || v.angle === 0) return "Type the angle in degrees, above 0 (negative turns the other way).";
     if (Math.abs(v.angle) > FULL_TURN) return `The angle can be at most ${FULL_TURN}°, a full turn.`;
     // The kernel's own limits on a partial angle, in the radians it is sent in.
@@ -121,20 +143,33 @@ export function patternProblem(v: PatternValues): string | null {
  * The kernel's request for checked values (`patternProblem` null): a row's
  * directions as unit axes, its spacings in mm; round an axis, the angle in
  * radians, left out for a full turn (the kernel spaces n evenly all the way
- * round, so the last copy is one step short of the original).
+ * round, so the last copy is one step short of the original). Round a
+ * construction axis (step 59a3b) the turn is about the line `axis`, the
+ * construction as the rebuild answered it: through its point, along its
+ * direction; refused, never guessed, with no axis answered.
  */
-export function patternRequest(v: PatternValues): PatternRequest {
+export function patternRequest(v: PatternValues, axis?: ConstructAnswer): PatternRequest {
   if (v.kind === "linear") {
     const across = v.direction2 === undefined ? {} : { across: { along: [...UNIT[v.direction2]] as [number, number, number], spacing: v.spacing2!, count: v.count2! } };
     return { linear: { along: [...UNIT[v.direction]] as [number, number, number], spacing: v.spacing, count: v.count, ...across } };
   }
   const full = Math.abs(v.angle) === FULL_TURN;
+  let pivot: [number, number, number];
+  let along: [number, number, number];
+  if (turnAxisItem(v.axis) !== null) {
+    if (axis?.kind !== "axis") throw new Error(`${shown(v.axis)} is turned round with no axis answered for it`);
+    [pivot, along] = [[...axis.point], [...axis.direction]];
+  } else [pivot, along] = [[...v.centre!], [...UNIT[v.axis as PatternAxis]]];
   // A full turn the other way round lands on the same places, in the other order.
-  return { circular: { pivot: [...v.centre] as [number, number, number], axis: v.angle < 0 && full ? [...UNIT[v.axis].map((x) => -x)] as [number, number, number] : [...UNIT[v.axis]] as [number, number, number], count: v.count, ...(full ? {} : { angle: radians(v.angle) }) } };
+  return { circular: { pivot, axis: v.angle < 0 && full ? (along.map((x) => -x) as [number, number, number]) : along, count: v.count, ...(full ? {} : { angle: radians(v.angle) }) } };
 }
 
-/** A pattern's description: "3 of Box 1 in a row along X, 10 mm apart", "6 of Box 1 round the Z axis", ", joined". */
-export function patternSummary(names: readonly string[], v: PatternValues): string {
+/**
+ * A pattern's description: "3 of Box 1 in a row along X, 10 mm apart", "6 of
+ * Box 1 round the Z axis", round a construction axis by its name (`axisName`,
+ * "6 of Box 1 round Axis 1"), ", joined".
+ */
+export function patternSummary(names: readonly string[], v: PatternValues, axisName?: string): string {
   const list = names.length === 1 ? names[0] : `${names.slice(0, -1).join(", ")} and ${names.at(-1)}`;
   const mm = (n: number) => `${Number(n.toPrecision(12))} mm`;
   const words =
@@ -142,9 +177,7 @@ export function patternSummary(names: readonly string[], v: PatternValues): stri
       ? v.direction2 === undefined
         ? `${v.count} of ${list} in a row along ${v.direction}, ${mm(v.spacing)} apart`
         : `${v.count} × ${v.count2} of ${list} in a grid along ${v.direction} and ${v.direction2}, ${mm(v.spacing)} and ${mm(v.spacing2!)} apart`
-      : Math.abs(v.angle) === FULL_TURN
-        ? `${v.count} of ${list} round the ${v.axis} axis`
-        : `${v.count} of ${list} over ${Number(v.angle.toPrecision(12))}° round the ${v.axis} axis`;
+      : `${v.count} of ${list}${Math.abs(v.angle) === FULL_TURN ? "" : ` over ${Number(v.angle.toPrecision(12))}°`} round ${turnAxisItem(v.axis) !== null ? (axisName ?? v.axis) : `the ${v.axis} axis`}`;
   return v.join ? `${words}, joined` : words;
 }
 
@@ -174,16 +207,21 @@ export function copyIds(pattern: string, sources: number, copiesEach: number): s
 const LINEAR_KEYS = ["kind", "direction", "spacing", "count", "join"] as const;
 const GRID_KEYS = ["direction2", "spacing2", "count2"] as const;
 const CIRCULAR_KEYS = ["kind", "axis", "centre", "count", "angle", "join"] as const;
+/** Round a construction axis (step 59a3b): no centre. */
+const CONSTRUCT_TURN_KEYS = ["kind", "axis", "count", "angle", "join"] as const;
 
 /**
  * Why an item's saved parameters (less `bodies`) are no Pattern's values, in
  * words, or null: exactly a row's keys (with a grid's three together) or a
- * turn's, `join` true or false, and values `patternProblem` takes.
+ * turn's (no centre round a construction axis), `join` true or false, and
+ * values `patternProblem` takes.
  */
 export function patternParamsProblem(p: Record<string, unknown>): string | null {
   const keys = Object.keys(p).filter((k) => k !== "bodies");
-  const want: readonly string[] = p.kind === "linear" ? [...LINEAR_KEYS, ...(Object.hasOwn(p, "direction2") ? GRID_KEYS : [])] : p.kind === "circular" ? CIRCULAR_KEYS : [];
+  const want: readonly string[] = p.kind === "linear" ? [...LINEAR_KEYS, ...(Object.hasOwn(p, "direction2") ? GRID_KEYS : [])] : p.kind === "circular" ? (turnAxisItem(p.axis) !== null ? CONSTRUCT_TURN_KEYS : CIRCULAR_KEYS) : [];
   if (want.length === 0) return `its kind ${shown(p.kind)} is not linear or circular`;
+  // An axis that is neither kind says so before its keys are judged by it (a misspelt construction is no origin axis lacking a centre).
+  if (p.kind === "circular" && turnAxisItem(p.axis) === null && !PATTERN_AXES.includes(p.axis as PatternAxis)) return `its axis ${typeof p.axis === "string" ? JSON.stringify(p.axis) : shown(p.axis)} is not X, Y, Z or a construction axis`;
   const extra = keys.find((k) => !want.includes(k));
   if (extra !== undefined) return `it has a value ${JSON.stringify(extra)} a ${p.kind} pattern doesn't have`;
   const lacking = want.find((k) => !Object.hasOwn(p, k));
@@ -199,9 +237,9 @@ export function patternValuesOf(p: Record<string, unknown>): PatternValues {
   return values as unknown as PatternValues;
 }
 
-/** Checked values as a Pattern item saves them: only its kind's keys, a grid's second direction only when there is one (leftovers dropped). */
+/** Checked values as a Pattern item saves them: only its kind's keys, a grid's second direction only when there is one, a centre only round an origin axis (leftovers dropped). */
 export function savedValues(v: PatternValues): PatternValues {
-  if (v.kind === "circular") return { kind: "circular", axis: v.axis, centre: [...v.centre], count: v.count, angle: v.angle, join: v.join };
+  if (v.kind === "circular") return { kind: "circular", axis: v.axis, ...(turnAxisItem(v.axis) === null ? { centre: [...v.centre!] as [number, number, number] } : {}), count: v.count, angle: v.angle, join: v.join };
   const grid = v.direction2 === undefined ? {} : { direction2: v.direction2, spacing2: v.spacing2!, count2: v.count2! };
   return { kind: "linear", direction: v.direction, spacing: v.spacing, count: v.count, ...grid, join: v.join };
 }

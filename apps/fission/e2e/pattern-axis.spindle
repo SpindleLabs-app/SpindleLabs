@@ -1,0 +1,150 @@
+{
+ "formatVersion": 2,
+ "links": [],
+ "materials": [],
+ "name": "Pattern round an axis",
+ "units": {
+  "length": "mm"
+ },
+ "workspaces": {
+  "design": {
+   "version": 29,
+   "nextId": 4,
+   "profiles": [],
+   "sketches": [],
+   "timeline": {
+    "features": [
+     {
+      "id": "feature-1",
+      "intent": {
+       "type": "box",
+       "parameters": {
+        "width": 10,
+        "depth": 10,
+        "height": 10
+       },
+       "summary": "Box: 10 × 10 × 10 mm"
+      },
+      "provenance": {
+       "self": {
+        "workspace": "design",
+        "id": "feature-1",
+        "label": "Box 1"
+       },
+       "from": []
+      },
+      "dependsOn": [],
+      "suppressed": false
+     },
+     {
+      "id": "feature-2",
+      "intent": {
+       "type": "construct",
+       "parameters": {
+        "make": "offset_plane",
+        "inputs": {
+         "plane": "face:feature-1/right"
+        },
+        "distance": 10,
+        "answer": {
+         "kind": "plane",
+         "point": [
+          20,
+          0,
+          0
+         ],
+         "normal": [
+          1,
+          0,
+          0
+         ],
+         "near": [
+          20,
+          0,
+          0
+         ]
+        }
+       },
+       "summary": "Offset plane, 10 mm"
+      },
+      "provenance": {
+       "self": {
+        "workspace": "design",
+        "id": "feature-2",
+        "label": "Plane 1"
+       },
+       "from": [
+        {
+         "workspace": "design",
+         "id": "feature-1",
+         "label": "Box 1"
+        }
+       ]
+      },
+      "dependsOn": [
+       "feature-1"
+      ],
+      "suppressed": false
+     },
+     {
+      "id": "feature-3",
+      "intent": {
+       "type": "construct",
+       "parameters": {
+        "make": "axis_where_planes_meet",
+        "inputs": {
+         "first": "construct:feature-2",
+         "second": "XZ"
+        },
+        "answer": {
+         "kind": "axis",
+         "point": [
+          20,
+          0,
+          0
+         ],
+         "direction": [
+          0,
+          0,
+          -1
+         ],
+         "near": [
+          20,
+          0,
+          0
+         ]
+        }
+       },
+       "summary": "Axis where two planes meet"
+      },
+      "provenance": {
+       "self": {
+        "workspace": "design",
+        "id": "feature-3",
+        "label": "Axis 1"
+       },
+       "from": [
+        {
+         "workspace": "design",
+         "id": "feature-2",
+         "label": "Plane 1"
+        }
+       ]
+      },
+      "dependsOn": [
+       "feature-2"
+      ],
+      "suppressed": false
+     }
+    ]
+   },
+   "bodies": [
+    {
+     "id": "body:feature-1",
+     "number": 1
+    }
+   ],
+   "nextBody": 2
+  }
+ }
+}

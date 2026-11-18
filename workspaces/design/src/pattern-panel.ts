@@ -15,7 +15,7 @@
 import { wordsInUnit } from "@fission/core";
 import { currentUnit } from "@fission/ui";
 import { EDIT_BODIES_NOTE, type EditablePattern } from "./pattern.ts";
-import { MAX_INSTANCES, PATTERN_AXES, type PatternAxis } from "./pattern-values.ts";
+import { MAX_INSTANCES, PATTERN_AXES, turnAxisItem, type PatternAxis, type TurnAxis } from "./pattern-values.ts";
 import { bodiesWords, KIND_WORDS, PATTERN_KINDS, START_SPACING, typedOf, type PatternKind, type PatternTyped } from "./pattern-tool.ts";
 import { sizeBox, type SizeBox } from "./properties.ts";
 
@@ -33,6 +33,12 @@ export interface PatternPanel {
   readonly editing: string | null;
   /** The bodies picked, by name, as the picks change. */
   setBodies(names: readonly string[]): void;
+  /**
+   * The construction axes the Axis list offers after X, Y and Z (step 59a3b), by name, in timeline order. The axis
+   * chosen stays chosen while it is offered; one no longer offered (deleted, suppressed) stays in the list, marked, so an
+   * edited Pattern still shows what it turns round, and X is chosen for a new one.
+   */
+  setAxes(axes: readonly { axis: TurnAxis; label: string }[]): void;
   /**
    * A new Pattern's spacings as the picks change: each set to `along(its direction)` until typed in (as Move's pivot
    * follows its bodies until typed), so a row picked after the panel opened still starts with its copies apart.
@@ -111,6 +117,20 @@ export function patternPanel(slot: HTMLElement, on: PatternEvents): PatternPanel
   const direction = select("pattern-direction", "Direction", axes);
   const direction2 = select("pattern-direction2", "Second direction", axes);
   const axis = select("pattern-axis", "Axis", axes);
+  axis.title = "The axis the copies turn round: X, Y or Z through the centre below, or a construction axis (it says where it turns)";
+  /** The construction axes listed now, by name (`setAxes`). */
+  let offered: { axis: TurnAxis; label: string }[] = [];
+  /** An edited Pattern's construction axis by name, for the list when it is no longer offered. */
+  let ownAxisName = "";
+  /** An edited Pattern's own axis as saved, the only one kept in the list when no longer offered. */
+  let ownAxis = "";
+  /** The Axis list: X, Y, Z, then each construction axis offered, then `keep` (the one chosen) when it is no longer offered. */
+  const listAxes = (keep: string) => {
+    const options: [string, string][] = [...axes.map(([a, w]) => [a, w] as [string, string]), ...offered.map((o) => [o.axis, o.label] as [string, string])];
+    if (editing !== null && keep === ownAxis && turnAxisItem(keep) !== null && !options.some(([v]) => v === keep)) options.push([keep, `${ownAxisName || "Its construction axis"} (can't be used now)`]);
+    axis.replaceChildren(...options.map(([value, words]) => Object.assign(el("option", "", "", words), { value })));
+    axis.value = options.some(([v]) => v === keep) ? keep : "X";
+  };
   const textBox = (id: string, label: string, decimal = true) => {
     const input = el("input", id);
     Object.assign(input, { type: "text", inputMode: decimal ? "decimal" : "numeric", autocomplete: "off", spellcheck: false });
@@ -181,6 +201,8 @@ export function patternPanel(slot: HTMLElement, on: PatternEvents): PatternPanel
     for (const r of rowRows) r.hidden = k === "circular";
     for (const r of gridRows) r.hidden = k !== "grid";
     for (const r of turnRows) r.hidden = k !== "circular";
+    // A construction axis says where it turns: no centre to type (59a3b).
+    centreRow.hidden = k !== "circular" || turnAxisItem(axis.value) !== null;
   };
   const okState = () => (ok.disabled = ok.dataset.busy === "1" || picked === 0);
   const changed = () => on.changed();
@@ -216,7 +238,7 @@ export function patternPanel(slot: HTMLElement, on: PatternEvents): PatternPanel
     kind.value = t.kind;
     direction.value = t.direction;
     direction2.value = t.direction2;
-    axis.value = t.axis;
+    listAxes(t.axis);
     setLength("pattern-spacing", t.spacing);
     setLength("pattern-spacing2", t.spacing2);
     (["x", "y", "z"] as const).forEach((k, i) => setLength(`pattern-centre-${k}`, t.centre[i]));
@@ -230,6 +252,8 @@ export function patternPanel(slot: HTMLElement, on: PatternEvents): PatternPanel
     show(names, spacing, edit) {
       open = true;
       editing = edit?.id ?? null;
+      ownAxisName = edit?.axisName ?? "";
+      ownAxis = edit?.values.kind === "circular" ? edit.values.axis : "";
       typedIn.spacing = typedIn.spacing2 = edit !== undefined;
       const start = spacing === undefined ? PATTERN_DEFAULTS : { ...PATTERN_DEFAULTS, spacing: String(spacing), spacing2: String(spacing) };
       fill(edit === undefined ? start : typedOf(edit.values, start));
@@ -250,6 +274,12 @@ export function patternPanel(slot: HTMLElement, on: PatternEvents): PatternPanel
       bodies.classList.toggle("pattern-panel-empty", names.length === 0);
       okState();
     },
+    setAxes(list) {
+      const keep = axis.value;
+      offered = [...list];
+      listAxes(keep);
+      showKind();
+    },
     followSpacing(along) {
       if (!typedIn.spacing) setLength("pattern-spacing", String(along(direction.value as PatternAxis)));
       if (!typedIn.spacing2) setLength("pattern-spacing2", String(along(direction2.value as PatternAxis)));
@@ -263,7 +293,7 @@ export function patternPanel(slot: HTMLElement, on: PatternEvents): PatternPanel
         direction2: direction2.value as PatternAxis,
         spacing2: lengths.get("pattern-spacing2")!.value,
         count2: plain.get("pattern-count2")!.value,
-        axis: axis.value as PatternAxis,
+        axis: axis.value as TurnAxis,
         centre: (["x", "y", "z"] as const).map((k) => lengths.get(`pattern-centre-${k}`)!.value) as [string, string, string],
         count3: plain.get("pattern-count3")!.value,
         angle: angleInput.value,
