@@ -10,7 +10,7 @@
 // (`barEdit`). Behaviour copied from the reference app's timeline.
 
 import type { Feature } from "@fission/core";
-import { buildingItems, duplicatedBody, greyedBy, greyedItems, isChamferItem, isCombineItem, isDuplicateItem, isMoveItem, isPiece, isSketchItem, type DesignDocument } from "./document.ts";
+import { buildingItems, duplicatedBody, greyedBy, greyedItems, isChamferItem, isCombineItem, isDuplicateItem, isMoveItem, isPatternItem, isPiece, isSketchItem, type DesignDocument } from "./document.ts";
 import { canEditFeature } from "./feature-edit.ts";
 import { moveKindOf } from "./move.ts";
 import { mirrorOf } from "./duplicate.ts";
@@ -19,7 +19,7 @@ import { dragItem } from "./timeline-reorder.ts";
 import { hideCard, showCard } from "./timeline-card.ts";
 import type { Scene } from "./scene.ts";
 
-export type TimelineIcon = "sketch" | "extrude" | "box" | "cylinder" | "sphere" | "move" | "combine" | "duplicate" | "scale" | "mirror" | "chamfer" | "feature";
+export type TimelineIcon = "sketch" | "extrude" | "box" | "cylinder" | "sphere" | "move" | "combine" | "duplicate" | "scale" | "mirror" | "chamfer" | "pattern" | "feature";
 
 export interface TimelineBarItem {
   id: string;
@@ -45,7 +45,7 @@ export interface TimelineBarItem {
   warning: string | null;
 }
 
-const ICON_OF: Record<string, TimelineIcon> = { sketch: "sketch", extrude: "extrude", box: "box", cylinder: "cylinder", sphere: "sphere", move: "move", combine: "combine", duplicate: "duplicate", chamfer: "chamfer" };
+const ICON_OF: Record<string, TimelineIcon> = { sketch: "sketch", extrude: "extrude", box: "box", cylinder: "cylinder", sphere: "sphere", move: "move", combine: "combine", duplicate: "duplicate", chamfer: "chamfer", pattern: "pattern" };
 
 /** An item's icon by its type; a Scale (a Move that opens as Scale) and a Mirror (a Duplicate across a plane) get their own (step 35e2). */
 function iconOf(f: Feature): TimelineIcon {
@@ -244,13 +244,13 @@ function sketchOff(doc: DesignDocument, at: number, editing: string | null): str
 /**
  * Why Edit feature is off for `item`, in words true of what it is; null
  * when it opens an editor (workspace.ts `openEdit`: a solid's sizes, a
- * Move's, Rotate's or Scale's panel, a Combine's, a Chamfer's). A Copy or a Mirror has
+ * Move's, Rotate's or Scale's panel, a Combine's, a Chamfer's, a Pattern's). A Copy or a Mirror has
  * none (hunt 11-11, E2: its entry was on, and said "Copy 1 is a sketch"):
  * it follows the body it was made from, named as the item names it now. A
  * sketch is opened with Edit Sketch instead.
  */
 export function editOff(item: Feature): string | null {
-  if (isMoveItem(item) || isCombineItem(item) || isChamferItem(item) || canEditFeature(item)) return null;
+  if (isMoveItem(item) || isCombineItem(item) || isChamferItem(item) || isPatternItem(item) || canEditFeature(item)) return null;
   const name = itemName(item);
   if (isSketchItem(item)) return `${name} is a sketch: open it with Edit Sketch`;
   if (!isDuplicateItem(item)) return `${name} has nothing to edit`;
@@ -390,6 +390,8 @@ const ICONS: Record<TimelineIcon, string> = {
   mirror: '<path d="M3 19l6-14v14zM21 19l-6-14v14zM12 2v20"/>',
   // A Chamfer (44a-app3): a block with its top right corner cut off flat, the cut's line run on past it.
   chamfer: '<path d="M4 20V4h10l6 6v10z"/><path d="M12 2l10 10"/>',
+  // A Pattern (step 61c): a square and two copies of it in a row.
+  pattern: '<rect x="2" y="9" width="6" height="6" rx="1"/><rect x="9" y="9" width="6" height="6" rx="1"/><rect x="16" y="9" width="6" height="6" rx="1"/>',
   feature: '<circle cx="12" cy="12" r="7"/>',
 };
 
