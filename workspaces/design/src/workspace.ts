@@ -1282,7 +1282,18 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
     // Hidden bodies are left out, as in Fusion; the note says which (beginner play-test 2026-10-28).
     return runAction(DOWNLOAD_STL, bodies, hiddenStlNote(doc!, failedNow));
   }
-  function run(command: Command) {
+  function run(command: Command): ReturnType<typeof runNow> | Promise<void> {
+    // SL #819 B-2: an assistant's command waits for an OK the kernel is still checking, as Insert and the menus do.
+    if (okChecks.size === 0) return runNow(command);
+    return new Promise((resolve, reject) => afterOk(() => {
+      try {
+        void Promise.resolve(runNow(command)).then(() => resolve(), reject);
+      } catch (err) {
+        reject(err);
+      }
+    }));
+  }
+  function runNow(command: Command) {
     // The whole design's STL, every body shown in one file (25c1): the same verb selected bodies offer, from the registry.
     if (command.op === "export_stl") return exportShown();
     if (command.op === "create_sketch") return aiSketch(String(command.on));
@@ -1576,10 +1587,17 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
   }
   let lastSelectedFeature: string | null = null;
   /** The timeline bar for `doc`, wired to the item menu. */
+  /**
+   * A bar action's refusal that waited for an OK (SL #819 B-2), shown beside the bar while the design is the one it
+   * was refused on: the OK's rebuild draws the bar again after it, which would otherwise take the words away.
+   */
+  let waitedRefusal: { doc: DesignDocument; words: string } | null = null;
   function showBar(doc: DesignDocument) {
     if (!ctx.timeline) return;
     showFailureNote(lastSelectedFeature);
+    if (waitedRefusal !== null && waitedRefusal.doc !== doc) waitedRefusal = null;
     showTimelineBar(ctx.timeline, doc, {
+      note: waitedRefusal?.words ?? null,
       describe: (summary) => summaryInUnit(summary, currentUnit(ctx.timeline!.ownerDocument)),
       failed: failedNow,
       slow: slowNow,
@@ -1600,13 +1618,25 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
       // A refusal goes to the error line and back to the bar, which shows it beside itself (timeline hunt, finding 4).
       onAction: (a) => {
         if (a.kind === "menu") return;
-        let refused: string | undefined;
-        try {
-          chooseBarAction({ ...menuHost, refuse: (message) => (menuHost.refuse(message), (refused = message)) }, a, editingId());
-        } catch (err) {
-          panel.showError(err instanceof Error ? err.message : String(err));
-        }
-        return refused;
+        const act = () => {
+          let refused: string | undefined;
+          try {
+            chooseBarAction({ ...menuHost, refuse: (message) => (menuHost.refuse(message), (refused = message)) }, a, editingId());
+          } catch (err) {
+            panel.showError(err instanceof Error ? err.message : String(err));
+          }
+          return refused;
+        };
+        // SL #819 B-2: an OK the kernel is still checking goes first, as for the menus; the bar's action then runs on the
+        // design the OK left (a refusal drawn beside the bar then), never shutting the OK's panel under it.
+        if (okChecks.size === 0) return act();
+        afterOk(() => {
+          const refused = act();
+          if (refused === undefined) return;
+          waitedRefusal = { doc: designDoc(), words: refused };
+          showBar(designDoc());
+        });
+        return undefined;
       },
     });
   }
@@ -2012,7 +2042,9 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
         const newPart = kind !== framedKind && !keepCamera;
         keepCamera = false;
         if (!empty && (newPart || needsRefit(framed, viewport.bodyFraming()))) {
-          framed = viewport.fit();
+          // A new part is framed from the home view; a part that outgrew the view keeps the angle the person looks
+          // from, as the Fit button does (SL #819 D-10: a person working in Top was spun round).
+          framed = newPart || viewport.fitKeepAngle === undefined ? viewport.fit() : viewport.fitKeepAngle();
           viewport.element.dataset.framedRadius = String(framed?.radius); // read by the e2e test
           viewport.element.dataset.fits = String(++fits);
         }
