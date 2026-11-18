@@ -1,7 +1,7 @@
 New failures this run (kinds of problem no earlier run found): 0
 new-failures.csv has one line per run; kinds-seen.txt lists every kind found so far.
 
-SpindleLabs random testing, all runs so far (updated 2026-11-17 17:21 UTC)
+SpindleLabs random testing, all runs so far (updated 2026-11-18 19:26 UTC)
 
 hours of testing:                 0.0
 rounds:                           
@@ -19,9 +19,9 @@ The commit and branch columns of log.csv (and commit.txt in each
 failures folder) say which code a round tested.
 
 Latest magic-moment journeys against tests/baseline.json (FLAG: an extra click, the slowest walk more than 15% over the baseline, or more than 15% slower than main's build on the same runner; past twice the baseline or 30% slower than main it fails):
-  tested commit 901478c on main, 2026-11-17 17:21 UTC (https://github.com/SpindleLabs-app/SpindleLabs/actions/runs/44109311693)
-  OK Design: shape to STL: 4 clicks (baseline 4), slowest 1.27 s = 43.61× the fixed workload (baseline 1.16 s)
-  OK Design: sketch to STL: 8 clicks (baseline 8), slowest 2.75 s = 93.98× the fixed workload (baseline 9.70 s)
+  tested commit 6e1f1d5 on main, 2026-11-18 19:26 UTC (https://github.com/SpindleLabs-app/SpindleLabs/actions/runs/44330642286)
+  FLAG Design: shape to STL: slowest 1.40 s = 43.21× the fixed workload, baseline 1.16 s (21% over, flag above 15%, fail above 100%)
+  OK Design: sketch to STL: 8 clicks (baseline 8), slowest 2.63 s = 81.30× the fixed workload (baseline 9.70 s)
   PENDING Box to laser panels: waits for Laser (L1–L3), X13
   PENDING Logo to everything: waits for Vector (V3), Laser (L1), Render (R1)
   PENDING Enclosure and board: waits for Circuit (E3), Slice (P1)
@@ -30,118 +30,138 @@ Latest magic-moment journeys against tests/baseline.json (FLAG: an extra click, 
 journeys/flags.txt lists every FLAG line so far.
 
 Latest golden models run (tests/golden rebuilt and checked against their hand-worked answers, timed against tests/baseline.json; a failing model files a random-testing issue):
-  tested commit 901478c on main, 2026-11-17 17:21 UTC (https://github.com/SpindleLabs-app/SpindleLabs/actions/runs/44109311693)
-  seed 1794927668, 50 rounds of 14 models; every answer right and the same every round; replay: FISSION_SEED=1794927668 FISSION_GOLDEN_ROUNDS=50 npm run golden -w @fission/testing
-  box-minus-box: 50 rebuilds, fastest 3.0 ms, slowest 4.5 ms, OK
-  bracket-two-holes: 50 rebuilds, fastest 2.1 ms, slowest 7.5 ms, OK
-  enclosure: 50 rebuilds, fastest 1.4 ms, slowest 5.8 ms, OK
-  f2-gap-join: 50 rebuilds, fastest 2.5 ms, slowest 5.8 ms, OK
-  far-wall-outside: 50 rebuilds, fastest 3.4 ms, slowest 8.8 ms, OK
-  flush-blocks: 50 rebuilds, fastest 3.2 ms, slowest 14.2 ms, OK
-  gear: 50 rebuilds, fastest 10.6 ms, slowest 15.6 ms, OK
-  hollow-box: 50 rebuilds, fastest 3.3 ms, slowest 5.9 ms, OK
-  km-plate: 50 rebuilds, fastest 3.2 ms, slowest 7.9 ms, OK
-  l-bracket: 50 rebuilds, fastest 0.4 ms, slowest 1.2 ms, OK
-  micron-cube-halved: 50 rebuilds, fastest 1.2 ms, slowest 3.4 ms, OK
-  small-cube-halved: 50 rebuilds, fastest 2.5 ms, slowest 40.8 ms, OK
-  stepped-boss: 50 rebuilds, fastest 2.0 ms, slowest 3.8 ms, OK
-  thirty-features: 50 rebuilds, fastest 7.6 ms, slowest 25.7 ms, OK
+  tested commit 6e1f1d5 on main, 2026-11-18 19:26 UTC (https://github.com/SpindleLabs-app/SpindleLabs/actions/runs/44330642286)
+  seed 1795017708, 50 rounds of 14 models; every answer right and the same every round; replay: FISSION_SEED=1795017708 FISSION_GOLDEN_ROUNDS=50 npm run golden -w @fission/testing
+  box-minus-box: 50 rebuilds, fastest 3.2 ms, slowest 6.2 ms, OK
+  bracket-two-holes: 50 rebuilds, fastest 2.3 ms, slowest 23.3 ms, OK
+  enclosure: 50 rebuilds, fastest 1.6 ms, slowest 4.1 ms, OK
+  f2-gap-join: 50 rebuilds, fastest 2.8 ms, slowest 48.8 ms, OK
+  far-wall-outside: 50 rebuilds, fastest 3.7 ms, slowest 8.4 ms, OK
+  flush-blocks: 50 rebuilds, fastest 3.3 ms, slowest 18.9 ms, OK
+  gear: 50 rebuilds, fastest 12.8 ms, slowest 26.2 ms, OK
+  hollow-box: 50 rebuilds, fastest 3.6 ms, slowest 6.5 ms, OK
+  km-plate: 50 rebuilds, fastest 3.5 ms, slowest 11.5 ms, OK
+  l-bracket: 50 rebuilds, fastest 0.4 ms, slowest 1.3 ms, OK
+  micron-cube-halved: 50 rebuilds, fastest 1.2 ms, slowest 7.5 ms, OK
+  small-cube-halved: 50 rebuilds, fastest 2.6 ms, slowest 5.9 ms, OK
+  stepped-boss: 50 rebuilds, fastest 2.3 ms, slowest 4.6 ms, OK
+  thirty-features: 50 rebuilds, fastest 8.8 ms, slowest 21.6 ms, OK
   | metric | baseline | now | change | |
   | app.golden_box_minus_box.kernel_calls | 8 | 8 | +0.0% |  |
-  | app.golden_box_minus_box.relative_time | 0.0688 | 0.0619 | -10.0% |  |
+  | app.golden_box_minus_box.relative_time | 0.0688 | 0.0608 | -11.6% |  |
   | app.golden_bracket_two_holes.kernel_calls | 2 | 2 | +0.0% |  |
-  | app.golden_bracket_two_holes.relative_time | 0.0409 | 0.0431 | +5.4% |  |
+  | app.golden_bracket_two_holes.relative_time | 0.0409 | 0.0429 | +4.9% |  |
   | app.golden_enclosure.kernel_calls | 14 | 14 | +0.0% |  |
-  | app.golden_enclosure.relative_time | 0.0284 | 0.0281 | -1.1% |  |
+  | app.golden_enclosure.relative_time | 0.0284 | 0.0289 | +1.8% |  |
   | app.golden_f2_gap_join.kernel_calls | 7 | 7 | +0.0% |  |
-  | app.golden_f2_gap_join.relative_time | 0.0453 | 0.0534 | +17.9% | slower (flag) |
+  | app.golden_f2_gap_join.relative_time | 0.0453 | 0.0519 | +14.6% |  |
   | app.golden_far_wall_outside.kernel_calls | 8 | 8 | +0.0% |  |
-  | app.golden_far_wall_outside.relative_time | 0.0715 | 0.0729 | +2.0% |  |
+  | app.golden_far_wall_outside.relative_time | 0.0715 | 0.0712 | -0.4% |  |
   | app.golden_flush_blocks.kernel_calls | 8 | 8 | +0.0% |  |
-  | app.golden_flush_blocks.relative_time | 0.0586 | 0.0659 | +12.5% |  |
+  | app.golden_flush_blocks.relative_time | 0.0586 | 0.0635 | +8.4% |  |
   | app.golden_gear.kernel_calls | 3 | 3 | +0.0% |  |
-  | app.golden_gear.relative_time | 0.2412 | 0.2254 | -6.6% |  |
+  | app.golden_gear.relative_time | 0.2412 | 0.2444 | +1.3% |  |
   | app.golden_hollow_box.kernel_calls | 8 | 8 | +0.0% |  |
-  | app.golden_hollow_box.relative_time | 0.067 | 0.0705 | +5.2% |  |
+  | app.golden_hollow_box.relative_time | 0.067 | 0.069 | +3.0% |  |
   | app.golden_km_plate.kernel_calls | 8 | 8 | +0.0% |  |
-  | app.golden_km_plate.relative_time | 0.0651 | 0.069 | +6.0% |  |
+  | app.golden_km_plate.relative_time | 0.0651 | 0.0674 | +3.5% |  |
   | app.golden_l_bracket.kernel_calls | 3 | 3 | +0.0% |  |
-  | app.golden_l_bracket.relative_time | 0.0065 | 0.0058 | -10.8% |  |
+  | app.golden_l_bracket.relative_time | 0.0065 | 0.0063 | -3.1% |  |
   | app.golden_micron_cube_halved.kernel_calls | 7 | 7 | +0.0% |  |
-  | app.golden_micron_cube_halved.relative_time | 0.0208 | 0.024 | +15.4% | slower (flag) |
+  | app.golden_micron_cube_halved.relative_time | 0.0208 | 0.0214 | +2.9% |  |
   | app.golden_models.failed_percent | 0 | 0 | - |  |
   | app.golden_small_cube_halved.kernel_calls | 8 | 8 | +0.0% |  |
-  | app.golden_small_cube_halved.relative_time | 0.0472 | 0.0522 | +10.6% |  |
+  | app.golden_small_cube_halved.relative_time | 0.0472 | 0.0499 | +5.7% |  |
   | app.golden_stepped_boss.kernel_calls | 8 | 8 | +0.0% |  |
-  | app.golden_stepped_boss.relative_time | 0.039 | 0.0425 | +9.0% |  |
+  | app.golden_stepped_boss.relative_time | 0.039 | 0.042 | +7.7% |  |
   | app.golden_thirty_features.kernel_calls | 47 | 47 | +0.0% |  |
-  | app.golden_thirty_features.relative_time | 0.1632 | 0.1638 | +0.4% |  |
-  0 metric(s) failed, 2 flagged, 0 better.
+  | app.golden_thirty_features.relative_time | 0.1632 | 0.1677 | +2.8% |  |
+  0 metric(s) failed, 0 flagged, 0 better.
   Golden STEP files: 37 bodies read by OpenCascade, 0 disagreement(s)
 golden/log.txt has one line per night.
 
 Latest monkey sessions (seeded 2,000-action sessions in the real app, every check after every action; a failing seed files a random-testing issue):
-  tested commit 901478c on main, 2026-11-17 17:21 UTC (https://github.com/SpindleLabs-app/SpindleLabs/actions/runs/44109311693)
-  Monkey, seeds 202611170-202611171: 2 session(s) of 2000 actions in Chromium; 6 Combines made of 22 tried; every check passed after every action
-  seed 202611170: pass (2000 actions)
-  seed 202611171: pass (2000 actions)
+  tested commit 6e1f1d5 on main, 2026-11-18 19:26 UTC (https://github.com/SpindleLabs-app/SpindleLabs/actions/runs/44330642286)
+  Monkey, seeds 202611180-202611181: 2 session(s) of 2000 actions in Chromium; 11 Combines made of 45 tried; every check passed after every action
+  seed 202611180: pass (2000 actions)
+  seed 202611181: pass (2000 actions)
 monkey/log.txt has one line per night.
 
 Latest TypeScript mutation run (packages/testing/stryker, survivors must be killed or explained):
-  tested commit 901478c on main, 2026-11-17 17:21 UTC (https://github.com/SpindleLabs-app/SpindleLabs/actions/runs/44109311693)
-  UNEXPLAINED survivor at packages/core/src/model/history.ts:220: packages/core/src/model/history.ts | ConditionalExpression | at < 0 => false
-  UNEXPLAINED survivor at packages/core/src/model/history.ts:220: packages/core/src/model/history.ts | EqualityOperator | at < 0 => at <= 0
-  UNEXPLAINED survivor at packages/core/src/model/history.ts:226: packages/core/src/model/history.ts | ConditionalExpression | entries[at].id === fenced.floor => true
-  UNEXPLAINED survivor at packages/core/src/model/history.ts:226: packages/core/src/model/history.ts | LogicalOperator | entries[at + 1]?.id ?? -1 => entries[at + 1]?.id && -1
-  UNEXPLAINED survivor at packages/core/src/model/history.ts:226: packages/core/src/model/history.ts | OptionalChaining | entries[at + 1]?.id => entries[at + 1].id
-  UNEXPLAINED survivor at packages/core/src/model/history.ts:226: packages/core/src/model/history.ts | ArithmeticOperator | at + 1 => at - 1
-  UNEXPLAINED survivor at packages/core/src/model/history.ts:226: packages/core/src/model/history.ts | UnaryOperator | -1 => +1
-  UNEXPLAINED survivor at packages/core/src/model/history.ts:229: packages/core/src/model/history.ts | UpdateOperator | nextId++ => nextId--
-  core: 20 survivors, all explained: false
-  8 problem(s): kill each survivor with a test, or explain in explained.json why no caller can tell
-  UNEXPLAINED survivor at workspaces/design/src/document.ts:1825: workspaces/design/src/document.ts | ArrayDeclaration | [] => ["Stryker was here"]
-  UNEXPLAINED survivor at workspaces/design/src/document.ts:1894: workspaces/design/src/document.ts | ArrayDeclaration | [] => ["Stryker was here"]
-  UNEXPLAINED survivor at workspaces/design/src/document.ts:1643: workspaces/design/src/document.ts | ConditionalExpression | typeof id === "string" => true
-  UNEXPLAINED survivor at workspaces/design/src/document.ts:1663: workspaces/design/src/document.ts | ConditionalExpression | maker === null => false
-  UNEXPLAINED survivor at workspaces/design/src/document.ts:1619: workspaces/design/src/document.ts | EqualityOperator | d <= CHAMFER_MAX => d < CHAMFER_MAX
-  UNEXPLAINED survivor at workspaces/design/src/document.ts:1621: workspaces/design/src/document.ts | ConditionalExpression | typeof v === "string" => true
-  UNEXPLAINED survivor at workspaces/design/src/document.ts:1625: workspaces/design/src/document.ts | ConditionalExpression | isFiniteNumber(p.angle) && p.angle > 0 => true
-  UNEXPLAINED survivor at workspaces/design/src/document.ts:1625: workspaces/design/src/document.ts | LogicalOperator | isFiniteNumber(p.angle) && p.angle > 0 => isFiniteNumber(p.angle) || p.angle > 0
-  UNEXPLAINED survivor at workspaces/design/src/document.ts:1625: workspaces/design/src/document.ts | ConditionalExpression | p.angle > 0 => true
-  UNEXPLAINED survivor at workspaces/design/src/document.ts:1625: workspaces/design/src/document.ts | EqualityOperator | p.angle > 0 => p.angle >= 0
-  UNEXPLAINED survivor at workspaces/design/src/document.ts:1645: workspaces/design/src/document.ts | ConditionalExpression | maker !== null && there === undefined && ID_SHAPE.test(maker) => false
-  UNEXPLAINED survivor at workspaces/design/src/document.ts:1645: workspaces/design/src/document.ts | ConditionalExpression | maker !== null => true
-  UNEXPLAINED survivor at workspaces/design/src/document.ts:1645: workspaces/design/src/document.ts | EqualityOperator | maker !== null => maker === null
-  UNEXPLAINED survivor at workspaces/design/src/document.ts:1646: workspaces/design/src/document.ts | ConditionalExpression | there === undefined || there.at >= byId.get(f.id)!.at => false
-  UNEXPLAINED survivor at workspaces/design/src/document.ts:1646: workspaces/design/src/document.ts | LogicalOperator | there === undefined || there.at >= byId.get(f.id)!.at => there === undefined && there.at >= byId.get(f.id)!.at
-  UNEXPLAINED survivor at workspaces/design/src/document.ts:1646: workspaces/design/src/document.ts | ConditionalExpression | there === undefined => false
-  UNEXPLAINED survivor at workspaces/design/src/document.ts:1646: workspaces/design/src/document.ts | ConditionalExpression | there.at >= byId.get(f.id)!.at => false
-  UNEXPLAINED survivor at workspaces/design/src/document.ts:1646: workspaces/design/src/document.ts | EqualityOperator | there.at >= byId.get(f.id)!.at => there.at > byId.get(f.id)!.at
-  UNEXPLAINED survivor at workspaces/design/src/document.ts:1648: workspaces/design/src/document.ts | StringLiteral | `${at} names` => ``
-  UNEXPLAINED survivor at workspaces/design/src/document.ts:1648: workspaces/design/src/document.ts | StringLiteral | "edges" => ""
-  UNEXPLAINED survivor at workspaces/design/src/document.ts:1651: workspaces/design/src/document.ts | ConditionalExpression | typeof e !== "string" => false
-  UNEXPLAINED survivor at workspaces/design/src/document.ts:1657: workspaces/design/src/document.ts | ConditionalExpression | typeof p.flip === "string" => true
-  UNEXPLAINED survivor at workspaces/design/src/document.ts:1658: workspaces/design/src/document.ts | LogicalOperator | f.dependsOn.length !== 1 || f.dependsOn[0] !== maker => f.dependsOn.length !== 1 && f.dependsOn[0] !== maker
-  UNEXPLAINED survivor at workspaces/design/src/document.ts:1658: workspaces/design/src/document.ts | ConditionalExpression | f.dependsOn.length !== 1 => false
-  UNEXPLAINED survivor at workspaces/design/src/document.ts:1658: workspaces/design/src/document.ts | ConditionalExpression | f.dependsOn[0] !== maker => false
-  design: 95 survivors, all explained: false
-  25 problem(s): kill each survivor with a test, or explain in explained.json why no caller can tell
+  tested commit 6e1f1d5 on main, 2026-11-18 19:26 UTC (https://github.com/SpindleLabs-app/SpindleLabs/actions/runs/44330642286)
+  core: 19 survivors, all explained: true
+  UNEXPLAINED survivor at workspaces/design/src/document.ts:1959: workspaces/design/src/document.ts | ArrayDeclaration | [] => ["Stryker was here"]
+  UNEXPLAINED survivor at workspaces/design/src/document.ts:2028: workspaces/design/src/document.ts | ArrayDeclaration | [] => ["Stryker was here"]
+  UNEXPLAINED survivor at workspaces/design/src/document.ts:1772: workspaces/design/src/document.ts | ConditionalExpression | typeof id === "string" => true
+  UNEXPLAINED survivor at workspaces/design/src/document.ts:1499: workspaces/design/src/document.ts | ConditionalExpression | isConstructItem(f) => false
+  UNEXPLAINED survivor at workspaces/design/src/document.ts:1502: workspaces/design/src/document.ts | ConditionalExpression | isPatternItem(f) => false
+  UNEXPLAINED survivor at workspaces/design/src/document.ts:1502: workspaces/design/src/document.ts | StringLiteral | "Pattern" => ""
+  UNEXPLAINED survivor at workspaces/design/src/document.ts:1785: workspaces/design/src/document.ts | ConditionalExpression | maker === null => false
+  UNEXPLAINED survivor at workspaces/design/src/document.ts:1775: workspaces/design/src/document.ts | EqualityOperator | there.at >= byId.get(f.id)!.at => there.at > byId.get(f.id)!.at
+  UNEXPLAINED survivor at workspaces/design/src/document.ts:1701: workspaces/design/src/document.ts | BlockStatement | { const make = f.intent.parameters.make; if (!isConstructKind(make)) return "Item"; return { plane: "Plane", axis: "Axis", point: "Point" }[CONSTRUCT_KINDS[make].makes]; } => {}
+  UNEXPLAINED survivor at workspaces/design/src/document.ts:1703: workspaces/design/src/document.ts | BooleanLiteral | !isConstructKind(make) => isConstructKind(make)
+  UNEXPLAINED survivor at workspaces/design/src/document.ts:1703: workspaces/design/src/document.ts | ConditionalExpression | !isConstructKind(make) => true
+  UNEXPLAINED survivor at workspaces/design/src/document.ts:1703: workspaces/design/src/document.ts | ConditionalExpression | !isConstructKind(make) => false
+  UNEXPLAINED survivor at workspaces/design/src/document.ts:1704: workspaces/design/src/document.ts | ObjectLiteral | { plane: "Plane", axis: "Axis", point: "Point" } => {}
+  UNEXPLAINED survivor at workspaces/design/src/document.ts:1703: workspaces/design/src/document.ts | StringLiteral | "Item" => ""
+  UNEXPLAINED survivor at workspaces/design/src/document.ts:1704: workspaces/design/src/document.ts | StringLiteral | "Plane" => ""
+  UNEXPLAINED survivor at workspaces/design/src/document.ts:1704: workspaces/design/src/document.ts | StringLiteral | "Axis" => ""
+  UNEXPLAINED survivor at workspaces/design/src/document.ts:1704: workspaces/design/src/document.ts | StringLiteral | "Point" => ""
+  UNEXPLAINED survivor at workspaces/design/src/document.ts:1710: workspaces/design/src/document.ts | ConditionalExpression | typeof v === "string" => true
+  UNEXPLAINED survivor at workspaces/design/src/document.ts:1711: workspaces/design/src/document.ts | ConditionalExpression | k === "distance" => false
+  UNEXPLAINED survivor at workspaces/design/src/document.ts:1711: workspaces/design/src/document.ts | StringLiteral | "distance" => ""
+  UNEXPLAINED survivor at workspaces/design/src/document.ts:1711: workspaces/design/src/document.ts | StringLiteral | "a distance" => ""
+  UNEXPLAINED survivor at workspaces/design/src/document.ts:1712: workspaces/design/src/document.ts | EqualityOperator | Math.abs(p.distance) <= CONSTRUCT_DISTANCE_MAX => Math.abs(p.distance) < CONSTRUCT_DISTANCE_MAX
+  UNEXPLAINED survivor at workspaces/design/src/document.ts:1713: workspaces/design/src/document.ts | ConditionalExpression | need === "angle" && !(isFiniteNumber(p.angle) && Math.abs(p.angle) <= CONSTRUCT_ANGLE_MAX) => false
+  UNEXPLAINED survivor at workspaces/design/src/document.ts:1713: workspaces/design/src/document.ts | StringLiteral | "angle" => ""
+  UNEXPLAINED survivor at workspaces/design/src/document.ts:1713: workspaces/design/src/document.ts | BooleanLiteral | !(isFiniteNumber(p.angle) && Math.abs(p.angle) <= CONSTRUCT_ANGLE_MAX) => isFiniteNumber(p.angle) && Math.abs(p.angle) <= CONSTRUCT_ANGLE_MAX
+  UNEXPLAINED survivor at workspaces/design/src/document.ts:1713: workspaces/design/src/document.ts | ConditionalExpression | isFiniteNumber(p.angle) && Math.abs(p.angle) <= CONSTRUCT_ANGLE_MAX => true
+  UNEXPLAINED survivor at workspaces/design/src/document.ts:1713: workspaces/design/src/document.ts | ConditionalExpression | isFiniteNumber(p.angle) && Math.abs(p.angle) <= CONSTRUCT_ANGLE_MAX => false
+  UNEXPLAINED survivor at workspaces/design/src/document.ts:1713: workspaces/design/src/document.ts | LogicalOperator | isFiniteNumber(p.angle) && Math.abs(p.angle) <= CONSTRUCT_ANGLE_MAX => isFiniteNumber(p.angle) || Math.abs(p.angle) <= CONSTRUCT_ANGLE_MAX
+  UNEXPLAINED survivor at workspaces/design/src/document.ts:1713: workspaces/design/src/document.ts | ConditionalExpression | Math.abs(p.angle) <= CONSTRUCT_ANGLE_MAX => true
+  UNEXPLAINED survivor at workspaces/design/src/document.ts:1713: workspaces/design/src/document.ts | EqualityOperator | Math.abs(p.angle) <= CONSTRUCT_ANGLE_MAX => Math.abs(p.angle) < CONSTRUCT_ANGLE_MAX
+  UNEXPLAINED survivor at workspaces/design/src/document.ts:1713: workspaces/design/src/document.ts | EqualityOperator | Math.abs(p.angle) <= CONSTRUCT_ANGLE_MAX => Math.abs(p.angle) > CONSTRUCT_ANGLE_MAX
+  UNEXPLAINED survivor at workspaces/design/src/document.ts:1713: workspaces/design/src/document.ts | StringLiteral | `its angle ${said(p.angle)} is not a number of degrees up to ${CONSTRUCT_ANGLE_MAX} either way` => ``
+  UNEXPLAINED survivor at workspaces/design/src/document.ts:1730: workspaces/design/src/document.ts | ConditionalExpression | typeof make === "string" => true
+  UNEXPLAINED survivor at workspaces/design/src/document.ts:1731: workspaces/design/src/document.ts | ConditionalExpression | !isRecord(p.inputs) => false
+  UNEXPLAINED survivor at workspaces/design/src/document.ts:1731: workspaces/design/src/document.ts | StringLiteral | `${at} has no inputs` => ``
+  UNEXPLAINED survivor at workspaces/design/src/document.ts:1740: workspaces/design/src/document.ts | ConditionalExpression | typeof name === "string" => true
+  UNEXPLAINED survivor at workspaces/design/src/document.ts:1741: workspaces/design/src/document.ts | ConditionalExpression | ref.kind !== "construct" => false
+  UNEXPLAINED survivor at workspaces/design/src/document.ts:1743: workspaces/design/src/document.ts | ConditionalExpression | there === undefined ? !ID_SHAPE.test(ref.item) : there.at >= here || !isConstructItem(there.item) => true
+  UNEXPLAINED survivor at workspaces/design/src/document.ts:1743: workspaces/design/src/document.ts | ConditionalExpression | there === undefined => false
+  UNEXPLAINED survivor at workspaces/design/src/document.ts:1775: workspaces/design/src/document.ts | ConditionalExpression | there === undefined => false
+  UNEXPLAINED survivor at workspaces/design/src/document.ts:1743: workspaces/design/src/document.ts | BooleanLiteral | !ID_SHAPE.test(ref.item) => ID_SHAPE.test(ref.item)
+  UNEXPLAINED survivor at workspaces/design/src/document.ts:1743: workspaces/design/src/document.ts | ConditionalExpression | there.at >= here || !isConstructItem(there.item) => true
+  UNEXPLAINED survivor at workspaces/design/src/document.ts:1743: workspaces/design/src/document.ts | EqualityOperator | there.at >= here => there.at > here
+  UNEXPLAINED survivor at workspaces/design/src/document.ts:1743: workspaces/design/src/document.ts | ConditionalExpression | there.at >= here => false
+  UNEXPLAINED survivor at workspaces/design/src/document.ts:1743: workspaces/design/src/document.ts | EqualityOperator | there.at >= here => there.at < here
+  UNEXPLAINED survivor at workspaces/design/src/document.ts:1750: workspaces/design/src/document.ts | LogicalOperator | f.dependsOn.length !== inputs.length || inputs.some((id, k) => f.dependsOn[k] !== id) => f.dependsOn.length !== inputs.length && inputs.some((id, k) => f.dependsOn[k] !== id)
+  UNEXPLAINED survivor at workspaces/design/src/document.ts:1750: workspaces/design/src/document.ts | ConditionalExpression | f.dependsOn.length !== inputs.length => false
+  UNEXPLAINED survivor at workspaces/design/src/document.ts:1750: workspaces/design/src/document.ts | MethodExpression | inputs.some((id, k) => f.dependsOn[k] !== id) => inputs.every((id, k) => f.dependsOn[k] !== id)
+  UNEXPLAINED survivor at workspaces/design/src/document.ts:1750: workspaces/design/src/document.ts | ArrowFunction | (id, k) => f.dependsOn[k] !== id => () => undefined
+  UNEXPLAINED survivor at workspaces/design/src/document.ts:1750: workspaces/design/src/document.ts | ConditionalExpression | f.dependsOn[k] !== id => false
+  UNEXPLAINED survivor at workspaces/design/src/document.ts:1750: workspaces/design/src/document.ts | ConditionalExpression | inputs.length === 0 => false
+  UNEXPLAINED survivor at workspaces/design/src/document.ts:1750: workspaces/design/src/document.ts | StringLiteral | "none" => ""
+  UNEXPLAINED survivor at workspaces/design/src/document.ts:1750: workspaces/design/src/document.ts | StringLiteral | ", " => ""
+  UNEXPLAINED survivor at workspaces/design/src/document.ts:1780: workspaces/design/src/document.ts | StringLiteral | ", " => ""
+  UNEXPLAINED survivor at workspaces/design/src/document.ts:1768: workspaces/design/src/document.ts | StringLiteral | `${at} names` => ``
+  UNEXPLAINED survivor at workspaces/design/src/document.ts:1768: workspaces/design/src/document.ts | StringLiteral | "bodies" => ""
+  UNEXPLAINED survivor at workspaces/design/src/document.ts:1774: workspaces/design/src/document.ts | ConditionalExpression | maker !== null => true
+  UNEXPLAINED survivor at workspaces/design/src/document.ts:1775: workspaces/design/src/document.ts | LogicalOperator | there === undefined || there.at >= byId.get(f.id)!.at || !isBodyOf(d, byId, id as string) => (there === undefined || there.at >= byId.get(f.id)!.at) && !isBodyOf(d, byId, id as string)
+  UNEXPLAINED survivor at workspaces/design/src/document.ts:1775: workspaces/design/src/document.ts | ConditionalExpression | there === undefined || there.at >= byId.get(f.id)!.at => false
+  UNEXPLAINED survivor at workspaces/design/src/document.ts:1775: workspaces/design/src/document.ts | LogicalOperator | there === undefined || there.at >= byId.get(f.id)!.at => there === undefined && there.at >= byId.get(f.id)!.at
+  UNEXPLAINED survivor at workspaces/design/src/document.ts:1775: workspaces/design/src/document.ts | ConditionalExpression | there.at >= byId.get(f.id)!.at => false
+  UNEXPLAINED survivor at workspaces/design/src/document.ts:1778: workspaces/design/src/document.ts | ConditionalExpression | !makers.includes(maker!) => true
+  UNEXPLAINED survivor at workspaces/design/src/document.ts:1780: workspaces/design/src/document.ts | MethodExpression | f.dependsOn.some((x, i) => x !== makers[i]) => f.dependsOn.every((x, i) => x !== makers[i])
+  UNEXPLAINED survivor at workspaces/design/src/document.ts:1780: workspaces/design/src/document.ts | ArrowFunction | (x, i) => x !== makers[i] => () => undefined
+  UNEXPLAINED survivor at workspaces/design/src/document.ts:1780: workspaces/design/src/document.ts | ConditionalExpression | x !== makers[i] => false
+  design: 139 survivors, all explained: false
+  65 problem(s): kill each survivor with a test, or explain in explained.json why no caller can tell
   storage: 94 survivors, all explained: true
   account: 26 survivors, all explained: true
   model: 52 survivors, all explained: true
   svg: 5 survivors, all explained: true
-  UNEXPLAINED survivor at packages/viewport/src/picking.ts:128: packages/viewport/src/picking.ts | ConditionalExpression | !(Number.isFinite(ax) && Number.isFinite(ay) && Number.isFinite(bx) && Number.isFinite(by)) => false
-  UNEXPLAINED survivor at packages/viewport/src/picking.ts:128: packages/viewport/src/picking.ts | LogicalOperator | Number.isFinite(ax) && Number.isFinite(ay) && Number.isFinite(bx) && Number.isFinite(by) => Number.isFinite(ax) && Number.isFinite(ay) && Number.isFinite(bx) || Number.isFinite(by)
-  UNEXPLAINED survivor at packages/viewport/src/picking.ts:128: packages/viewport/src/picking.ts | ConditionalExpression | Number.isFinite(ax) && Number.isFinite(ay) && Number.isFinite(bx) && Number.isFinite(by) => true
-  UNEXPLAINED survivor at packages/viewport/src/picking.ts:128: packages/viewport/src/picking.ts | ConditionalExpression | Number.isFinite(ax) && Number.isFinite(ay) && Number.isFinite(bx) => true
-  UNEXPLAINED survivor at packages/viewport/src/picking.ts:128: packages/viewport/src/picking.ts | LogicalOperator | Number.isFinite(ax) && Number.isFinite(ay) && Number.isFinite(bx) => Number.isFinite(ax) && Number.isFinite(ay) || Number.isFinite(bx)
-  UNEXPLAINED survivor at packages/viewport/src/picking.ts:128: packages/viewport/src/picking.ts | ConditionalExpression | Number.isFinite(ax) && Number.isFinite(ay) => true
-  UNEXPLAINED survivor at packages/viewport/src/picking.ts:128: packages/viewport/src/picking.ts | LogicalOperator | Number.isFinite(ax) && Number.isFinite(ay) => Number.isFinite(ax) || Number.isFinite(ay)
-  explained.json lists a mutant that no longer survives (remove it): packages/viewport/src/picking.ts | ConditionalExpression | ![ax, ay, bx, by].every(Number.isFinite) => false
-  explained.json lists a mutant that no longer survives (remove it): packages/viewport/src/picking.ts | MethodExpression | [ax, ay, bx, by].every(Number.isFinite) => [ax, ay, bx, by].some(Number.isFinite)
-  explained.json lists a mutant that no longer survives (remove it): packages/viewport/src/picking.ts | ArrayDeclaration | [ax, ay, bx, by] => []
-  viewport: 40 survivors, all explained: false
-  10 problem(s): kill each survivor with a test, or explain in explained.json why no caller can tell
+  viewport: 40 survivors, all explained: true
   ai: 23 survivors, all explained: true
   naming: 152 survivors, all explained: true
   combine: 56 survivors, all explained: true

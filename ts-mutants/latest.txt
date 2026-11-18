@@ -1,57 +1,77 @@
-tested commit 901478c on main, 2026-11-17 17:21 UTC (https://github.com/SpindleLabs-app/SpindleLabs/actions/runs/44109311693)
-UNEXPLAINED survivor at packages/core/src/model/history.ts:220: packages/core/src/model/history.ts | ConditionalExpression | at < 0 => false
-UNEXPLAINED survivor at packages/core/src/model/history.ts:220: packages/core/src/model/history.ts | EqualityOperator | at < 0 => at <= 0
-UNEXPLAINED survivor at packages/core/src/model/history.ts:226: packages/core/src/model/history.ts | ConditionalExpression | entries[at].id === fenced.floor => true
-UNEXPLAINED survivor at packages/core/src/model/history.ts:226: packages/core/src/model/history.ts | LogicalOperator | entries[at + 1]?.id ?? -1 => entries[at + 1]?.id && -1
-UNEXPLAINED survivor at packages/core/src/model/history.ts:226: packages/core/src/model/history.ts | OptionalChaining | entries[at + 1]?.id => entries[at + 1].id
-UNEXPLAINED survivor at packages/core/src/model/history.ts:226: packages/core/src/model/history.ts | ArithmeticOperator | at + 1 => at - 1
-UNEXPLAINED survivor at packages/core/src/model/history.ts:226: packages/core/src/model/history.ts | UnaryOperator | -1 => +1
-UNEXPLAINED survivor at packages/core/src/model/history.ts:229: packages/core/src/model/history.ts | UpdateOperator | nextId++ => nextId--
-core: 20 survivors, all explained: false
-8 problem(s): kill each survivor with a test, or explain in explained.json why no caller can tell
-UNEXPLAINED survivor at workspaces/design/src/document.ts:1825: workspaces/design/src/document.ts | ArrayDeclaration | [] => ["Stryker was here"]
-UNEXPLAINED survivor at workspaces/design/src/document.ts:1894: workspaces/design/src/document.ts | ArrayDeclaration | [] => ["Stryker was here"]
-UNEXPLAINED survivor at workspaces/design/src/document.ts:1643: workspaces/design/src/document.ts | ConditionalExpression | typeof id === "string" => true
-UNEXPLAINED survivor at workspaces/design/src/document.ts:1663: workspaces/design/src/document.ts | ConditionalExpression | maker === null => false
-UNEXPLAINED survivor at workspaces/design/src/document.ts:1619: workspaces/design/src/document.ts | EqualityOperator | d <= CHAMFER_MAX => d < CHAMFER_MAX
-UNEXPLAINED survivor at workspaces/design/src/document.ts:1621: workspaces/design/src/document.ts | ConditionalExpression | typeof v === "string" => true
-UNEXPLAINED survivor at workspaces/design/src/document.ts:1625: workspaces/design/src/document.ts | ConditionalExpression | isFiniteNumber(p.angle) && p.angle > 0 => true
-UNEXPLAINED survivor at workspaces/design/src/document.ts:1625: workspaces/design/src/document.ts | LogicalOperator | isFiniteNumber(p.angle) && p.angle > 0 => isFiniteNumber(p.angle) || p.angle > 0
-UNEXPLAINED survivor at workspaces/design/src/document.ts:1625: workspaces/design/src/document.ts | ConditionalExpression | p.angle > 0 => true
-UNEXPLAINED survivor at workspaces/design/src/document.ts:1625: workspaces/design/src/document.ts | EqualityOperator | p.angle > 0 => p.angle >= 0
-UNEXPLAINED survivor at workspaces/design/src/document.ts:1645: workspaces/design/src/document.ts | ConditionalExpression | maker !== null && there === undefined && ID_SHAPE.test(maker) => false
-UNEXPLAINED survivor at workspaces/design/src/document.ts:1645: workspaces/design/src/document.ts | ConditionalExpression | maker !== null => true
-UNEXPLAINED survivor at workspaces/design/src/document.ts:1645: workspaces/design/src/document.ts | EqualityOperator | maker !== null => maker === null
-UNEXPLAINED survivor at workspaces/design/src/document.ts:1646: workspaces/design/src/document.ts | ConditionalExpression | there === undefined || there.at >= byId.get(f.id)!.at => false
-UNEXPLAINED survivor at workspaces/design/src/document.ts:1646: workspaces/design/src/document.ts | LogicalOperator | there === undefined || there.at >= byId.get(f.id)!.at => there === undefined && there.at >= byId.get(f.id)!.at
-UNEXPLAINED survivor at workspaces/design/src/document.ts:1646: workspaces/design/src/document.ts | ConditionalExpression | there === undefined => false
-UNEXPLAINED survivor at workspaces/design/src/document.ts:1646: workspaces/design/src/document.ts | ConditionalExpression | there.at >= byId.get(f.id)!.at => false
-UNEXPLAINED survivor at workspaces/design/src/document.ts:1646: workspaces/design/src/document.ts | EqualityOperator | there.at >= byId.get(f.id)!.at => there.at > byId.get(f.id)!.at
-UNEXPLAINED survivor at workspaces/design/src/document.ts:1648: workspaces/design/src/document.ts | StringLiteral | `${at} names` => ``
-UNEXPLAINED survivor at workspaces/design/src/document.ts:1648: workspaces/design/src/document.ts | StringLiteral | "edges" => ""
-UNEXPLAINED survivor at workspaces/design/src/document.ts:1651: workspaces/design/src/document.ts | ConditionalExpression | typeof e !== "string" => false
-UNEXPLAINED survivor at workspaces/design/src/document.ts:1657: workspaces/design/src/document.ts | ConditionalExpression | typeof p.flip === "string" => true
-UNEXPLAINED survivor at workspaces/design/src/document.ts:1658: workspaces/design/src/document.ts | LogicalOperator | f.dependsOn.length !== 1 || f.dependsOn[0] !== maker => f.dependsOn.length !== 1 && f.dependsOn[0] !== maker
-UNEXPLAINED survivor at workspaces/design/src/document.ts:1658: workspaces/design/src/document.ts | ConditionalExpression | f.dependsOn.length !== 1 => false
-UNEXPLAINED survivor at workspaces/design/src/document.ts:1658: workspaces/design/src/document.ts | ConditionalExpression | f.dependsOn[0] !== maker => false
-design: 95 survivors, all explained: false
-25 problem(s): kill each survivor with a test, or explain in explained.json why no caller can tell
+tested commit 6e1f1d5 on main, 2026-11-18 19:26 UTC (https://github.com/SpindleLabs-app/SpindleLabs/actions/runs/44330642286)
+core: 19 survivors, all explained: true
+UNEXPLAINED survivor at workspaces/design/src/document.ts:1959: workspaces/design/src/document.ts | ArrayDeclaration | [] => ["Stryker was here"]
+UNEXPLAINED survivor at workspaces/design/src/document.ts:2028: workspaces/design/src/document.ts | ArrayDeclaration | [] => ["Stryker was here"]
+UNEXPLAINED survivor at workspaces/design/src/document.ts:1772: workspaces/design/src/document.ts | ConditionalExpression | typeof id === "string" => true
+UNEXPLAINED survivor at workspaces/design/src/document.ts:1499: workspaces/design/src/document.ts | ConditionalExpression | isConstructItem(f) => false
+UNEXPLAINED survivor at workspaces/design/src/document.ts:1502: workspaces/design/src/document.ts | ConditionalExpression | isPatternItem(f) => false
+UNEXPLAINED survivor at workspaces/design/src/document.ts:1502: workspaces/design/src/document.ts | StringLiteral | "Pattern" => ""
+UNEXPLAINED survivor at workspaces/design/src/document.ts:1785: workspaces/design/src/document.ts | ConditionalExpression | maker === null => false
+UNEXPLAINED survivor at workspaces/design/src/document.ts:1775: workspaces/design/src/document.ts | EqualityOperator | there.at >= byId.get(f.id)!.at => there.at > byId.get(f.id)!.at
+UNEXPLAINED survivor at workspaces/design/src/document.ts:1701: workspaces/design/src/document.ts | BlockStatement | { const make = f.intent.parameters.make; if (!isConstructKind(make)) return "Item"; return { plane: "Plane", axis: "Axis", point: "Point" }[CONSTRUCT_KINDS[make].makes]; } => {}
+UNEXPLAINED survivor at workspaces/design/src/document.ts:1703: workspaces/design/src/document.ts | BooleanLiteral | !isConstructKind(make) => isConstructKind(make)
+UNEXPLAINED survivor at workspaces/design/src/document.ts:1703: workspaces/design/src/document.ts | ConditionalExpression | !isConstructKind(make) => true
+UNEXPLAINED survivor at workspaces/design/src/document.ts:1703: workspaces/design/src/document.ts | ConditionalExpression | !isConstructKind(make) => false
+UNEXPLAINED survivor at workspaces/design/src/document.ts:1704: workspaces/design/src/document.ts | ObjectLiteral | { plane: "Plane", axis: "Axis", point: "Point" } => {}
+UNEXPLAINED survivor at workspaces/design/src/document.ts:1703: workspaces/design/src/document.ts | StringLiteral | "Item" => ""
+UNEXPLAINED survivor at workspaces/design/src/document.ts:1704: workspaces/design/src/document.ts | StringLiteral | "Plane" => ""
+UNEXPLAINED survivor at workspaces/design/src/document.ts:1704: workspaces/design/src/document.ts | StringLiteral | "Axis" => ""
+UNEXPLAINED survivor at workspaces/design/src/document.ts:1704: workspaces/design/src/document.ts | StringLiteral | "Point" => ""
+UNEXPLAINED survivor at workspaces/design/src/document.ts:1710: workspaces/design/src/document.ts | ConditionalExpression | typeof v === "string" => true
+UNEXPLAINED survivor at workspaces/design/src/document.ts:1711: workspaces/design/src/document.ts | ConditionalExpression | k === "distance" => false
+UNEXPLAINED survivor at workspaces/design/src/document.ts:1711: workspaces/design/src/document.ts | StringLiteral | "distance" => ""
+UNEXPLAINED survivor at workspaces/design/src/document.ts:1711: workspaces/design/src/document.ts | StringLiteral | "a distance" => ""
+UNEXPLAINED survivor at workspaces/design/src/document.ts:1712: workspaces/design/src/document.ts | EqualityOperator | Math.abs(p.distance) <= CONSTRUCT_DISTANCE_MAX => Math.abs(p.distance) < CONSTRUCT_DISTANCE_MAX
+UNEXPLAINED survivor at workspaces/design/src/document.ts:1713: workspaces/design/src/document.ts | ConditionalExpression | need === "angle" && !(isFiniteNumber(p.angle) && Math.abs(p.angle) <= CONSTRUCT_ANGLE_MAX) => false
+UNEXPLAINED survivor at workspaces/design/src/document.ts:1713: workspaces/design/src/document.ts | StringLiteral | "angle" => ""
+UNEXPLAINED survivor at workspaces/design/src/document.ts:1713: workspaces/design/src/document.ts | BooleanLiteral | !(isFiniteNumber(p.angle) && Math.abs(p.angle) <= CONSTRUCT_ANGLE_MAX) => isFiniteNumber(p.angle) && Math.abs(p.angle) <= CONSTRUCT_ANGLE_MAX
+UNEXPLAINED survivor at workspaces/design/src/document.ts:1713: workspaces/design/src/document.ts | ConditionalExpression | isFiniteNumber(p.angle) && Math.abs(p.angle) <= CONSTRUCT_ANGLE_MAX => true
+UNEXPLAINED survivor at workspaces/design/src/document.ts:1713: workspaces/design/src/document.ts | ConditionalExpression | isFiniteNumber(p.angle) && Math.abs(p.angle) <= CONSTRUCT_ANGLE_MAX => false
+UNEXPLAINED survivor at workspaces/design/src/document.ts:1713: workspaces/design/src/document.ts | LogicalOperator | isFiniteNumber(p.angle) && Math.abs(p.angle) <= CONSTRUCT_ANGLE_MAX => isFiniteNumber(p.angle) || Math.abs(p.angle) <= CONSTRUCT_ANGLE_MAX
+UNEXPLAINED survivor at workspaces/design/src/document.ts:1713: workspaces/design/src/document.ts | ConditionalExpression | Math.abs(p.angle) <= CONSTRUCT_ANGLE_MAX => true
+UNEXPLAINED survivor at workspaces/design/src/document.ts:1713: workspaces/design/src/document.ts | EqualityOperator | Math.abs(p.angle) <= CONSTRUCT_ANGLE_MAX => Math.abs(p.angle) < CONSTRUCT_ANGLE_MAX
+UNEXPLAINED survivor at workspaces/design/src/document.ts:1713: workspaces/design/src/document.ts | EqualityOperator | Math.abs(p.angle) <= CONSTRUCT_ANGLE_MAX => Math.abs(p.angle) > CONSTRUCT_ANGLE_MAX
+UNEXPLAINED survivor at workspaces/design/src/document.ts:1713: workspaces/design/src/document.ts | StringLiteral | `its angle ${said(p.angle)} is not a number of degrees up to ${CONSTRUCT_ANGLE_MAX} either way` => ``
+UNEXPLAINED survivor at workspaces/design/src/document.ts:1730: workspaces/design/src/document.ts | ConditionalExpression | typeof make === "string" => true
+UNEXPLAINED survivor at workspaces/design/src/document.ts:1731: workspaces/design/src/document.ts | ConditionalExpression | !isRecord(p.inputs) => false
+UNEXPLAINED survivor at workspaces/design/src/document.ts:1731: workspaces/design/src/document.ts | StringLiteral | `${at} has no inputs` => ``
+UNEXPLAINED survivor at workspaces/design/src/document.ts:1740: workspaces/design/src/document.ts | ConditionalExpression | typeof name === "string" => true
+UNEXPLAINED survivor at workspaces/design/src/document.ts:1741: workspaces/design/src/document.ts | ConditionalExpression | ref.kind !== "construct" => false
+UNEXPLAINED survivor at workspaces/design/src/document.ts:1743: workspaces/design/src/document.ts | ConditionalExpression | there === undefined ? !ID_SHAPE.test(ref.item) : there.at >= here || !isConstructItem(there.item) => true
+UNEXPLAINED survivor at workspaces/design/src/document.ts:1743: workspaces/design/src/document.ts | ConditionalExpression | there === undefined => false
+UNEXPLAINED survivor at workspaces/design/src/document.ts:1775: workspaces/design/src/document.ts | ConditionalExpression | there === undefined => false
+UNEXPLAINED survivor at workspaces/design/src/document.ts:1743: workspaces/design/src/document.ts | BooleanLiteral | !ID_SHAPE.test(ref.item) => ID_SHAPE.test(ref.item)
+UNEXPLAINED survivor at workspaces/design/src/document.ts:1743: workspaces/design/src/document.ts | ConditionalExpression | there.at >= here || !isConstructItem(there.item) => true
+UNEXPLAINED survivor at workspaces/design/src/document.ts:1743: workspaces/design/src/document.ts | EqualityOperator | there.at >= here => there.at > here
+UNEXPLAINED survivor at workspaces/design/src/document.ts:1743: workspaces/design/src/document.ts | ConditionalExpression | there.at >= here => false
+UNEXPLAINED survivor at workspaces/design/src/document.ts:1743: workspaces/design/src/document.ts | EqualityOperator | there.at >= here => there.at < here
+UNEXPLAINED survivor at workspaces/design/src/document.ts:1750: workspaces/design/src/document.ts | LogicalOperator | f.dependsOn.length !== inputs.length || inputs.some((id, k) => f.dependsOn[k] !== id) => f.dependsOn.length !== inputs.length && inputs.some((id, k) => f.dependsOn[k] !== id)
+UNEXPLAINED survivor at workspaces/design/src/document.ts:1750: workspaces/design/src/document.ts | ConditionalExpression | f.dependsOn.length !== inputs.length => false
+UNEXPLAINED survivor at workspaces/design/src/document.ts:1750: workspaces/design/src/document.ts | MethodExpression | inputs.some((id, k) => f.dependsOn[k] !== id) => inputs.every((id, k) => f.dependsOn[k] !== id)
+UNEXPLAINED survivor at workspaces/design/src/document.ts:1750: workspaces/design/src/document.ts | ArrowFunction | (id, k) => f.dependsOn[k] !== id => () => undefined
+UNEXPLAINED survivor at workspaces/design/src/document.ts:1750: workspaces/design/src/document.ts | ConditionalExpression | f.dependsOn[k] !== id => false
+UNEXPLAINED survivor at workspaces/design/src/document.ts:1750: workspaces/design/src/document.ts | ConditionalExpression | inputs.length === 0 => false
+UNEXPLAINED survivor at workspaces/design/src/document.ts:1750: workspaces/design/src/document.ts | StringLiteral | "none" => ""
+UNEXPLAINED survivor at workspaces/design/src/document.ts:1750: workspaces/design/src/document.ts | StringLiteral | ", " => ""
+UNEXPLAINED survivor at workspaces/design/src/document.ts:1780: workspaces/design/src/document.ts | StringLiteral | ", " => ""
+UNEXPLAINED survivor at workspaces/design/src/document.ts:1768: workspaces/design/src/document.ts | StringLiteral | `${at} names` => ``
+UNEXPLAINED survivor at workspaces/design/src/document.ts:1768: workspaces/design/src/document.ts | StringLiteral | "bodies" => ""
+UNEXPLAINED survivor at workspaces/design/src/document.ts:1774: workspaces/design/src/document.ts | ConditionalExpression | maker !== null => true
+UNEXPLAINED survivor at workspaces/design/src/document.ts:1775: workspaces/design/src/document.ts | LogicalOperator | there === undefined || there.at >= byId.get(f.id)!.at || !isBodyOf(d, byId, id as string) => (there === undefined || there.at >= byId.get(f.id)!.at) && !isBodyOf(d, byId, id as string)
+UNEXPLAINED survivor at workspaces/design/src/document.ts:1775: workspaces/design/src/document.ts | ConditionalExpression | there === undefined || there.at >= byId.get(f.id)!.at => false
+UNEXPLAINED survivor at workspaces/design/src/document.ts:1775: workspaces/design/src/document.ts | LogicalOperator | there === undefined || there.at >= byId.get(f.id)!.at => there === undefined && there.at >= byId.get(f.id)!.at
+UNEXPLAINED survivor at workspaces/design/src/document.ts:1775: workspaces/design/src/document.ts | ConditionalExpression | there.at >= byId.get(f.id)!.at => false
+UNEXPLAINED survivor at workspaces/design/src/document.ts:1778: workspaces/design/src/document.ts | ConditionalExpression | !makers.includes(maker!) => true
+UNEXPLAINED survivor at workspaces/design/src/document.ts:1780: workspaces/design/src/document.ts | MethodExpression | f.dependsOn.some((x, i) => x !== makers[i]) => f.dependsOn.every((x, i) => x !== makers[i])
+UNEXPLAINED survivor at workspaces/design/src/document.ts:1780: workspaces/design/src/document.ts | ArrowFunction | (x, i) => x !== makers[i] => () => undefined
+UNEXPLAINED survivor at workspaces/design/src/document.ts:1780: workspaces/design/src/document.ts | ConditionalExpression | x !== makers[i] => false
+design: 139 survivors, all explained: false
+65 problem(s): kill each survivor with a test, or explain in explained.json why no caller can tell
 storage: 94 survivors, all explained: true
 account: 26 survivors, all explained: true
 model: 52 survivors, all explained: true
 svg: 5 survivors, all explained: true
-UNEXPLAINED survivor at packages/viewport/src/picking.ts:128: packages/viewport/src/picking.ts | ConditionalExpression | !(Number.isFinite(ax) && Number.isFinite(ay) && Number.isFinite(bx) && Number.isFinite(by)) => false
-UNEXPLAINED survivor at packages/viewport/src/picking.ts:128: packages/viewport/src/picking.ts | LogicalOperator | Number.isFinite(ax) && Number.isFinite(ay) && Number.isFinite(bx) && Number.isFinite(by) => Number.isFinite(ax) && Number.isFinite(ay) && Number.isFinite(bx) || Number.isFinite(by)
-UNEXPLAINED survivor at packages/viewport/src/picking.ts:128: packages/viewport/src/picking.ts | ConditionalExpression | Number.isFinite(ax) && Number.isFinite(ay) && Number.isFinite(bx) && Number.isFinite(by) => true
-UNEXPLAINED survivor at packages/viewport/src/picking.ts:128: packages/viewport/src/picking.ts | ConditionalExpression | Number.isFinite(ax) && Number.isFinite(ay) && Number.isFinite(bx) => true
-UNEXPLAINED survivor at packages/viewport/src/picking.ts:128: packages/viewport/src/picking.ts | LogicalOperator | Number.isFinite(ax) && Number.isFinite(ay) && Number.isFinite(bx) => Number.isFinite(ax) && Number.isFinite(ay) || Number.isFinite(bx)
-UNEXPLAINED survivor at packages/viewport/src/picking.ts:128: packages/viewport/src/picking.ts | ConditionalExpression | Number.isFinite(ax) && Number.isFinite(ay) => true
-UNEXPLAINED survivor at packages/viewport/src/picking.ts:128: packages/viewport/src/picking.ts | LogicalOperator | Number.isFinite(ax) && Number.isFinite(ay) => Number.isFinite(ax) || Number.isFinite(ay)
-explained.json lists a mutant that no longer survives (remove it): packages/viewport/src/picking.ts | ConditionalExpression | ![ax, ay, bx, by].every(Number.isFinite) => false
-explained.json lists a mutant that no longer survives (remove it): packages/viewport/src/picking.ts | MethodExpression | [ax, ay, bx, by].every(Number.isFinite) => [ax, ay, bx, by].some(Number.isFinite)
-explained.json lists a mutant that no longer survives (remove it): packages/viewport/src/picking.ts | ArrayDeclaration | [ax, ay, bx, by] => []
-viewport: 40 survivors, all explained: false
-10 problem(s): kill each survivor with a test, or explain in explained.json why no caller can tell
+viewport: 40 survivors, all explained: true
 ai: 23 survivors, all explained: true
 naming: 152 survivors, all explained: true
 combine: 56 survivors, all explained: true

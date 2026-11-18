@@ -1,4 +1,4 @@
-tested commit 901478c on main, 2026-11-17 17:21 UTC (https://github.com/SpindleLabs-app/SpindleLabs/actions/runs/44109311693)
-Monkey, seeds 202611170-202611171: 2 session(s) of 2000 actions in Chromium; 6 Combines made of 22 tried; every check passed after every action
-seed 202611170: pass (2000 actions)
-seed 202611171: pass (2000 actions)
+tested commit 6e1f1d5 on main, 2026-11-18 19:26 UTC (https://github.com/SpindleLabs-app/SpindleLabs/actions/runs/44330642286)
+Monkey, seeds 202611180-202611181: 2 session(s) of 2000 actions in Chromium; 11 Combines made of 45 tried; every check passed after every action
+seed 202611180: pass (2000 actions)
+seed 202611181: pass (2000 actions)
