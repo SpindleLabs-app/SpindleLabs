@@ -334,6 +334,57 @@ export interface P1sPrintFile {
   printTimeS: number;
 }
 
+/**
+ * TestLab's stress test (stress_test, TestLab T5): a static test of a kept body where the app shows it. Stiffness
+ * (`youngsModulus`) and `strength` in MPa; `held` the body's faces held still in every direction (a clamp), by its
+ * display mesh's `triangle_faces` numbers; each load on some faces, either a total `force` [x, y, z] in N spread evenly
+ * over their area, or a `pressure` in MPa pushing into the part. `size` is the mesh size in mm (left out: the kernel's
+ * own choice for the body).
+ */
+export interface StressTest {
+  youngsModulus: number;
+  poissonsRatio: number;
+  strength: number;
+  held: number[];
+  loads: StressLoad[];
+  size?: number;
+}
+
+/** One load of a stress test: a total force (N) or a pressure (MPa) on some of the body's faces. */
+export type StressLoad = { faces: number[]; force: [number, number, number] } | { faces: number[]; pressure: number };
+
+/** A stage of a stress test, in the order the kernel runs them. */
+export type StressStage = "meshing" | "solving" | "stresses";
+
+/**
+ * A stress test's answer (stress_test): the body's surface where it is before it bends (flat `points` in world mm,
+ * `triangles` into them, each triangle's face), each point's `displacement` (flat, mm) and `vonMises` stress (MPa),
+ * the largest of each with where, the safety factor (the strength over the largest stress; null when nothing is
+ * stressed), the balance check (`applied` loads and the holds' `reaction`, equal and opposite in a sound answer), and
+ * the mesh's and solver's numbers.
+ */
+export interface StressTestResult {
+  points: number[];
+  triangles: number[];
+  triangleFaces: number[];
+  displacement: number[];
+  vonMises: number[];
+  maxDisplacement: number;
+  maxDisplacementAt: [number, number, number];
+  maxVonMises: number;
+  maxVonMisesAt: [number, number, number];
+  safetyFactor: number | null;
+  applied: [number, number, number];
+  reaction: [number, number, number];
+  size: number;
+  nodes: number;
+  elements: number;
+  worstQuality: number;
+  method: string;
+  iterations: number;
+  relativeResidual: number;
+}
+
 /** A body the kernel keeps between calls: a whole number from 1, never reused. Free it with body_free. */
 export type BodyHandle = number;
 
@@ -363,6 +414,15 @@ export interface BooleanResult {
   bodies: BodyHandle[];
   history: { faces: FaceFrom[]; also?: FaceFrom[][]; edges: EdgeFrom[] }[];
 }
+
+/**
+ * body_shell's answer (step 35h2c): body_boolean's shape. A face or edge
+ * named by the body given is that face or edge of it; one named by body 0
+ * (SHELL_INSIDE, kernel-client.ts) is the inside wall moved in from the given body's
+ * face of that number (turned over), or the inside edge moved in from its
+ * edge. Several bodies when the walls fall apart into pieces.
+ */
+export type ShellResult = BooleanResult;
 
 /**
  * A chamfer's size as the kernel takes it (step 44a): `{ equal: d }` the same

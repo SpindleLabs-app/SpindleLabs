@@ -1,6 +1,6 @@
 // @fission/core: the shared document model and the bridge to the kernel.
-export { isTrap, KERNEL_RESTARTED, KERNEL_SLICE_STOPPED, KERNEL_TOOK_TOO_LONG, UNKNOWN_BODY_WORDS, KernelClient, KernelError, kernelFailure, latestOnly, type KernelCalls, type KernelOps, type KernelRequest, type KernelResponse } from "./kernel/kernel-client.ts";
-export type { BodyHandle, BodySpec, BooleanOp, BooleanResult, ChamferResult, ChamferSize, ConstructGiven, ConstructMade, ConstructMake, EdgeFrom, FaceFrom, BuildPlate, BodyView, DisplayMesh, FaceRole, Frame, KernelErrorKind, KernelFailure, KernelInput, KernelThin, KernelTouch, Loop, MeasureFacts, MeasureGap, Measured, MeasurePick, Motion, Outline, OutlinePiece, P1sPrintFile, PrintLayer, PrintPath, PrintRole, ShapeSpec, SlicedPrint, SupportStyle, SketchArc, SketchCircle, SketchLine, SketchOutline, SketchRegion, SketchRegions, SliceProgress, SliceStage, SolidPlace, SolidProblem, SolidProblemKind, SolidReport, SolidVerdict, StlFile, WorldPoint, PatternSpec } from "./kernel/kernel-types.ts";
+export { isTrap, KERNEL_RESTARTED, SHELL_INSIDE, KERNEL_SLICE_STOPPED, KERNEL_TEST_STOPPED, KERNEL_TOOK_TOO_LONG, UNKNOWN_BODY_WORDS, KernelClient, KernelError, kernelFailure, latestOnly, type KernelCalls, type KernelOps, type KernelRequest, type KernelResponse } from "./kernel/kernel-client.ts";
+export type { BodyHandle, BodySpec, BooleanOp, BooleanResult, ChamferResult, ChamferSize, ShellResult, ConstructGiven, ConstructMade, ConstructMake, EdgeFrom, FaceFrom, BuildPlate, BodyView, DisplayMesh, FaceRole, Frame, KernelErrorKind, KernelFailure, KernelInput, KernelThin, KernelTouch, Loop, MeasureFacts, MeasureGap, Measured, MeasurePick, Motion, Outline, OutlinePiece, P1sPrintFile, PrintLayer, PrintPath, PrintRole, ShapeSpec, SlicedPrint, SupportStyle, SketchArc, SketchCircle, SketchLine, SketchOutline, SketchRegion, SketchRegions, SliceProgress, SliceStage, SolidPlace, SolidProblem, SolidProblemKind, SolidReport, SolidVerdict, StlFile, WorldPoint, PatternSpec, StressLoad, StressStage, StressTest, StressTestResult } from "./kernel/kernel-types.ts";
 // The ?all and ?community preview switches (preview.ts).
 export { PREVIEW_ALL, PREVIEW_ALL_KEY, PREVIEW_COMMUNITY, PREVIEW_COMMUNITY_KEY, previews, readPreviews, setPreviews, type Previews } from "./preview.ts";
 // DRAFT model interfaces (see each file).
@@ -30,7 +30,7 @@ export type { BuildAreaShown, CornerView, ExtrudeArrow, ExtrudePointer, ExtrudeS
 export { NO_HIGHLIGHT, ORIGIN_AT_FIRST } from "./model/viewport.ts";
 export type { AnalysisOverlay, OverlayMark, OverlayPlace, OverlaySeverity, OverlayTarget } from "./model/overlay.ts";
 export { overlayPlaces, SEVERITY_COLOURS, triangleColours, worstSeverity } from "./model/overlay.ts";
-export type { BodyFaces, Converter, DataRep, Delivery, FaceFinder, FaceFound, ImageRep, LeftOut, LeftOutOf, ListedObject, Lister, MeshRep, OutlineRep, Plane, Producer, Producible, Representation, RepresentationKind, RepresentationOf, SolidRep } from "./model/representation.ts";
+export type { BodyFaces, BodyLender, Converter, DataRep, Delivery, FaceFinder, FaceFound, ImageRep, LeftOut, LeftOutOf, LentBody, ListedObject, Lister, MeshRep, OutlineRep, Plane, Producer, Producible, Representation, RepresentationKind, RepresentationOf, SolidRep } from "./model/representation.ts";
 export type { Cost, GraphNode, Staleness } from "./model/graph.ts";
 export { DependencyGraph } from "./model/graph.ts";
 export type { DownstreamSource, DownstreamState, DownstreamSummary } from "./model/downstream.ts";

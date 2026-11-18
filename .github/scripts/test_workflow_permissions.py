@@ -79,6 +79,7 @@ ENVIRONMENTS = {
     ("kernel-nightly.yml", "test"): "kernel",
     ("kernel-nightly.yml", "test-second-leg"): "kernel",
     ("kernel-nightly.yml", "mutants"): "kernel",
+    ("kernel-nightly.yml", "plants"): "kernel",
     ("kernel-nightly.yml", "collect"): "kernel",
     ("kernel-nightly.yml", "keys"): "kernel",
     ("nightly.yml", "golden-step"): "kernel",

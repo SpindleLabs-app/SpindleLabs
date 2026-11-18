@@ -1,6 +1,6 @@
 // Main-thread side of the kernel worker: every kernel call is an async
 // message, so a slow operation never freezes the UI.
-import type { BodyHandle, BodySpec, BooleanOp, Motion, BooleanResult, BuildPlate, ChamferResult, ChamferSize, BodyView, ConstructGiven, ConstructMade, ConstructMake, KernelErrorKind, KernelFailure, KernelInput, KernelThin, KernelTouch, Measured, MeasurePick, NozzleType, Outline, P1sPrintFile, SketchArc, SketchCircle, SketchLine, SketchOutline, SketchRegions, SlicedPrint, SolidReport, SliceProgress, SliceStage, StlFile, SupportStyle, PatternSpec } from "./kernel-types.ts";
+import type { BodyHandle, BodySpec, BooleanOp, Motion, BooleanResult, BuildPlate, ChamferResult, ChamferSize, ShellResult, BodyView, ConstructGiven, ConstructMade, ConstructMake, KernelErrorKind, KernelFailure, KernelInput, KernelThin, KernelTouch, Measured, MeasurePick, NozzleType, Outline, P1sPrintFile, SketchArc, SketchCircle, SketchLine, SketchOutline, SketchRegions, SlicedPrint, SolidReport, SliceProgress, SliceStage, StlFile, SupportStyle, PatternSpec, StressStage, StressTest, StressTestResult } from "./kernel-types.ts";
 import { builtSize, callUnits, DEFAULT_UNIT_MS, facesSize, LIMIT_FLOOR_MS, limitMs, type BodySize } from "./time-limit.ts";
 
 /** Every operation the worker supports, with its arguments and result. */
@@ -49,6 +49,14 @@ export interface KernelOps {
    */
   body_chamfer: { args: [body: BodyHandle, edges: number[], size: ChamferSize, flip: boolean]; result: ChamferResult };
   /**
+   * The kept body `body` hollowed out (step 35h2c): walls `thickness` mm
+   * thick inside it, the faces `open` (its BodyView's face indices) left
+   * open. New kept bodies, one per piece, the one given left as it was;
+   * history as body_boolean's, body {@link SHELL_INSIDE} naming the inside
+   * walls. A refusal keeps nothing; its words name the face or thickness.
+   */
+  body_shell: { args: [body: BodyHandle, open: number[], thickness: number]; result: ShellResult };
+  /**
    * Every copy's motion of a pattern (step 61), the original left out, in the
    * kernel's order: each a move or a turn, as body_move and a moved spec take
    * them. Refused naming the input at fault (along, spacing, count, across,
@@ -69,6 +77,12 @@ export interface KernelOps {
   slice_stl: { args: [stl: Uint8Array<ArrayBuffer>, layerHeight: number, wallCount: number, infillPercent: number, supports: SupportStyle, warmUp: boolean, betterGrip: boolean]; result: SlicedPrint };
   /** The same slice as slice_stl, as a Bambu Lab P1S print file (.gcode.3mf) for the build plate and the nozzle fitted. */
   print_file_stl: { args: [stl: Uint8Array<ArrayBuffer>, layerHeight: number, wallCount: number, infillPercent: number, supports: SupportStyle, plate: BuildPlate, nozzle: NozzleType, warmUp: boolean, betterGrip: boolean]; result: P1sPrintFile };
+  /**
+   * TestLab's stress test (T5) on the kept body `body` where the app shows it: meshed, solved and its stresses worked
+   * out (StressTestResult), or refused in words ("invalid-input": no held face, a face both held and pushed, a curved
+   * part, too big). Reports each stage as it starts (onTestProgress); stopped by stopTesting.
+   */
+  stress_test: { args: [body: BodyHandle, test: StressTest]; result: StressTestResult };
   /** The size of the kernel's WebAssembly memory in bytes (it only ever grows): the soak test checks it levels off. */
   wasm_bytes: { args: []; result: number };
 }
@@ -93,6 +107,9 @@ export type KernelReady = { ready: true; unitMs?: number };
 
 /** What the worker says while a slice (call `id`) works: how far it has got (SliceProgress), at most every PROGRESS_EVERY_MS but at every new stage. */
 export type KernelProgress = { id: number; progress: SliceProgress };
+
+/** What the worker says as a stress test (call `id`) starts each stage. */
+export type KernelTestProgress = { id: number; testStage: StressStage };
 
 /** The least time between two progress messages of one stage (ms): a bar needs no more, and each costs a message. */
 export const PROGRESS_EVERY_MS = 100;
@@ -129,6 +146,8 @@ export const isTrap = (e: unknown): boolean => typeof WebAssembly !== "undefined
 
 /** What the call that stopped the kernel answers (and every call still waiting on it): the app then starts a fresh kernel and builds again. */
 /** What a call about a body the kernel no longer holds says (no internal number: nobody can act on one). */
+/** The body number a Shell's history gives its inside walls and edges (the kernel's `ops::shell::INSIDE`, step 35h2c); never a body's handle (they start at 1). */
+export const SHELL_INSIDE = 0;
 export const UNKNOWN_BODY_WORDS = "That body is no longer there (it was removed, or the design was rebuilt). Reload the design and try again.";
 
 export const KERNEL_RESTARTED = "The geometry kernel ran out of memory or stopped on an internal error, so it was started again.";
@@ -143,6 +162,9 @@ export const KERNEL_TOOK_TOO_LONG = "This took the geometry kernel too long, so 
 
 /** What a slice answers when the user stopped it (stopSlicing): its kernel was let go, and nothing was made. */
 export const KERNEL_SLICE_STOPPED = "The slice was stopped.";
+
+/** What a stress test answers when the user stopped it (stopTesting): its kernel was let go, and nothing was worked out. */
+export const KERNEL_TEST_STOPPED = "The test was stopped.";
 
 /** What every other call sent to that kernel answers: it was never done, and the app builds again on the fresh kernel. */
 export const KERNEL_STOPPED_FOR_ANOTHER = "The geometry kernel was started again, because a call before this one took too long.";
@@ -254,10 +276,19 @@ export interface KernelCalls {
    * 2026-11-04, ui 3). True if a slice was stopped; with none waiting, the kernel is kept. The app's client has it.
    */
   stopSlicing?(): boolean;
+  /** Calls `listener` as a stress test (stress_test) starts each stage. Returns the way to stop listening. The app's client has it. */
+  onTestProgress?(listener: (stage: StressStage) => void): () => void;
+  /**
+   * Stops every stress test sent and not yet answered, as TestLab's Cancel does, the way stopSlicing stops a slice:
+   * the kernel is let go and a fresh one started. The tests fail with KERNEL_TEST_STOPPED, every other call waiting
+   * with KERNEL_RESTARTED, and the listeners of onRestart hear of it. True if a test was stopped. The app's client has it.
+   */
+  stopTesting?(): boolean;
 }
 
 export class KernelClient implements KernelCalls {
   private progressListeners = new Set<(progress: SliceProgress) => void>();
+  private testListeners = new Set<(stage: StressStage) => void>();
   private worker!: Worker;
   private nextId = 1;
   /** The calls sent and not yet answered, in the order sent, which is the order the worker answers them; each with its size (time-limit.ts). */
@@ -361,8 +392,12 @@ export class KernelClient implements KernelCalls {
     this.worker = worker;
     this.started = false;
     this.watchHead();
-    worker.onmessage = (event: MessageEvent<KernelResponse | KernelReady | KernelProgress>) => {
+    worker.onmessage = (event: MessageEvent<KernelResponse | KernelReady | KernelProgress | KernelTestProgress>) => {
       if (worker !== this.worker) return; // a kernel already replaced
+      if ("testStage" in event.data) {
+        if (this.pending.has(event.data.id)) for (const listener of this.testListeners) listener(event.data.testStage);
+        return;
+      }
       if ("progress" in event.data) {
         // Only for a call still waiting (a late one, after its answer, says nothing).
         if (this.pending.has(event.data.id)) for (const listener of this.progressListeners) listener(event.data.progress);
@@ -415,22 +450,28 @@ export class KernelClient implements KernelCalls {
    * the bodies the old one kept are forgotten and the design is built again
    * on the new one.
    */
-  private restart(message = KERNEL_RESTARTED, slow?: number, slicesStopped = false) {
+  private restart(message = KERNEL_RESTARTED, slow?: number, stopping?: { calls: (op: keyof KernelOps) => boolean; words: string }) {
     this.worker.terminate();
     const stopped = new KernelError({ kind: "internal", inputs: [], message });
     const tooLong = new KernelError({ kind: "timed-out", inputs: [], message: KERNEL_TOOK_TOO_LONG });
-    const sliceStopped = new KernelError({ kind: "internal", inputs: [], message: KERNEL_SLICE_STOPPED });
+    const asked = stopping && new KernelError({ kind: "internal", inputs: [], message: stopping.words });
     const waiting = [...this.pending];
     this.pending.clear();
     this.retire();
     this.start();
-    waiting.forEach(([id, p]) => p.reject(id === slow ? tooLong : slicesStopped && isSlice(p.op) ? sliceStopped : stopped));
+    waiting.forEach(([id, p]) => p.reject(id === slow ? tooLong : asked && stopping.calls(p.op) ? asked : stopped));
     this.restartListeners.forEach((listener) => listener());
   }
 
   stopSlicing(): boolean {
     if (this.failed || ![...this.pending.values()].some((p) => isSlice(p.op))) return false;
-    this.restart(KERNEL_RESTARTED, undefined, true);
+    this.restart(KERNEL_RESTARTED, undefined, { calls: isSlice, words: KERNEL_SLICE_STOPPED });
+    return true;
+  }
+
+  stopTesting(): boolean {
+    if (this.failed || ![...this.pending.values()].some((p) => p.op === "stress_test")) return false;
+    this.restart(KERNEL_RESTARTED, undefined, { calls: (op) => op === "stress_test", words: KERNEL_TEST_STOPPED });
     return true;
   }
 
@@ -472,6 +513,11 @@ export class KernelClient implements KernelCalls {
     return () => void this.restartListeners.delete(listener);
   }
 
+  onTestProgress(listener: (stage: StressStage) => void): () => void {
+    this.testListeners.add(listener);
+    return () => void this.testListeners.delete(listener);
+  }
+
   onProgress(listener: (progress: SliceProgress) => void): () => void {
     this.progressListeners.add(listener);
     return () => void this.progressListeners.delete(listener);
@@ -494,6 +540,7 @@ export class KernelClient implements KernelCalls {
     }
     if (op === "body_move") return this.move(...(args as KernelOps["body_move"]["args"]), units) as Promise<KernelOps[K]["result"]>;
     if (op === "body_chamfer") return this.chamfer(...(args as KernelOps["body_chamfer"]["args"]), units) as Promise<KernelOps[K]["result"]>;
+    if (op === "body_shell") return this.shell(...(args as KernelOps["body_shell"]["args"]), units) as Promise<KernelOps[K]["result"]>;
     if (op === "body_boolean") return this.boolean(...(args as KernelOps["body_boolean"]["args"]), units) as Promise<KernelOps[K]["result"]>;
     // Measure's picks name bodies by the app's handles: each sent as the kernel's number (35e2l2).
     if (op === "body_measure") {
@@ -511,7 +558,7 @@ export class KernelClient implements KernelCalls {
       const sent = Object.fromEntries(Object.entries(make).map(([key, g]) => [key, isPickGiven(g) ? { pick: { ...g.pick, body: this.bodies.get(g.pick.body)!.body } } : g]));
       return this.send(op, [sent] as KernelOps[K]["args"], units) as Promise<KernelOps[K]["result"]>;
     }
-    if (op === "body_view" || op === "body_stl" || op === "body_step" || op === "body_free" || op === "body_hide") {
+    if (op === "body_view" || op === "body_stl" || op === "body_step" || op === "body_free" || op === "body_hide" || op === "stress_test") {
       const handle = args[0] as BodyHandle;
       const held = this.bodies.get(handle);
       if (!held) {
@@ -521,12 +568,14 @@ export class KernelClient implements KernelCalls {
       }
       const sent = this.send(op, [held.body, ...args.slice(1)] as KernelOps[K]["args"], units);
       if (op === "body_free") void sent.then(() => this.bodies.get(handle) === held && this.bodies.delete(handle) && this.sizes.delete(handle), () => {});
-      // A view counts the body's faces exactly.
+      // A view counts the body's faces exactly, and says its box (the stress test's limit).
       if (op === "body_view")
         void sent.then(
           (view) => {
             const size = this.sizes.get(handle);
-            if (size && this.bodies.get(handle) === held) this.sizes.set(handle, { ...size, faces: (view as BodyView).faces });
+            const box = (view as Partial<BodyView>).bounds;
+            const sides = box ? ([box[1][0] - box[0][0], box[1][1] - box[0][1], box[1][2] - box[0][2]] as const) : size?.sides;
+            if (size && this.bodies.get(handle) === held) this.sizes.set(handle, { ...size, faces: (view as BodyView).faces, sides });
           },
           () => {},
         );
@@ -547,27 +596,48 @@ export class KernelClient implements KernelCalls {
     if (unknown !== undefined) return Promise.reject(new KernelError({ kind: "unknown-body", inputs: [], message: UNKNOWN_BODY_WORDS }));
     const worker = this.worker;
     const app = new Map(held.map((h, k) => [h!.body, inputs[k]]));
-    return this.send("body_boolean", [held[0]!.body, held.slice(1).map((h) => h!.body), op], units).then((reply) => {
-      const { bodies, history } = reply as BooleanResult;
-      const handles = bodies.map((body, k) => {
-        const handle = this.nextBody++;
-        if (worker === this.worker) {
-          this.bodies.set(handle, { worker, body });
-          this.sizes.set(handle, facesSize(history[k].faces.length));
-        } else this.retired.add(handle);
-        return handle;
-      });
-      const named = (body: BodyHandle) => app.get(body) ?? body;
-      return {
-        bodies: handles,
-        history: history.map(({ faces, also, edges }) => ({
-          faces: faces.map((f) => ({ ...f, body: named(f.body) })),
-          // A face merged from several input faces lying level (kernel 36c1): the others it lies on (SL #502: dropped before).
-          ...(also !== undefined ? { also: also.map((list) => list.map((f) => ({ ...f, body: named(f.body) }))) } : {}),
-          edges: edges.map((e) => ({ along: e.along.map((a) => ({ ...a, body: named(a.body) })), crossing: e.crossing.map(([p, q]) => [{ ...p, body: named(p.body) }, { ...q, body: named(q.body) }] as [typeof p, typeof q]) })),
-        })),
-      };
+    return this.send("body_boolean", [held[0]!.body, held.slice(1).map((h) => h!.body), op], units).then((reply) => this.keepResults(reply as BooleanResult, worker, app));
+  }
+
+  /**
+   * body_shell with the app's handles (step 35h2c): the body's kernel number
+   * sent, each piece given a handle of its own, sized by its faces, the
+   * history named by the app's handles as a boolean's is; body
+   * {@link SHELL_INSIDE} (the inside walls) stays as it is.
+   */
+  private shell(body: BodyHandle, open: number[], thickness: number, units: number): Promise<ShellResult> {
+    const held = this.bodies.get(body);
+    if (!held) return Promise.reject(new KernelError({ kind: "unknown-body", inputs: [], message: UNKNOWN_BODY_WORDS }));
+    const worker = this.worker;
+    return this.send("body_shell", [held.body, open, thickness], units).then((reply) => this.keepResults(reply as ShellResult, worker, new Map([[held.body, body]])));
+  }
+
+  /**
+   * A boolean's or a shell's answer with the app's handles: each result body
+   * given a handle of its own (retired if the worker restarted meanwhile),
+   * sized by its faces, and every history body the kernel numbered as one of
+   * the inputs (`app`) named by that input's handle; any other number (a
+   * shell's inside, 0) is left as it is.
+   */
+  private keepResults({ bodies, history }: BooleanResult, worker: Worker, app: Map<number, BodyHandle>): BooleanResult {
+    const handles = bodies.map((body, k) => {
+      const handle = this.nextBody++;
+      if (worker === this.worker) {
+        this.bodies.set(handle, { worker, body });
+        this.sizes.set(handle, facesSize(history[k].faces.length));
+      } else this.retired.add(handle);
+      return handle;
     });
+    const named = (body: BodyHandle) => app.get(body) ?? body;
+    return {
+      bodies: handles,
+      history: history.map(({ faces, also, edges }) => ({
+        faces: faces.map((f) => ({ ...f, body: named(f.body) })),
+        // A face merged from several input faces lying level (kernel 36c1): the others it lies on (SL #502: dropped before).
+        ...(also !== undefined ? { also: also.map((list) => list.map((f) => ({ ...f, body: named(f.body) }))) } : {}),
+        edges: edges.map((e) => ({ along: e.along.map((a) => ({ ...a, body: named(a.body) })), crossing: e.crossing.map(([p, q]) => [{ ...p, body: named(p.body) }, { ...q, body: named(q.body) }] as [typeof p, typeof q]) })),
+      })),
+    };
   }
 
   /**

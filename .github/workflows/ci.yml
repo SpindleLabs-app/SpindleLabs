@@ -400,11 +400,27 @@ jobs:
       - run: npm ci
       - run: npm run build
         working-directory: apps/fission
+      # The browser and apt's packages for it, kept between runs (keyed on the image and Playwright's
+      # version; an older key still brings the packages, which apt checks): a warm cache downloads only
+      # apt's index, so a stalled mirror no longer fails the job. A failed install is never skipped.
+      - id: browser-key
+        working-directory: apps/fission
+        run: |
+          prefix="browser-webkit-$ImageOS-"
+          echo "prefix=$prefix" >> "$GITHUB_OUTPUT"
+          echo "key=$prefix$(node -p "require('playwright-core/package.json').version")" >> "$GITHUB_OUTPUT"
+      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: |
+            ~/.cache/ms-playwright
+            ~/.cache/apt-browser
+          key: ${{ steps.browser-key.outputs.key }}
+          restore-keys: ${{ steps.browser-key.outputs.prefix }}
       # Retries and time limits for apt's stalls: see the script.
       - name: Install the browser (webkit)
         working-directory: apps/fission
         timeout-minutes: 27
-        run: ../../.github/scripts/install-browser.sh webkit
+        run: APT_CACHE="$HOME/.cache/apt-browser" ../../.github/scripts/install-browser.sh webkit
       - run: node e2e/kernel-restart.mjs
         working-directory: apps/fission
         env:
@@ -448,11 +464,27 @@ jobs:
       - run: npm ci
       - run: npm run build
         working-directory: apps/fission
+      # The browser and apt's packages for it, kept between runs (keyed on the image and Playwright's
+      # version; an older key still brings the packages, which apt checks): a warm cache downloads only
+      # apt's index, so a stalled mirror no longer fails the job. A failed install is never skipped.
+      - id: browser-key
+        working-directory: apps/fission
+        run: |
+          prefix="browser-${{ matrix.browser }}-$ImageOS-"
+          echo "prefix=$prefix" >> "$GITHUB_OUTPUT"
+          echo "key=$prefix$(node -p "require('playwright-core/package.json').version")" >> "$GITHUB_OUTPUT"
+      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: |
+            ~/.cache/ms-playwright
+            ~/.cache/apt-browser
+          key: ${{ steps.browser-key.outputs.key }}
+          restore-keys: ${{ steps.browser-key.outputs.prefix }}
       # Retries and time limits for apt's stalls: see the script.
       - name: Install the browser (${{ matrix.browser }})
         working-directory: apps/fission
         timeout-minutes: 27
-        run: ../../.github/scripts/install-browser.sh ${{ matrix.browser }}
+        run: APT_CACHE="$HOME/.cache/apt-browser" ../../.github/scripts/install-browser.sh ${{ matrix.browser }}
       # Firefox finds no GL driver headless on CI: it runs with a window on a
       # virtual screen, drawing with Mesa's software GL (e2e/browser.mjs).
       - if: matrix.browser == 'firefox'

@@ -18,7 +18,8 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { build, preview } from "vite";
-import { launch } from "./browser.mjs";
+import { chosen, launch } from "./browser.mjs";
+import { openSlice } from "./slice-page-lib.mjs";
 import { chooseFile, startWithBox } from "./start.mjs";
 
 const SERVICE = "https://test-accounts.supabase.co";
@@ -32,7 +33,7 @@ const errors = [];
 let failed = false;
 
 async function check(name, fn) {
-  if (process.env.ONLY && !name.includes(process.env.ONLY)) return;
+  if (!chosen(name)) return;
   try {
     await fn();
     console.log(`PASS ${name}`);
@@ -215,11 +216,9 @@ try {
   let sliced = "";
   await check("a print file saved while signed in reaches the account a few seconds later", async () => {
     await startWithBox(a.page);
-    await chooseFile(a.page, "file-slice-print");
-    await a.page.waitForSelector("#slice-print-dialog[open]");
-    await Promise.all([a.page.waitForEvent("download"), a.page.click("#slice-print-go")]);
-    await a.page.waitForFunction(() => document.getElementById("slice-print-status")?.textContent.startsWith("Saved"));
-    await a.page.click("#slice-print-close");
+    await openSlice(a.page, false);
+    await Promise.all([a.page.waitForEvent("download"), a.page.click("#slice-page-download")]);
+    await a.page.waitForFunction(() => document.getElementById("slice-page-status")?.textContent.startsWith("Saved"));
     const kept = await a.page.evaluate(() => JSON.parse(localStorage.getItem("spindlelabs.print-log")).prints.find((p) => p.owner !== null));
     assert.equal(kept.owner, USER_ID, "the print is marked as Ada's");
     sliced = kept.id;

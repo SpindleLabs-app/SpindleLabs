@@ -218,6 +218,8 @@ jobs:
           .github/scripts/apt-mirror.sh
           apt=(-o Acquire::Retries=5 -o Acquire::http::Timeout=60 -o Acquire::https::Timeout=60 -qq)
           for try in 1 2 3 4; do
+            # A mirror that resolves can still stall: tries 2 on move to another one (see the script).
+            [ $try = 1 ] || .github/scripts/apt-mirror.sh switch $try
             sudo timeout 600 apt-get "${apt[@]}" update >/dev/null 2>&1 && sudo timeout 600 apt-get "${apt[@]}" install -y valgrind prusa-slicer >/dev/null 2>&1 && exit 0
             echo "apt-get try $try failed"
             [ $try = 4 ] || sleep $((60 * 2 ** (try - 1)))
@@ -407,6 +409,7 @@ jobs:
     outputs:
       count: ${{ steps.plan.outputs.count }}
       shards: ${{ steps.plan.outputs.shards }}
+      crates: ${{ steps.plan.outputs.crates }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -430,6 +433,9 @@ jobs:
           [ -n "$count" ] && [ -n "$shards" ] || { echo "the plan failed"; exit 1; }
           echo "count=$count" >>"$GITHUB_OUTPUT"
           echo "shards=$shards" >>"$GITHUB_OUTPUT"
+          # The crates with changed lines (kernel, slice, fea; a kernel commit
+          # from before the slicer and solver were mutated prints no such line).
+          echo "crates=$(sed -n 's/^crates \(.*\)$/\1/p' "$RUNNER_TEMP/plan.txt")" >>"$GITHUB_OUTPUT"
       - name: Seal the logs (only the keyed job can open them)
         if: always()
         env:
@@ -523,6 +529,7 @@ jobs:
           PLAN: ${{ needs.mutants-plan.result }}
           SHARD: ${{ needs.mutants-shard.result }}
           COUNT: ${{ needs.mutants-plan.outputs.count }}
+          CRATES: ${{ needs.mutants-plan.outputs.crates }}
         run: |
           ci=.github/scripts/kernel_ci.sh
           if [ "$KEYS" = success ] && [ -d "$RUNNER_TEMP/sealed" ]; then
@@ -530,7 +537,13 @@ jobs:
             $ci save-sealed "$RUNNER_TEMP/sealed" "$RUNNER_TEMP/private/private.pem" "$RUNNER_TEMP/opened" || true
           fi
           if [ "$KEYS" = success ] && [ "$PLAN" = success ] && { [ "$COUNT" = 0 ] || [ "$SHARD" = success ]; }; then
-            $ci status kernel-ci/mutants success "$COUNT mutants in the changed lines, all caught"
+            # Say what was mutated, so "0" never reads as "tested" (test audit E-3).
+            case $CRATES in
+              "") what="$COUNT mutants in the changed lines, all caught" ;;
+              none) what="$COUNT mutants and plants: no changed lines in the kernel, slicer or solver" ;;
+              *) what="$COUNT mutants and plants in the changed lines (${CRATES//,/, }), all caught" ;;
+            esac
+            $ci status kernel-ci/mutants success "$what"
           else
             $ci status kernel-ci/mutants failure "keys $KEYS, plan $PLAN, shards $SHARD ($COUNT mutants)"
             exit 1

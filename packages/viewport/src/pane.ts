@@ -9,6 +9,8 @@ import type { AnalysisOverlay, DisplayMesh, ExtrudePointer, ExtrudeShow, Framing
 export interface PaneCamera {
   readonly element: HTMLElement;
   fit(): Framing | null;
+  /** Frames the body from the direction this view already looks from (SL #819 D-10). */
+  fitKeepAngle?(): Framing | null;
   setView(name: ViewName): Framing | null;
   fitSelection(): Framing | null;
   lookAt(plane: Plane, side?: 1 | -1): Framing | null;
@@ -50,8 +52,10 @@ export function paneViewports(scene: SharedViewport): (view: PaneCamera) => Shar
     return {
       element: view.element,
       showBody: (mesh: DisplayMesh) => scene.showBody(mesh),
+      showColourMap: (colours: readonly number[] | null) => scene.showColourMap?.(colours),
       bodyFraming: () => scene.bodyFraming(),
       fit: () => view.fit(),
+      ...(view.fitKeepAngle ? { fitKeepAngle: () => view.fitKeepAngle!() } : {}),
       // The picture is this pane's view, as the camera methods are (split view: the pane the File menu is for).
       ...(view.picture ? { picture: () => view.picture!() } : {}),
       setView: (name: ViewName) => view.setView(name),

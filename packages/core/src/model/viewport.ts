@@ -142,6 +142,8 @@ export interface OriginPlane {
   id: string;
   plane: Plane;
   offered: boolean;
+  /** Drawn round `plane.origin` (a construction plane offered for a sketch, step 59a3), else from it as the origin planes are. */
+  centred?: boolean;
 }
 
 /** What the origin draws in the view (showOrigin): each axis shown or not, X, Y, Z, and the planes shown, by id ("origin-xy") with where each lies. */
@@ -307,10 +309,21 @@ export interface SharedViewport {
   /** The element the viewport fills. */
   readonly element: HTMLElement;
   showBody(mesh: DisplayMesh): void;
+  /**
+   * Paints the body on show vertex by vertex (TestLab's results, T5b): `colours` are sRGB, 0 to 1, three a vertex of
+   * the mesh last given to showBody, in place of its face colours, overlays and selection tints, until null or a new
+   * body. A list of another length paints nothing. Absent on a stand-in view.
+   */
+  showColourMap?(colours: readonly number[] | null): void;
   /** Sphere around the current body (radius 0 if none); fit frames the finished sketches drawn too. */
   bodyFraming(): Framing;
   /** Frames the current body; returns what it framed (null if none). */
   fit(): Framing | null;
+  /**
+   * Frames the current body from the direction the camera already looks from (only pan and zoom change), as the Fit
+   * button does; Design's own refit when a part outgrows the view uses it (SL #819 D-10). Left out, `fit` is used.
+   */
+  fitKeepAngle?(): Framing | null;
   /** A picture of the main view as it is on screen, without the view cube, as a PNG (File > Save picture); null when the browser can't make one. */
   picture?(): Promise<Blob | null>;
   /** Turns the camera to a standard view framing the current body; returns what it framed (null if none). */

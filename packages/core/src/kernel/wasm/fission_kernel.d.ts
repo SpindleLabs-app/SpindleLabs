@@ -57,6 +57,8 @@ export function vicdld(p0: number): void;
 
 export function vye52n(p0: any): any;
 
+export function w3hx8e(p0: number, p1: any, p2: Function | null): any;
+
 export function xqg0dt(p0: number, p1: number): any;
 
 export function zt5kqw(p0: any, p1: any): any;
@@ -94,6 +96,7 @@ export interface InitOutput {
     readonly uxyfpl: (a: number, b: number, c: number) => [number, number, number];
     readonly vicdld: (a: number) => [number, number];
     readonly vye52n: (a: any) => [number, number, number];
+    readonly w3hx8e: (a: number, b: any, c: number) => [number, number, number];
     readonly xqg0dt: (a: number, b: number) => [number, number, number];
     readonly zt5kqw: (a: any, b: any) => [number, number, number];
     readonly __wbindgen_malloc: (a: number, b: number) => number;

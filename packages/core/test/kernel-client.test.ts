@@ -3,7 +3,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import type { BodySpec } from "../src/kernel/kernel-types.ts";
-import { isTrap, KERNEL_NOT_DOWNLOADED, KERNEL_RESTARTED, KERNEL_SLICE_STOPPED, KERNEL_STOPPED_FOR_ANOTHER, KERNEL_TOOK_TOO_LONG, KernelClient, KernelError, UNKNOWN_BODY_WORDS, kernelFailure, latestOnly, type KernelResponse, progressPoster, PROGRESS_EVERY_MS } from "../src/kernel/kernel-client.ts";
+import { isTrap, KERNEL_NOT_DOWNLOADED, KERNEL_RESTARTED, KERNEL_SLICE_STOPPED, KERNEL_STOPPED_FOR_ANOTHER, KERNEL_TOOK_TOO_LONG, KernelClient, KernelError, SHELL_INSIDE, UNKNOWN_BODY_WORDS, kernelFailure, latestOnly, type KernelResponse, progressPoster, PROGRESS_EVERY_MS } from "../src/kernel/kernel-client.ts";
 
 /** A promise we resolve by hand, to force replies out of order. */
 function deferred<T>() {
@@ -707,6 +707,34 @@ test("a body's view, STL and STEP are timed by the body it is: a sphere's mesh i
     await assert.rejects(last, (e: KernelError) => e.kind === "timed-out");
   }));
 
+test("a stress test is timed by the box its body's view said (TestLab T5b): worst case before any view", (t) =>
+  withFakeWorker(async (client, worker) => {
+    t.mock.timers.enable({ apis: ["setTimeout"] });
+    // 100 ms a unit. Before a view: the worst default-size ratio, 0.5 · 3596^1.35 units × 100 ms × 4.
+    worker.ready(100);
+    const built = client.call("body_build", { box: { width: 100, depth: 10, height: 10 } });
+    worker.answer(1, 1);
+    const b = await built;
+    const test = { youngsModulus: 2000, poissonsRatio: 0.35, strength: 30, held: [0], loads: [{ faces: [1], force: [0, 0, -10] as [number, number, number] }] };
+    const worst = 0.5 * 3596 ** 1.35 * 100 * 4;
+    const first = client.call("stress_test", b, test);
+    assert.equal(keptAfter(t, worker, worst * 0.9), true, "unviewed at 0.9 ×");
+    worker.answer(2, "done");
+    await first;
+    // A view says the bar's box 100 × 10 × 10: default size 5, ratio 80, 0.5 · 80^1.35 = 186 units, about 74,600 ms (over the 10 s floor).
+    const view = client.call("body_view", b);
+    worker.answer(3, { faces: 6, bounds: [[0, 0, 0], [100, 10, 10]] });
+    await view;
+    const bar = 0.5 * 80 ** 1.35 * 100 * 4;
+    const second = client.call("stress_test", b, test);
+    assert.equal(keptAfter(t, worker, bar * 0.9), true, "the bar at 0.9 ×");
+    worker.answer(4, "done");
+    await second;
+    const third = client.call("stress_test", b, test);
+    assert.equal(keptAfter(t, worker, bar * 1.1), false, "the bar at 1.1 ×");
+    await assert.rejects(third, (e: KernelError) => e.kind === "timed-out");
+  }));
+
 test("body_boolean with the app's handles: the kernel's numbers sent, the results given handles of their own, the history named by the app's handles", () =>
   withFakeWorker(async (client, worker) => {
     worker.ready(1);
@@ -867,6 +895,68 @@ test("body_chamfer refuses a body the kernel doesn't hold before sending anythin
     worker.ready(1);
     const sent = worker.posted.length;
     await assert.rejects(client.call("body_chamfer", 7, [0], { equal: 1 }, false), (e: KernelError) => e.kind === "unknown-body" && e.message === UNKNOWN_BODY_WORDS);
+    assert.equal(worker.posted.length, sent);
+  }));
+
+test("body_shell with the app's handles (step 35h2c): the kernel's number sent, each piece given a handle of its own, the body's own faces named by its handle and the inside (0) kept", (t) =>
+  withFakeWorker(async (client, worker) => {
+    t.mock.timers.enable({ apis: ["setTimeout"] });
+    worker.ready(100);
+    const a = client.call("body_build", { box: { width: 10, depth: 10, height: 10 } });
+    worker.answer(1, 11);
+    assert.equal(await a, 1);
+    // Sent as the kernel holds it: body 11, the open faces and thickness as given. Timed as the box's mesh (44 units)
+    // plus a boolean of its 6 faces with its own 6: 36 pairs x 0.17 = 6.12 units, so (44 + 6.12) x 100 ms x 4 =
+    // 20,048 ms: kept at 0.9 x, timed out at 1.1 x (a move of the box alone, 17,600 ms, would be under 0.9 x of it).
+    const shelled = client.call("body_shell", 1, [5], 1);
+    assert.deepEqual(worker.posted.at(-1), { id: 2, op: "body_shell", args: [11, [5], 1] });
+    assert.equal(keptAfter(t, worker, 20_048 * 0.9), true, "the shell at 0.9 x");
+    // The answer: one body, its first face the box's face 0 as it was, its second the inside wall moved in from the
+    // box's face 0 (body 0, turned over), an edge along the box's edge 2 and one along the inside edge from it.
+    worker.answer(2, {
+      bodies: [12],
+      history: [{
+        faces: [{ body: 11, face: 0, whole: true, turned: false }, { body: 0, face: 0, whole: true, turned: true }],
+        edges: [{ along: [{ body: 11, edge: 2, whole: true }], crossing: [] }, { along: [{ body: 0, edge: 2, whole: true }], crossing: [[{ body: 0, face: 0 }, { body: 11, face: 1 }]] }],
+      }],
+    });
+    // The app's own handle, 2, for the kernel's 12; the box named by its handle 1; the inside stays 0 (SHELL_INSIDE).
+    assert.equal(SHELL_INSIDE, 0);
+    assert.deepEqual(await shelled, {
+      bodies: [2],
+      history: [{
+        faces: [{ body: 1, face: 0, whole: true, turned: false }, { body: SHELL_INSIDE, face: 0, whole: true, turned: true }],
+        edges: [{ along: [{ body: 1, edge: 2, whole: true }], crossing: [] }, { along: [{ body: SHELL_INSIDE, edge: 2, whole: true }], crossing: [[{ body: SHELL_INSIDE, face: 0 }, { body: 1, face: 1 }]] }],
+      }],
+    });
+    const view = client.call("body_view", 2);
+    assert.deepEqual(worker.posted.at(-1), { id: 3, op: "body_view", args: [12] });
+    worker.answer(3, { faces: 2 });
+    await view;
+    // Two pieces (a prism with both caps open): two handles, in the kernel's order.
+    const two = client.call("body_shell", 1, [4, 5], 1);
+    assert.deepEqual(worker.posted.at(-1), { id: 4, op: "body_shell", args: [11, [4, 5], 1] });
+    worker.answer(4, { bodies: [13, 14], history: [{ faces: [], edges: [] }, { faces: [], edges: [] }] });
+    assert.deepEqual((await two).bodies, [3, 4]);
+  }));
+
+test("a shell past its time limit fails as timed-out", (t) =>
+  withFakeWorker(async (client, worker) => {
+    t.mock.timers.enable({ apis: ["setTimeout"] });
+    worker.ready(100);
+    const a = client.call("body_build", { box: { width: 10, depth: 10, height: 10 } });
+    worker.answer(1, 11);
+    await a;
+    const shelled = client.call("body_shell", 1, [5], 1);
+    assert.equal(keptAfter(t, worker, 20_048 * 1.1), false, "the shell at 1.1 x");
+    await assert.rejects(shelled, (e: KernelError) => e.kind === "timed-out");
+  }));
+
+test("body_shell refuses a body the kernel doesn't hold before sending anything", () =>
+  withFakeWorker(async (client, worker) => {
+    worker.ready(1);
+    const sent = worker.posted.length;
+    await assert.rejects(client.call("body_shell", 7, [0], 1), (e: KernelError) => e.kind === "unknown-body" && e.message === UNKNOWN_BODY_WORDS);
     assert.equal(worker.posted.length, sent);
   }));
 

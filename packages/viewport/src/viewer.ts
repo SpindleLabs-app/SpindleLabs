@@ -9,7 +9,7 @@ import { fitDistance, keepAngleBasis, orbitSafeOffset, planeViewBasis, refitScal
 import { ViewCube } from "./viewcube.ts";
 import { releaseShared } from "./release.ts";
 import { firstHit } from "./ray-pick.ts";
-import { copyChanged, edgeColourArray, faceColourArray } from "./body-colours.ts";
+import { copyChanged, edgeColourArray, faceColourArray, linearOf } from "./body-colours.ts";
 import { isDoublePick, type ViewClick } from "./double-pick.ts";
 import { faceFraming, lookAtFraming, partFraming, pieceCount, pointsInPlane, selectionFraming } from "./framing.ts";
 import { checkTextureSize, imageSheet, imageZoomRange, topDownDistance } from "./image-sheet.ts";
@@ -1353,6 +1353,8 @@ export class Viewer implements SharedViewport {
   private edges: LineSegmentsGeometry | null = null;
   /** paint's working colour arrays, kept between paints (body-colours.ts). */
   private paintScratch = new Map<string, Float32Array>();
+  /** TestLab's colour map on the body on show (linear, three a vertex), drawn in place of the face colours; null when none. */
+  private colourMap: Float32Array | null = null;
   private picker: ((pick: ViewportPick) => void) | null = null;
   private menuHandler: ((pick: ViewportPick, at: { x: number; y: number }) => boolean) | null = null;
   private highlight: ViewportHighlight = NO_HIGHLIGHT;
@@ -1579,6 +1581,8 @@ export class Viewer implements SharedViewport {
       }
     });
     this.body.clear();
+    this.colourMap = null;
+    delete this.element.dataset.colourMap;
 
     const geometry = new THREE.BufferGeometry();
     geometry.setAttribute("position", new THREE.Float32BufferAttribute(mesh.positions, 3));
@@ -1932,7 +1936,8 @@ export class Viewer implements SharedViewport {
     // own blending when it is not `transparent` only for CustomBlending, so the alpha is mixed by hand.
     const behindBody = { transparent: false, blending: THREE.CustomBlending, blendSrc: THREE.SrcAlphaFactor, blendDst: THREE.OneMinusSrcAlphaFactor, depthTest: false, depthWrite: false };
     for (const p of planes) {
-      const corners: SketchXY[] = [[0, 0], [2 * half, 0], [2 * half, 2 * half], [0, 2 * half]];
+      const from = p.centred ? -half : 0;
+      const corners: SketchXY[] = [[from, from], [from + 2 * half, from], [from + 2 * half, from + 2 * half], [from, from + 2 * half]];
       const world = corners.map((c) => toWorld(p.plane, c));
       const g = new THREE.BufferGeometry();
       g.setAttribute("position", new THREE.Float32BufferAttribute(world.flat(), 3));
@@ -2059,6 +2064,18 @@ export class Viewer implements SharedViewport {
     (this.cornerDot.material as THREE.PointsMaterial).color.setHex(SKETCH_COLOURS.hover);
   }
 
+  showColourMap(colours: readonly number[] | null) {
+    if (colours === null) this.colourMap = null;
+    else {
+      const out = new Float32Array(colours.length);
+      for (let i = 0; i + 2 < colours.length; i += 3) out.set(linearOf([colours[i], colours[i + 1], colours[i + 2]]), i);
+      this.colourMap = out;
+    }
+    if (this.colourMap) this.element.dataset.colourMap = String(this.colourMap.length / 3); // read by the e2e test
+    else delete this.element.dataset.colourMap;
+    this.paint();
+  }
+
   setOverlay(overlay: AnalysisOverlay) {
     this.overlays.set(overlay.id, overlay);
     this.paint();
@@ -2087,7 +2104,7 @@ export class Viewer implements SharedViewport {
     // A run alone only with one renderer: each view's renderer uploads by itself and three.js forgets the runs after
     // the first upload, so with two views (split) a second renderer could miss a run; it gets the whole array then.
     const ranged = this.views.length === 1;
-    const nextFaces = faceColourArray(this.mesh, overlays, this.highlight, this.hover.face, scratchOf(this.paintScratch, "faces", this.mesh.positions.length));
+    const nextFaces = this.colourMap && this.colourMap.length === this.mesh.positions.length ? this.colourMap : faceColourArray(this.mesh, overlays, this.highlight, this.hover.face, scratchOf(this.paintScratch, "faces", this.mesh.positions.length));
     const colour = faces.getAttribute("color") as THREE.BufferAttribute | undefined;
     if (colour && colour.array.length === nextFaces.length && colour.array instanceof Float32Array) {
       const changed = copyChanged(colour.array, nextFaces);
@@ -2133,6 +2150,11 @@ export class Viewer implements SharedViewport {
   /** Frames the current body from the home view in the main view; returns what it framed (null if none). */
   fit(): Framing | null {
     return this.main.fit();
+  }
+
+  /** Frames the current body in the main view from the direction it already looks from; returns what it framed (null if none). */
+  fitKeepAngle(): Framing | null {
+    return this.main.fitKeepAngle();
   }
 
   /** A picture of the main view as on screen, without the view cube (File > Save picture). */

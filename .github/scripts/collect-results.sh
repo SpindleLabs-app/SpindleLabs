@@ -18,7 +18,7 @@
 #                   failed, seed-golden-<seed>/golden-report.txt), monkey/
 #                   (monkey_night.py: report.txt and seed-monkey-<seed>/),
 #                   journeys/
-#                   and ts-mutants-*/; an endless job's markers.txt is its
+#                   ts-mutants-*/ and plants-*/ (the weekly planted bugs: plants.txt); an endless job's markers.txt is its
 #                   state coverage counts (coverage_issue.py files never-
 #                   reached states)
 #   MUTANT_SHARDS   how many mutation rotation jobs the run started (0 or unset: none)
@@ -114,6 +114,19 @@ add_run() {
     { echo "tested commit $short on $BRANCH, $today UTC ($RUN_URL)"; cat "$IN/markers-run.txt"; } >markers/latest.txt
   fi
 
+  # The weekly run of every planted kernel bug (ci/plants.py, one share per
+  # job): each share's problem lines and total. A night without it keeps
+  # the last one.
+  if compgen -G "$IN/plants-*" >/dev/null; then
+    mkdir -p plants
+    {
+      echo "tested commit $short on $BRANCH, $today UTC ($RUN_URL)"
+      for d in "$IN"/plants-*/; do
+        if [ -s "$d/plants.txt" ]; then grep -v '^caught ' "$d/plants.txt"; else echo "$(basename "$d"): no verdicts (the job stopped before the end)"; fi
+      done
+    } >plants/latest.txt
+  fi
+
   # TypeScript mutation testing: the latest run's survivor lines, one target per job.
   # A run by hand that didn't ask for them has none, and keeps the last ones.
   if compgen -G "$IN/ts-mutants-*" >/dev/null; then
@@ -160,6 +173,9 @@ add_run() {
   fi
   if [ -f monkey/latest.txt ]; then
     { echo ""; echo "Latest monkey sessions (seeded 2,000-action sessions in the real app, every check after every action; a failing seed files a random-testing issue):"; sed 's/^/  /' monkey/latest.txt; echo "monkey/log.txt has one line per night."; } >>summary.txt
+  fi
+  if [ -f plants/latest.txt ]; then
+    { echo ""; echo "Latest run of every planted kernel bug (ci/plants.json, weekly; each must still be caught by its test):"; sed 's/^/  /' plants/latest.txt; } >>summary.txt
   fi
   if [ -f ts-mutants/latest.txt ]; then
     { echo ""; echo "Latest TypeScript mutation run (packages/testing/stryker, survivors must be killed or explained):"; sed 's/^/  /' ts-mutants/latest.txt; } >>summary.txt

@@ -65,10 +65,16 @@ export function propertyNames(source: string, name: string): string[] {
 // join), which a version 24 reader would refuse as an unknown feature.
 // Design data version 26 (step 59a1): a timeline item may be a construction plane, axis or point (`intent.type` "construct",
 // its parameters the kind, its inputs by name, a distance or angle, and its last answer), which a version 25 reader would refuse as an unknown feature.
-const LEDGER_VERSION = 26;
+// Design data version 27 (step 35h2c): a timeline item may be a Shell (`intent.type` "shell", its parameters the body, the
+// faces left open by name and the wall thickness), which a version 26 reader would refuse as an unknown feature.
+// Design data version 28 (step 59a3): a sketch may be on a construction plane (`plane` "construct:<id>", its content keeping
+// `drawn`), a Duplicate may mirror across one, and the hidden list may name a construction or "folder-constructions".
+// Design data version 29 (step 59a3b): a circular Pattern's axis may be a construction axis ("construct:<id>"), with no
+// centre, depending on it after its bodies' items.
+const LEDGER_VERSION = 29;
 const LEDGER: { file: string; type: string; names: string[] }[] = [
   { file: "workspaces/design/src/document.ts", type: "DesignDocument", names: ["version", "nextId", "profiles", "sketches", "timeline", "kept", "bodies", "nextBody", "hidden", "shownPlanes"] },
-  { file: "workspaces/design/src/document.ts", type: "Sketch", names: ["id", "points", "curves", "constraints", "face", "pins", "projected"] },
+  { file: "workspaces/design/src/document.ts", type: "Sketch", names: ["id", "points", "curves", "constraints", "face", "drawn", "pins", "projected"] },
   { file: "workspaces/design/src/document.ts", type: "KeptShape", names: ["points", "curves", "placement"] },
   { file: "workspaces/design/src/document.ts", type: "SketchLineCurve", names: ["id", "kind", "start", "end", "construction"] },
   { file: "workspaces/design/src/document.ts", type: "SketchCircleCurve", names: ["id", "kind", "centre", "radius", "construction", "fit"] },

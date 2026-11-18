@@ -127,6 +127,27 @@ class CollectTsMutants(unittest.TestCase):
         self.assertNotIn("ts-mutants/latest.txt", files)
         self.assertNotIn("TypeScript mutation", files["summary.txt"])
 
+class CollectPlants(unittest.TestCase):
+    collect = CollectGolden.collect
+
+    def test_the_weekly_plants_run_lists_its_problems_and_totals(self):
+        # Test audit E-2: the problem lines and each share's total, never the
+        # caught ones; a share that left no verdicts says so.
+        _, files = self.collect(CLEAN, None, {
+            "plants-0/plants.txt": "caught         a\nMISSED         b\n2 plants run, 1 problems\n",
+            "plants-1/plants.txt": ""})
+        latest = files["plants/latest.txt"]
+        self.assertIn("MISSED         b", latest)
+        self.assertIn("2 plants run, 1 problems", latest)
+        self.assertNotIn("caught", latest)
+        self.assertIn("plants-1: no verdicts (the job stopped before the end)", latest)
+        self.assertIn("Latest run of every planted kernel bug", files["summary.txt"])
+
+    def test_a_night_without_it_keeps_the_last_one(self):
+        _, files = self.collect(CLEAN, None)
+        self.assertNotIn("plants/latest.txt", files)
+
+
 class CollectChecks(unittest.TestCase):
     """Failures without a failure folder are filed too (test-the-tests
     hunt, 2026-10-28: on main's scripts each of these printed nothing)."""

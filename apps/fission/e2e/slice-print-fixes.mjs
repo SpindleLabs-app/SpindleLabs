@@ -1,20 +1,20 @@
 // Browser checks of the Slice for printing fixes from the slicer hunt (2026-10-31), in a page that behaves like a
 // phone, Firefox or Safari (navigator.webdriver false, no save picker, so the name box asks):
-//  1. the name box opens ON TOP of the Slice dialog (it opened behind it, unreachable, and the dialog stuck on Slicing…);
-//  2. the print preview gives its WebGL context back: 20 previews later the Design view still draws;
+//  1. the name box opens ON TOP of the Slice page (it opened behind the old dialog, unreachable, and the slice stuck on Slicing…);
+//  2. the print preview gives its WebGL context back: 20 previews later the Design view still draws; closing it puts focus on Preview;
 //  3. the preview shows the file that is downloaded (same time and filament as the download's words, not the plain file's);
-//  4. closing the dialog mid-slice drops the file (nothing downloads); the dialog reopened says Slicing… and the buttons stay off;
-//  5. a result is cleared when a choice changes; an engine refusal reads as advice;
-//  6. closing the preview puts keyboard focus on File ▾;
+//  4. leaving the page mid-slice drops the file (nothing downloads); coming back, the page is ready at once;
+//     a result is cleared when a choice changes; an engine refusal reads as advice;
 //  7. at phone width the preview still says how long and how much plastic;
 //  8. a part floating above the plate (a 10 mm cube on the plate, another 20 mm up, sent to the real engine in place of the
-//     design's own file) is refused with advice that fits the dialog, readable at both widths; supports on slice it;
-//  9. (slicer hunt 2026-11-04 leftovers) a choice changed while Preview slices: the preview says it shows the earlier
-//     choices; a project saved as "Garden bracket" names its print files after it, not "spindlelabs-".
-// At a desktop width with clicks and a phone's with taps. Run with `npm run e2e` (after `npm run build`); SHOTS=dir saves screenshots.
+//     design's own file) is refused with advice that fits the page, readable at both widths; supports on slice it;
+//  9. (slicer hunt 2026-11-04 leftovers) the choices are off while Preview slices, so none changes under it and the preview
+//     has no "earlier choices" warning; a project saved as "Garden bracket" names its print files after it, not "spindlelabs-".
+// (Moved from the dialog's checks, SP5b2b.) At a desktop width with clicks and a phone's with taps. Run with `npm run e2e` (after `npm run build`); SHOTS=dir saves screenshots.
 import assert from "node:assert/strict";
 import { preview } from "vite";
-import { launch } from "./browser.mjs";
+import { chosen, launch } from "./browser.mjs";
+import { openSlice, pick } from "./slice-page-lib.mjs";
 import { chooseFile, startWithBox } from "./start.mjs";
 
 const server = await preview({ preview: { port: 4197, strictPort: true }, logLevel: "error" });
@@ -25,6 +25,7 @@ const errors = [];
 let failed = 0;
 
 async function check(name, fn) {
+  if (!chosen(name)) return;
   try {
     await fn();
     console.log(`ok - ${name}`);
@@ -82,19 +83,16 @@ async function fresh(width, tap) {
   await startWithBox(page, tap);
   return page;
 }
-const open = async (page, tap) => {
-  await chooseFile(page, "file-slice-print", tap);
-  await page.waitForSelector("#slice-print-dialog[open]");
-};
+const open = openSlice;
 
 for (const [width, tap] of [[1280, false], [375, true]]) {
   const at = `${width} px${tap ? ", taps" : ""}`;
-  await check(`${at}: the name box is on top of the Slice dialog and saves under the name typed`, async () => {
+  await check(`${at}: the name box is on top of the Slice page and saves under the name typed`, async () => {
     const page = await fresh(width, tap);
     const press = (sel) => (tap ? page.tap(sel) : page.click(sel));
     try {
       await open(page, tap);
-      press("#slice-print-go");
+      press("#slice-page-download");
       await page.waitForSelector(".save-name input", { timeout: 60000 });
       const top = await page.evaluate(() => {
         const r = document.querySelector(".save-name input").getBoundingClientRect();
@@ -103,12 +101,12 @@ for (const [width, tap] of [[1280, false], [375, true]]) {
         const hitOk = document.elementFromPoint(ok.x + ok.width / 2, ok.y + ok.height / 2);
         return { input: hit?.closest(".save-name") !== null, ok: hitOk?.closest(".save-name") !== null };
       });
-      assert.deepEqual(top, { input: true, ok: true }, "the box, not the dialog, is under the finger");
-      if (shots) await page.screenshot({ path: `${shots}/slice-print-fixes-${width}-name-box.png` });
+      assert.deepEqual(top, { input: true, ok: true }, "the box, not the page, is under the finger");
+      if (shots) await page.screenshot({ path: `${shots}/slice-page-fixes-${width}-name-box.png` });
       await page.fill(".save-name input", "My box");
       const [download] = await Promise.all([page.waitForEvent("download"), press(".save-name .ok")]);
       assert.equal(download.suggestedFilename(), "My box.gcode.3mf");
-      await page.waitForFunction(() => document.getElementById("slice-print-status")?.textContent.startsWith("Saved My box.gcode.3mf"));
+      await page.waitForFunction(() => document.getElementById("slice-page-status")?.textContent.startsWith("Saved My box.gcode.3mf"));
     } finally {
       await page.context().close();
     }
@@ -119,31 +117,30 @@ for (const [width, tap] of [[1280, false], [375, true]]) {
     const press = (sel) => (tap ? page.tap(sel) : page.click(sel));
     try {
       await open(page, tap);
-      press("#slice-print-go");
+      press("#slice-page-download");
       await page.waitForSelector(".save-name input", { timeout: 60000 });
       await Promise.all([page.waitForEvent("download"), press(".save-name .ok")]);
-      await page.waitForFunction(() => document.getElementById("slice-print-status")?.textContent.startsWith("Saved"));
-      const saved = await page.textContent("#slice-print-status");
+      await page.waitForFunction(() => document.getElementById("slice-page-status")?.textContent.startsWith("Saved"));
+      const saved = await page.textContent("#slice-page-status");
       const words = (s) => s.match(/(\d+ layers?, .*?filament\), about .*? of printing)/)?.[1];
       assert.ok(words(saved), saved);
-      await press("#slice-print-preview");
+      await press("#slice-page-preview");
       await page.waitForSelector("#print-preview[open]", { timeout: 60000 });
       const shown = await page.textContent("#print-preview-words");
       assert.equal(words(shown), words(saved), "the preview says what the saved file says");
       assert.equal(await page.$eval("#print-preview-words", (e) => e.getBoundingClientRect().width > 0 && e.getBoundingClientRect().height > 0), true, "and shows it, at any width");
       assert.match(await page.textContent("#print-preview-legend"), /Support \(none\)/);
-      if (shots) await page.screenshot({ path: `${shots}/slice-print-fixes-${width}-preview.png` });
+      if (shots) await page.screenshot({ path: `${shots}/slice-page-fixes-${width}-preview.png` });
       // 20 previews: before the fix Chrome dropped the oldest WebGL context at the 17th, the Design view's.
       for (let i = 0; i < 20; i++) {
         await page.click("#print-preview-close");
         await page.waitForSelector("#print-preview", { state: "detached" });
-        await open(page, tap);
-        await press("#slice-print-preview");
+        await press("#slice-page-preview");
         await page.waitForSelector("#print-preview[open]", { timeout: 60000 });
       }
       await page.click("#print-preview-close");
       await page.waitForSelector("#print-preview", { state: "detached" });
-      assert.equal(await page.evaluate(() => document.activeElement?.id), "file-menu", "focus goes to File ▾, where Slice for printing is");
+      assert.equal(await page.evaluate(() => document.activeElement?.id), "slice-page-preview", "focus goes back to Preview, the button that opened it");
       const lost = await page.evaluate(() => {
         const c = document.querySelector("#viewport canvas");
         const x = window.__ctx.find((k) => k.canvas === c);
@@ -157,7 +154,7 @@ for (const [width, tap] of [[1280, false], [375, true]]) {
     }
   });
 
-  await check(`${at}: Stop (Close while slicing) stops the slice and drops the file; reopened it is ready at once; a changed choice clears a result`, async () => {
+  await check(`${at}: leaving the page mid-slice stops it and drops the file; back on the page it is ready at once; a changed choice clears a result`, async () => {
     const page = await fresh(width, tap);
     const press = (sel) => (tap ? page.tap(sel) : page.click(sel));
     try {
@@ -165,66 +162,58 @@ for (const [width, tap] of [[1280, false], [375, true]]) {
       page.on("download", (d) => downloads.push(d.suggestedFilename()));
       await open(page, tap);
       await page.evaluate(() => (window.kernelDelay = 2500));
-      await press("#slice-print-go");
-      assert.equal(await page.$eval("#slice-print-preview", (b) => b.disabled), true, "Preview is off while Slice and download runs");
-      // While it slices, Close reads Stop, and pressing it stops the slice rather than leaving the engine working behind
-      // the closed dialog (slicer hunt 11-04, ui 3): reopened, it is ready at once, nothing slicing and nothing saved.
-      assert.equal(await page.textContent("#slice-print-close"), "Stop");
-      await press("#slice-print-close");
-      await open(page, tap);
-      await page.waitForFunction(() => !document.getElementById("slice-print-go").disabled, null, { timeout: 2000 });
-      assert.equal(await page.textContent("#slice-print-close"), "Close");
-      await page.waitForTimeout(500);
-      assert.equal(await page.$(".save-name"), null, "no name box for a dropped slice");
+      await press("#slice-page-download");
+      assert.equal(await page.$eval("#slice-page-preview", (b) => b.disabled), true, "Preview is off while Slice and download runs");
+      assert.equal(await page.$eval("#slice-page-walls", (b) => b.disabled), true, "and so are the choices");
+      // Going to Design while it slices: the file is dropped, not saved behind the user's back (a name box or a download
+      // appearing in Design), and the page is ready when it is shown again.
+      await page.evaluate(() => (location.hash = "#design"));
+      await page.waitForFunction(() => document.body.dataset.activeWorkspace === "design");
+      await page.waitForTimeout(3500);
+      assert.equal((await page.$(".save-name")) === null, true, "no name box for a dropped slice"); // (a failing assert on a handle would dump the whole page object)
       assert.deepEqual(downloads, [], "nothing downloaded");
-      assert.equal(await page.textContent("#slice-print-status"), "");
+      await open(page, tap);
+      await page.waitForFunction(() => !document.getElementById("slice-page-download").disabled, null, { timeout: 5000 });
+      assert.equal(await page.textContent("#slice-page-status"), "");
       // A result, then a changed choice.
       await page.evaluate(() => (window.kernelDelay = 0));
-      press("#slice-print-go");
+      press("#slice-page-download");
       await page.waitForSelector(".save-name input", { timeout: 60000 });
       await Promise.all([page.waitForEvent("download"), press(".save-name .ok")]);
-      await page.waitForFunction(() => document.getElementById("slice-print-status")?.textContent.startsWith("Saved"));
-      await page.selectOption("#slice-print-infill", "25");
-      assert.equal(await page.textContent("#slice-print-status"), "", "the old result is gone");
+      await page.waitForFunction(() => document.getElementById("slice-page-status")?.textContent.startsWith("Saved"));
+      await pick(page, "infill", "25");
+      assert.equal(await page.textContent("#slice-page-status"), "", "the old result is gone");
     } finally {
       await page.context().close();
     }
   });
 
-  await check(`${at}: a choice changed while Preview slices is said in the preview; a saved project names its print files`, async () => {
+  await check(`${at}: the choices are off while Preview slices (so the preview never shows earlier ones); a saved project names its print files`, async () => {
     const page = await fresh(width, tap);
     const press = (sel) => (tap ? page.tap(sel) : page.click(sel));
     try {
       await open(page, tap);
       await page.evaluate(() => (window.kernelDelay = 1500));
-      await press("#slice-print-preview");
-      await page.selectOption("#slice-print-walls", "4");
+      await press("#slice-page-preview");
+      assert.equal(await page.$eval("#slice-page-walls", (s) => s.disabled), true, "no choice can change while the preview slices");
       await page.waitForSelector("#print-preview[open]", { timeout: 60000 });
-      assert.equal(await page.textContent("#print-preview-warning"), "A choice was changed while it sliced, so this preview shows the earlier choices: preview again for the new ones.");
-      // Whole and on screen: not cut short (the heading's words are, with an ellipsis or after three lines on a phone).
-      const fits = await page.$eval("#print-preview-warning", (e) => { const r = e.getBoundingClientRect(); return r.width > 0 && r.left >= 0 && r.right <= innerWidth && r.top >= 0 && r.bottom <= innerHeight && e.scrollHeight <= e.clientHeight + 1 && e.scrollWidth <= e.clientWidth + 1; });
-      assert.equal(fits, true, "the warning is whole and on screen");
-      if (shots) await page.screenshot({ path: `${shots}/slice-print-fixes-${width}-preview-earlier.png` });
+      assert.equal(await page.$("#print-preview-warning"), null, "so no warning of earlier choices");
       await page.click("#print-preview-close");
       await page.waitForSelector("#print-preview", { state: "detached" });
       // Previewed again with nothing changed: the plain words.
       await page.evaluate(() => (window.kernelDelay = 0));
-      await open(page, tap);
-      await press("#slice-print-preview");
-      await page.waitForSelector("#print-preview[open]", { timeout: 60000 });
-      assert.equal(await page.$("#print-preview-warning"), null, "no warning");
-      await page.click("#print-preview-close");
-      await page.waitForSelector("#print-preview", { state: "detached" });
       // Saved as "Garden bracket" (the project itself stays "Untitled" inside): the next print file is named after it.
+      await page.evaluate(() => (location.hash = "#design"));
+      await page.waitForFunction(() => document.body.dataset.activeWorkspace === "design");
       await chooseFile(page, "file-save", tap);
       await page.waitForSelector(".save-name input");
       await page.fill(".save-name input", "Garden bracket");
       await Promise.all([page.waitForEvent("download"), press(".save-name .ok")]);
       await open(page, tap);
-      press("#slice-print-go");
+      press("#slice-page-download");
       await page.waitForSelector(".save-name input", { timeout: 60000 });
-      assert.equal(await page.inputValue(".save-name input"), "Garden bracket-0.2mm-4w-15pc-textured");
-      if (shots) await page.screenshot({ path: `${shots}/slice-print-fixes-${width}-named.png` });
+      assert.equal(await page.inputValue(".save-name input"), "Garden bracket-0.2mm-2w-15pc-textured");
+      if (shots) await page.screenshot({ path: `${shots}/slice-page-fixes-${width}-named.png` });
     } finally {
       await page.context().close();
     }
@@ -236,22 +225,21 @@ for (const [width, tap] of [[1280, false], [375, true]]) {
     try {
       await open(page, tap);
       await page.evaluate(() => (window.floatingParts = true));
-      await page.selectOption("#slice-print-supports", "off");
-      await press("#slice-print-go");
-      await page.waitForFunction(() => /hangs in the air/.test(document.getElementById("slice-print-status")?.textContent ?? ""), null, { timeout: 20000 }).catch(async () => assert.fail("status: " + (await page.textContent("#slice-print-status"))));
-      assert.equal(await page.textContent("#slice-print-status"), "Part of the model hangs in the air 20 mm above the plate, around (35, 5) mm, with nothing under it. Turn Supports on, or move it down onto the plate or the part.");
-      assert.equal(await page.$eval("#slice-print-status", (e) => e.classList.contains("slice-print-bad")), true);
-      const fits = await page.$eval("#slice-print-status", (e) => { const r = e.getBoundingClientRect(); return r.left >= 0 && r.right <= innerWidth && e.scrollWidth <= e.clientWidth + 1 && r.height > 0; });
-      assert.equal(fits, true, "the advice fits the dialog");
-      const seen = await page.evaluate(() => {
-        const s = document.getElementById("slice-print-status").getBoundingClientRect();
-        const a = document.querySelector(".slice-print-actions").getBoundingClientRect();
-        return s.bottom <= a.top + 1 && s.top >= 0;
+      await pick(page, "supports", "Off");
+      await press("#slice-page-download");
+      await page.waitForFunction(() => /hangs in the air/.test(document.getElementById("slice-page-status")?.textContent ?? ""), null, { timeout: 20000 }).catch(async () => assert.fail("status: " + (await page.textContent("#slice-page-status"))));
+      assert.equal(await page.textContent("#slice-page-status"), "Part of the model hangs in the air 20 mm above the plate, around (35, 5) mm, with nothing under it. Turn Supports on, or move it down onto the plate or the part.");
+      const fits = await page.$eval("#slice-page-status", (e) => { const r = e.getBoundingClientRect(); return r.left >= 0 && r.right <= innerWidth && e.scrollWidth <= e.clientWidth + 1 && r.height > 0; });
+      assert.equal(fits, true, "the advice fits the page");
+      const seen = await page.$eval("#slice-page-status", (e) => {
+        e.scrollIntoView({ block: "nearest" });
+        const r = e.getBoundingClientRect();
+        return r.top >= 0 && r.bottom <= innerHeight;
       });
-      assert.equal(seen, true, "the advice is in view, not under the buttons");
-      if (shots) await page.screenshot({ path: `${shots}/slice-print-fixes-${width}-floating.png` });
-      await page.selectOption("#slice-print-supports", "normal");
-      await press("#slice-print-go");
+      assert.equal(seen, true, "the advice can be scrolled into view");
+      if (shots) await page.screenshot({ path: `${shots}/slice-page-fixes-${width}-floating.png` });
+      await pick(page, "supports", "Normal");
+      await press("#slice-page-download");
       await page.waitForSelector(".save-name input", { timeout: 60000 });
     } finally {
       await page.context().close();

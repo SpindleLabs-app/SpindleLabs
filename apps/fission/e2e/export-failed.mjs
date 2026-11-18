@@ -7,7 +7,8 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { launch } from "./browser.mjs";
 import { preview } from "vite";
-import { chooseFile, closePanels } from "./start.mjs";
+import { openSlice } from "./slice-page-lib.mjs";
+import { chooseFile, closePanels, openPanel } from "./start.mjs";
 
 const server = await preview({ preview: { port: 4413, strictPort: true }, logLevel: "error" });
 const url = "http://localhost:4413/";
@@ -28,7 +29,7 @@ async function check(name, fn) {
 }
 
 const MISSING_STL = "Extrude 1 failed, so it is not in the STL: the part is saved without it. Fix it in the timeline (red) to include it.";
-const MISSING_PRINT = "Extrude 1 failed, so it is not in the print: the part is printed without it. Fix it in the timeline (red) to include it.";
+const MISSING_PRINT = "Extrude 1 failed in Design, so the print is without what it makes. Fix it in the Design timeline (red) to include it.";
 
 try {
   for (const width of [1280, 375]) {
@@ -64,13 +65,15 @@ try {
       await (tap ? page.tap("#solid-badge-close") : page.click("#solid-badge-close"));
     });
 
-    await check(`Slice for printing says the failed Cut is not in the print as it opens (${width} px)`, async () => {
-      await chooseFile(page, "file-slice-print", tap);
-      await page.waitForSelector("#slice-print-dialog[open]");
-      assert.equal(await page.textContent("#slice-print-missing"), MISSING_PRINT);
-      assert.ok(await page.isVisible("#slice-print-missing"));
+    await check(`The Slice page says the failed Cut is not in the print as it opens (${width} px)`, async () => {
+      await openSlice(page, tap);
+      await openPanel(page, "browser", tap); // the plate's words are in the browser, a sheet on a phone
+      await page.waitForFunction(() => /failed in Design/.test(document.querySelector(".slice-page-words")?.textContent ?? ""), null, { timeout: 15000 }).catch(() => {});
+      const words = await page.textContent(".slice-page-words");
+      assert.ok(words.includes(MISSING_PRINT), words);
+      assert.ok(await page.isVisible(".slice-page-words"));
       if (shots) await page.screenshot({ path: `${shots}/slice-failed-${width}.png` });
-      await (tap ? page.tap("#slice-print-close") : page.click("#slice-print-close"));
+      await page.evaluate(() => (location.hash = "#design"));
     });
     await context.close();
   }

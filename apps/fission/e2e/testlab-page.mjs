@@ -2,12 +2,17 @@
 // - Without ?testlab, #simulate is still the Simulate placeholder: no page.
 // - With ?testlab, the 40 × 30 × 20 box (x 0..40, y 0..30, z 0..20) from Design is tested without being asked: its front
 //   face (y = 0) tapped to hold, a load added and the top (z = 20) tapped, typed 5 kg: "5 kg hanging (49.0 N) down on
-//   1 face" (5 × 9.80665), made of PLA with its numbers (T2). Run says it checked the set-up and that solving comes later.
+//   1 face" (5 × 9.80665), made of PLA with its numbers (T2). Run (T5b) works it out on the kernel: the result section
+//   with its safety factor in the safe band (by hand: the 40 × 20 section 15 mm from the hold, M = 49 · 15 = 735 N·mm,
+//   I = 40 · 20³ / 12 = 26,667 mm⁴, σ = 735 · 10 / 26,667 = 0.28 MPa against PLA's 35, a factor near 100), the part
+//   drawn in the colour map, its bend and stress in mm and MPa, and Colour by Bend.
 // - The box typed 35 high in Design: back in TestLab the study is out of date with the change note naming the edit, and
-//   the top is found again by name at z = 35 (its paint read off the canvas there). The box made a sphere: both faces
+//   the top is found again by name at z = 35 (its paint read off the canvas there); the result says it is out of date and
+//   the view shows the part as it is now, not the colour map. The box made a sphere: both faces
 //   lost, said in words; Undo brings them back.
-// - At 375 px with taps: picking puts the Properties sheet away so the body can be tapped; nothing runs off the side.
-// Screenshots: E2E_SHOTS=<dir> saves testlab-1280.png, testlab-taller-1280.png, testlab-lost-1280.png, testlab-375.png.
+// - At 375 px with taps: picking puts the Properties sheet away so the body can be tapped; Run shows the result; nothing
+//   runs off the side. The picking hint over the view (T5c5) shows inside the window, uncovered, at both widths.
+// Screenshots: E2E_SHOTS=<dir> saves testlab-1280.png, testlab-taller-1280.png, testlab-lost-1280.png, testlab-375.png, and the picking hint over the view as testlab-hint-1280.png and testlab-hint-375.png.
 import assert from "node:assert/strict";
 import { preview } from "vite";
 import { launch } from "./browser.mjs";
@@ -86,14 +91,40 @@ const press = async (page, sel, tap) => {
   else await page.click(sel);
 };
 
+/**
+ * T5c5: the picking hint over the view says `words`, wholly inside the window and on top at its middle (on a phone the
+ * Properties sheet is put away while picking, so this is the only place the words can be seen).
+ */
+async function hintShows(page, words, shot) {
+  await until(page, (w) => { const h = document.querySelector("#testlab-view-hint"); return h !== null && !h.hidden && h.textContent === w; }, words, `the hint "${words}" over the view`);
+  const box = await page.evaluate(() => {
+    const h = document.querySelector("#testlab-view-hint");
+    const r = h.getBoundingClientRect();
+    // The hint takes no presses (pointer-events: none), so elementFromPoint skips it: let it take them while asked.
+    h.style.pointerEvents = "auto";
+    const top = document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2);
+    h.style.pointerEvents = "";
+    // The overlays' legend ("Held here") is never under it.
+    const legend = document.querySelector(".overlay-legend:not([hidden])")?.getBoundingClientRect();
+    const overLegend = legend !== undefined && legend.height > 0 && r.left < legend.right && legend.left < r.right && r.top < legend.bottom && legend.top < r.bottom;
+    return { left: r.left, right: r.right, top: r.top, bottom: r.bottom, width: innerWidth, height: innerHeight, onTop: top === h || h.contains(top), overLegend };
+  });
+  assert.ok(!box.overLegend, `the hint lies over the overlays' legend: ${JSON.stringify(box)}`);
+  assert.ok(box.left >= 0 && box.right <= box.width && box.top >= 0 && box.bottom <= box.height, `the hint is inside the window: ${JSON.stringify(box)}`);
+  assert.ok(box.onTop, "nothing covers the hint");
+  if (shots && shot) await page.screenshot({ path: `${shots}/${shot}-${box.width}.png` });
+}
+
 /** Holds the front face, adds a 5 kg load on the top, all by clicks or taps on the body. */
 async function setUpStudy(page, tap) {
   await until(page, () => document.querySelector("section[aria-label='TestLab study'] h2")?.textContent === "Study 1: static stress", null, "Study 1 set up");
   await press(page, "[data-testlab=pick-held]", tap);
+  await hintShows(page, "Tap the faces to hold. Tap a held face to let it go.", "testlab-hint");
   await at(page, [20, 0, 10], tap); // the front face's middle
   await until(page, () => document.querySelector(".testlab-page-held li")?.textContent?.startsWith("Front face"), null, "the front held");
   await press(page, "[data-testlab=add-load]", tap);
   if (tap) await page.waitForTimeout(300); // the sheet sliding away
+  await hintShows(page, "Tap the faces Load 1 pushes. Tap a pushed face to let it go.");
   await at(page, [20, 15, 20], tap); // the top's middle
   await until(page, () => document.querySelector(".testlab-page-load li")?.textContent?.startsWith("Top face"), null, "the top pushed");
   await openPanel(page, "properties", tap);
@@ -118,6 +149,20 @@ async function pixel(page, p) {
   return [...img.data.slice(0, 3)];
 }
 
+/** Waits for Run's result: shown, safe, its numbers in mm and MPa, the part in the colour map. */
+async function shownResult(page) {
+  await until(page, () => document.querySelector(".testlab-results") !== null || /^Not run|^Stopped/.test(document.querySelector(".testlab-page-status")?.textContent ?? ""), null, "Run's result", 120000);
+  assert.equal(await status(page), "");
+  assert.equal(await page.getAttribute(".testlab-results-factor", "data-band"), "safe");
+  const factor = Number((await page.locator(".testlab-results-factor-value").textContent()).replace(/,/g, ""));
+  assert.ok(factor > 20 && factor < 1000, `safety factor ${factor} (about 100 by hand)`);
+  const facts = await page.locator(".testlab-results-facts dd").allTextContents();
+  assert.match(facts[0], /^\d[\d.,]* mm$/);
+  assert.match(facts[1], /^\d[\d.,]* MPa, the highest found anywhere in the part \(PLA/);
+  await until(page, () => Number(document.querySelector("[data-colour-map]")?.getAttribute("data-colour-map") ?? 0) > 0, null, "the colour map drawn");
+  assert.equal(await page.locator("[data-testlab=cancel]").count(), 0);
+}
+
 try {
   await check("without ?testlab, Simulate is still the placeholder", async () => {
     const { context, page } = await newPage("?all-workspaces");
@@ -127,15 +172,20 @@ try {
     await context.close();
   });
 
-  await check("1280 px: the box's front held and top pushed by 5 kg, Run checks; the box made taller keeps both and marks it out of date; a sphere loses both; Undo", async () => {
+  await check("1280 px: the box's front held and top pushed by 5 kg, Run shows the result; the box made taller keeps both and marks it out of date; a sphere loses both; Undo", async () => {
     const { context, page } = await newPage("?testlab&test-hooks");
     await startWithBox(page);
     await toTestLab(page);
     await setUpStudy(page, false);
     await page.click("[data-testlab=run]");
-    await saying(page, /^Set up and checked against the design as it is now\. Solving comes with TestLab's solver/, "Run's words");
+    await shownResult(page);
     assert.equal(await page.getAttribute(".testlab-page-state", "data-stale"), "false");
     if (shots) await page.screenshot({ path: `${shots}/testlab-1280.png` });
+    // Colour by Bend: the legend runs 0 mm to the biggest bend.
+    await page.click("[data-testlab-by=bend]");
+    await until(page, () => /^0 mm.* mm$/.test(document.querySelector(".testlab-results-legend")?.textContent ?? ""), null, "the bend's legend");
+    assert.equal(await page.getAttribute("[data-testlab-by=bend]", "aria-pressed"), "true");
+    assert.ok((await page.getAttribute("[data-colour-map]", "data-colour-map")) !== null);
 
     // Made 35 high in Design.
     await toDesign(page);
@@ -148,6 +198,10 @@ try {
     const notes = await page.locator(".change-note .note-text").allTextContents();
     assert.ok(notes.some((n) => n === "Study 1 out of date: you changed the box in DesignLab. Rerun it in TestLab."), notes.join(" | "));
     await until(page, () => (document.querySelector(".testlab-page-status")?.textContent ?? "x") === "", null, "both faces found again");
+    // The result kept, marked out of date, and the view the part as it is now.
+    await until(page, () => document.querySelector(".testlab-results")?.dataset.stale === "true", null, "the result out of date");
+    assert.equal(await page.locator(".testlab-results h3").textContent(), "Result (out of date)");
+    assert.equal(await page.locator("[data-colour-map]").count(), 0, "no colour map on a changed part");
     // The top's paint at z = 35 (where it is now), and the plain body colour at z = 20 on the front, held, so painted too.
     const atTop = await pixel(page, [20, 15, 35]);
     const plainSide = await pixel(page, [40, 15, 17]); // the right side, neither held nor pushed
@@ -173,7 +227,7 @@ try {
     await toTestLab(page);
     await setUpStudy(page, tap);
     await page.tap("[data-testlab=run]");
-    await saying(page, /^Set up and checked/, "Run's words");
+    await shownResult(page);
     const wide = await page.evaluate(() => document.documentElement.scrollWidth);
     assert.ok(wide <= 375, `the page is ${wide} px wide`);
     if (shots) await page.screenshot({ path: `${shots}/testlab-375.png` });

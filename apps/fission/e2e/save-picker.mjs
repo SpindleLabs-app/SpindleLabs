@@ -9,7 +9,7 @@
 import assert from "node:assert/strict";
 import { mkdtempSync, writeFileSync, readFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { browserName } from "./browser.mjs";
+import { browserName, chosen } from "./browser.mjs";
 import { boot, check, fails, REAL_FILE_PICKER, NO_PICKER, readFile, shapeOf, status } from "./save-picker-lib.mjs";
 import { startWithBox, chooseFile, insertPreset } from "./start.mjs";
 import { pinProperties } from "./properties.mjs";
@@ -22,8 +22,7 @@ if (browserName !== "chromium") {
 }
 const TMP = mkdtempSync(tmpdir() + "/save-picker-");
 const b = await boot();
-const only = process.env.ONLY;
-const want = (k) => !only || only.includes(k);
+const want = (k) => chosen(k, (only, key) => only.includes(key));
 async function fresh(init = REAL_FILE_PICKER, extra = null) {
   const context = await b.browser.newContext({ viewport: { width: 1280, height: 800 }, acceptDownloads: true });
   await context.addInitScript(init);

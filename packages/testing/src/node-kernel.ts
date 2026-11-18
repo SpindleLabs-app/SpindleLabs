@@ -5,7 +5,7 @@
 // Node-only, like the tests, so the type check (browser types) skips it.
 
 import { readFileSync } from "node:fs";
-import { KernelError, kernelFailure, type KernelCalls, type KernelOps } from "@fission/core";
+import { KernelError, kernelFailure, type KernelCalls, type KernelOps, type StressStage } from "@fission/core";
 import { startKernel } from "../../core/src/kernel/handshake.ts";
 import { entry } from "../../core/src/kernel/entry-points.ts";
 import * as wasm from "../../core/src/kernel/wasm/fission_kernel.js";
@@ -24,6 +24,7 @@ export function loadKernel(): ReturnType<typeof wasm.initSync> {
 
 export function nodeKernel(): KernelCalls {
   loadKernel();
+  const testListeners = new Set<(stage: StressStage) => void>();
   const ops: { [K in keyof KernelOps]: (...a: KernelOps[K]["args"]) => KernelOps[K]["result"] } = {
     kernel_version: () => entry.kernel_version(),
     make_box: (w, d, h) => entry.make_box(w, d, h),
@@ -47,11 +48,13 @@ export function nodeKernel(): KernelCalls {
     body_move: (body, moves) => entry.body_move(body, moves),
     body_chamfer: (body, edges, size, flip) => entry.body_chamfer(body, edges, size, flip),
     pattern_motions: (pattern) => entry.pattern_motions(pattern),
+    body_shell: (body, open, thickness) => entry.body_shell(body, open, thickness),
     body_count: () => entry.body_count(),
     body_measure: (first, second) => entry.body_measure(first, second),
     body_construct: (make) => entry.body_construct(make),
     slice_stl: (stl, layerHeight, wallCount, infillPercent, supports, warmUp, betterGrip) => entry.slice_stl(stl, layerHeight, wallCount, infillPercent, supports, warmUp, betterGrip),
     print_file_stl: (stl, layerHeight, wallCount, infillPercent, supports, plate, nozzle, warmUp, betterGrip) => entry.print_file_stl(stl, layerHeight, wallCount, infillPercent, supports, plate, nozzle, warmUp, betterGrip),
+    stress_test: (body, test) => entry.stress_test(body, test, (stage: StressStage) => testListeners.forEach((l) => l(stage))),
     wasm_bytes: () => loaded!.memory.buffer.byteLength,
   };
   return {
@@ -64,5 +67,9 @@ export function nodeKernel(): KernelCalls {
         throw new KernelError(kernelFailure(e));
       }
     }) as KernelCalls["call"],
+    onTestProgress: (listener) => {
+      testListeners.add(listener);
+      return () => void testListeners.delete(listener);
+    },
   };
 }

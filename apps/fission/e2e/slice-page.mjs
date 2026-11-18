@@ -10,7 +10,7 @@ import assert from "node:assert/strict";
 import { existsSync, readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { preview } from "vite";
-import { launch } from "./browser.mjs";
+import { chosen, launch } from "./browser.mjs";
 import { insertPreset, startWithBox } from "./start.mjs";
 
 const DIST = process.env.E2E_DIST ? process.env.E2E_DIST.replace(/\/?$/, "/") : fileURLToPath(new URL("../dist/", import.meta.url));
@@ -23,7 +23,7 @@ const shots = process.env.SHOTS;
 const errors = [];
 let failed = 0;
 async function check(name, fn) {
-  if (process.env.ONLY && !name.includes(process.env.ONLY)) return;
+  if (!chosen(name)) return;
   try {
     await fn();
     console.log(`ok - ${name}`);
@@ -67,7 +67,7 @@ async function newPage(width = 1280, touch = false, scheme = "dark") {
     assert.equal(await page.isVisible(".slice-page-supports-flip"), false);
     // Quality is the first choice: pick the Detailed 0.16 mm layers (its option label names the height).
     await page.evaluate(() => {
-      const select = document.querySelector(".slice-page-print select:not(#slice-presets-list)");
+      const select = document.querySelector("#slice-page-quality");
       const fine = [...select.options].find((o) => o.textContent.includes("0.16"));
       select.value = fine.value;
       select.dispatchEvent(new Event("change"));
@@ -104,11 +104,11 @@ async function newPage(width = 1280, touch = false, scheme = "dark") {
     await plateWords(page, "1 body");
     // File is the fifth choice (after Quality, Walls, Infill, Supports): pick its plain G-code option.
     await page.evaluate(() => {
-      const select = document.querySelectorAll(".slice-page-print select:not(#slice-presets-list)")[4];
+      const select = document.querySelector("#slice-page-format");
       select.value = String([...select.options].findIndex((o) => /Plain G-code/.test(o.textContent)));
       select.dispatchEvent(new Event("change"));
     });
-    assert.equal(await page.evaluate(() => [...document.querySelectorAll(".slice-page-print select:not(#slice-presets-list)")].slice(5).every((s) => s.disabled)), true, "plate and nozzle off");
+    assert.equal(await page.evaluate(() => ["#slice-page-plate", "#slice-page-nozzle"].every((id) => document.querySelector(id).disabled)), true, "plate and nozzle off");
     const [file] = await Promise.all([page.waitForEvent("download", { timeout: 90000 }), page.click("#slice-page-download")]);
     assert.equal(file.suggestedFilename(), "spindlelabs-0.2mm-2w-15pc.gcode");
     const text = readFileSync(await file.path(), "utf8");
@@ -122,25 +122,46 @@ async function newPage(width = 1280, touch = false, scheme = "dark") {
     await page.evaluate(() => (location.hash = "#slice"));
     await active(page, "slice");
     await plateWords(page, "1 body");
-    const pick = (index, label) =>
+    const pick = (id, label) =>
       page.evaluate(([i, text]) => {
-        const select = document.querySelectorAll(".slice-page-print select:not(#slice-presets-list)")[i];
+        const select = document.querySelector(`#slice-page-${i}`);
         select.value = String([...select.options].findIndex((o) => o.textContent.includes(text)));
         select.dispatchEvent(new Event("change"));
-      }, [index, label]);
-    await pick(0, "0.16"); // Quality
-    await pick(1, "4"); // Walls
+      }, [id, label]);
+    await pick("quality", "0.16");
+    await pick("walls", "4");
     await page.click("#slice-presets-save-as");
     await page.fill("#slice-presets-name", "Strong");
     await page.click("#slice-presets-name-ok");
-    await pick(1, "2"); // Walls back to 2
+    await pick("walls", "2");
     const options = await page.$$eval("#slice-presets-list option", (os) => os.map((o) => o.textContent));
     assert.ok(options.some((o) => o.includes("Strong")), `the saved preset is listed: ${JSON.stringify(options)}; ${await page.textContent(".slice-page-slice-words")}`);
     await page.selectOption("#slice-presets-list", { index: options.findIndex((o) => o.includes("Strong")) });
-    assert.equal(await page.evaluate(() => document.querySelectorAll(".slice-page-print select:not(#slice-presets-list)")[1].selectedOptions[0].textContent), "4", "the preset put its walls back");
+    assert.equal(await page.evaluate(() => document.querySelector("#slice-page-walls").selectedOptions[0].textContent), "4", "the preset put its walls back");
     assert.match(await page.textContent(".slice-page-fits-words"), /typical sizes/);
+    await page.click("#slice-page-settings > summary"); // Printer fits lives in the Printer settings fold, closed until opened
     await page.click("#slice-page-fits-open");
     await page.waitForSelector("dialog[open]", { timeout: 5000 });
+    await context.close();
+  });
+  await check("the page says it is a first version, and the Printer settings fold starts closed to a line of words, opens on a click, and stays as left", async () => {
+    const { context, page } = await newPage();
+    await startWithBox(page);
+    await page.evaluate(() => (location.hash = "#slice"));
+    await active(page, "slice");
+    await plateWords(page, "1 body");
+    assert.match(await page.textContent("#slice-page-untested"), /haven't been test-printed yet/);
+    assert.equal(await page.$eval("#slice-page-settings", (d) => d.open), false, "closed to start");
+    assert.equal(await page.textContent(".slice-page-settings-words"), "Bambu Lab P1S · Textured PEI plate · 0.4 mm Standard · 0.2 mm layers · 2 walls · 15 % infill");
+    assert.equal(await page.isVisible("#slice-page-quality"), false, "the choices are folded away");
+    assert.equal(await page.isVisible("#slice-page-supports"), true, "Supports is per print: outside the fold");
+    await page.click("#slice-page-settings > summary");
+    assert.equal(await page.isVisible("#slice-page-quality"), true, "open: the choices show");
+    await page.reload();
+    await page.evaluate(() => (location.hash = "#slice"));
+    await active(page, "slice");
+    await page.waitForSelector("#slice-page-settings");
+    assert.equal(await page.$eval("#slice-page-settings", (d) => d.open), true, "left open: open again");
     await context.close();
   });
   await check("Preview on the page opens the print preview of the box (100 layers) and plays it, then closes back to the page", async () => {

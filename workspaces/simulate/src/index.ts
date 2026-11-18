@@ -2,10 +2,10 @@
 // "simulate" in code and in project files). Step T1, behind `?testlab`
 // (flag.ts): a static stress study set up on a Design body with no export,
 // its held and pushed faces kept by stable name and followed through design
-// edits (page.ts, study.ts, faces.ts). There is no solver yet: Run checks
-// the set-up and says so. Without the flag it is the placeholder it was.
-// Next steps (docs/progress/testlab.md): materials (T2), the solver and
-// mesher in the kernel (T3, T4), results in the shared view (T5).
+// edits (page.ts, study.ts, faces.ts), made of a library material (T2), and
+// Run (T5b) works it out on the kernel's stress test for flat-faced parts,
+// showing a checked result in the shared view (run.ts, results.ts). Without
+// the flag it is the placeholder it was. Next steps: docs/progress/testlab.md.
 
 import type { WorkspacePlugin } from "@fission/core";
 import { showPlaceholder, workspaceEta } from "@fission/ui";
@@ -13,14 +13,16 @@ import { testlabShown } from "./flag.ts";
 import { mountTestLabPage } from "./page.ts";
 import { readTestLab } from "./study.ts";
 
-export { GEOMETRY_OWNER, lostWords, studyLost, studyNow, type StudyNow } from "./faces.ts";
+export { GEOMETRY_OWNER, lostWords, studyLost, studyNow, studyOn, type StudyNow } from "./faces.ts";
+export * from "./run.ts";
+export * from "./results.ts";
 export { readTestLabFlag, setTestLabShown, TESTLAB_KEY, testlabShown } from "./flag.ts";
-export { BODIES_LISTER, HELD_OVERLAY, loadOverlay, mountTestLabPage, NO_SOLVER_YET, pickedFace, studyNode, studyOverlays, type Picking } from "./page.ts";
+export { BODIES_LISTER, GETTING_READY, HELD_OVERLAY, loadOverlay, mountTestLabPage, pickedFace, STOPPED, studyNode, studyOverlays, type Picking } from "./page.ts";
 export * from "./study.ts";
 
 const SUMMARY = "Finite element analysis on the kernel's exact geometry: static stress first, then thermal and modal.";
 
-/** Solves a study. Not implemented yet: the solver comes in steps T3 to T5. */
+/** DRAFT: solves a study. Not implemented: the page's Run (T5b) is how a study is worked out. */
 export function solve(_study: unknown): Promise<never> {
   throw new Error("not implemented");
 }
