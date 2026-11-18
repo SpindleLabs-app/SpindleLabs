@@ -4350,6 +4350,11 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
    */
   async function refreshPatternPreview() {
     if (!patternBox.shown || lastScene === null) return drawPatternCopies(null);
+    // A new Pattern's spacings follow its bodies and directions until typed in, so the copies start side by side and apart.
+    if (patternBox.editing === null) {
+      const boxes = lastScene.bodies.filter((b) => patternBodies.includes(b.body)).map((b) => b.view.bounds);
+      patternBox.followSpacing((axis) => startSpacing(boxes, axis));
+    }
     const values = readPatternBoxes(patternBox.typed);
     const problem = patternProblem(values);
     const editing = patternBox.editing;
@@ -4379,8 +4384,8 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
   /**
    * Create ▾ Pattern (with ?pattern or ?all): out of any sketch or other
    * panel first; starts with the selection's bodies (a face or edge picks
-   * its body), a row of 3 along X spaced by their length along X and a gap
-   * (`startSpacing`). Edit feature on a Pattern (`id`): its values in the
+   * its body), a row of 3 along X spaced by their length along it and a gap
+   * (`startSpacing`, followed until typed in). Edit feature on a Pattern (`id`): its values in the
    * boxes, its bodies as they are (the selection let go).
    */
   function startPattern(id: string | null = null) {
@@ -4400,8 +4405,7 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
       if (failedNow.has(id)) patternBox.showError(reasonsNow.get(id) ?? "");
     } else {
       patternBodies = pickedBodies(ctx.selection.items, lastScene);
-      const boxes = (lastScene?.bodies ?? []).filter((b) => patternBodies.includes(b.body)).map((b) => b.view.bounds);
-      patternBox.show(patternBodies.map(patternLabel), startSpacing(boxes, "X"));
+      patternBox.show(patternBodies.map(patternLabel)); // its spacings follow the bodies (refreshPatternPreview)
     }
     toolsChanged();
     fold?.reveal(); // the folded panel opens at it (U0b)
@@ -5795,6 +5799,7 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
       explodeBar.remove();
       combineHint.remove();
       chamferHint.remove();
+      patternHint.remove();
       sayCombineDone(null);
       combineDone.remove();
       measureBox.dispose();

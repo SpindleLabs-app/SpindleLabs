@@ -168,3 +168,27 @@ test("the flag: ?pattern turns it on and keeps it for the tab, ?pattern=off forg
   assert.equal(readPatternFlag("?pattern", throwing), true);
   assert.equal(readPatternFlag("", throwing), false, "a store that throws counts as empty");
 });
+
+test("the spacing follows the picked bodies until it is typed in; an edited Pattern's spacing never moves", () => {
+  const { panel, $, type, choose } = setup();
+  // A cube 10 long along X and 30 along Y, with START_GAP's 5: 15 along X, 35 along Y.
+  const along = (axis: string) => (axis === "X" ? 15 : axis === "Y" ? 35 : 25);
+  panel.show([]);
+  panel.followSpacing(along);
+  assert.equal($<HTMLInputElement>("pattern-spacing").value, "15");
+  assert.equal($<HTMLInputElement>("pattern-spacing2").value, "35", "the grid's second way, along Y");
+  choose("pattern-direction", "Z");
+  panel.followSpacing(along);
+  assert.equal($<HTMLInputElement>("pattern-spacing").value, "25", "a new direction measures again");
+  type("pattern-spacing", "12");
+  panel.followSpacing(along);
+  assert.equal($<HTMLInputElement>("pattern-spacing").value, "12", "typed: kept");
+  assert.equal($<HTMLInputElement>("pattern-spacing2").value, "35");
+  // Shown again for a new Pattern, it follows once more.
+  panel.show([]);
+  panel.followSpacing(along);
+  assert.equal($<HTMLInputElement>("pattern-spacing").value, "15");
+  panel.show(["Box 1"], undefined, { id: "feature-3", name: "Pattern 1", bodies: ["body:feature-1"], values: { kind: "linear", direction: "X", spacing: 40, count: 2, join: false } });
+  panel.followSpacing(along);
+  assert.equal($<HTMLInputElement>("pattern-spacing").value, "40", "an edit keeps its own");
+});

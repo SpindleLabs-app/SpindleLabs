@@ -1827,8 +1827,10 @@ phone.addEventListener("change", () => {
       // Combine's operation and OK once its target and a tool are picked (or an edited Combine's), its hint over the view gone (35f1d).
       (props.querySelector("#combine-panel:not([hidden])") !== null && document.querySelector("#combine-hint[hidden]") !== null) ||
       // Chamfer's size boxes and OK once an edge is picked, its hint over the view gone (44a-app2).
-      (props.querySelector("#chamfer-panel:not([hidden])") !== null && document.querySelector("#chamfer-hint[hidden]") !== null);
-    const again = props.querySelector<HTMLElement>("#combine-panel:not([hidden])")?.dataset.shows ?? "";
+      (props.querySelector("#chamfer-panel:not([hidden])") !== null && document.querySelector("#chamfer-hint[hidden]") !== null) ||
+      // Pattern's boxes and OK once a body is picked (or an edited Pattern's), its hint over the view gone (61c).
+      (props.querySelector("#pattern-panel:not([hidden])") !== null && document.querySelector("#pattern-hint[hidden]") !== null);
+    const again = (props.querySelector<HTMLElement>("#combine-panel:not([hidden])") ?? props.querySelector<HTMLElement>("#pattern-panel:not([hidden])"))?.dataset.shows ?? "";
     const restarted = now && again !== "" && again !== shows;
     shows = again;
     if (now === wanted && !(turned && now) && !restarted) return;

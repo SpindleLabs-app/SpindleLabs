@@ -33,6 +33,11 @@ export interface PatternPanel {
   readonly editing: string | null;
   /** The bodies picked, by name, as the picks change. */
   setBodies(names: readonly string[]): void;
+  /**
+   * A new Pattern's spacings as the picks change: each set to `along(its direction)` until typed in (as Move's pivot
+   * follows its bodies until typed), so a row picked after the panel opened still starts with its copies apart.
+   */
+  followSpacing(along: (axis: PatternAxis) => number): void;
   readonly typed: PatternTyped;
   /** The preview's state: the copies drawn (read by the e2e test), or null with why there is none ("" says nothing), in red when `refused`. */
   showPreview(copies: number | null, why?: string, refused?: boolean): void;
@@ -169,6 +174,8 @@ export function patternPanel(slot: HTMLElement, on: PatternEvents): PatternPanel
   let open = false;
   let editing: string | null = null;
   let picked = 0;
+  /** Whether each spacing box was typed in since the panel opened (Edit feature's are its own: never followed). */
+  const typedIn = { spacing: false, spacing2: false };
   const showKind = () => {
     const k = kind.value as PatternKind;
     for (const r of rowRows) r.hidden = k === "circular";
@@ -180,7 +187,11 @@ export function patternPanel(slot: HTMLElement, on: PatternEvents): PatternPanel
   for (const s of [kind, direction, direction2, axis]) s.addEventListener("change", () => (showKind(), changed()));
   join.addEventListener("change", changed);
   for (const [id, input] of [...[...lengths.keys()].map((id) => [id, lengths.get(id)!.el] as const), ...plain.entries()]) {
-    input.addEventListener("input", changed);
+    input.addEventListener("input", () => {
+      if (id === "pattern-spacing") typedIn.spacing = true;
+      if (id === "pattern-spacing2") typedIn.spacing2 = true;
+      changed();
+    });
     // A box left empty shows 0 as soon as the focus leaves it (the typed-box rule; it counts as 0 meanwhile). The angle
     // stays empty: empty is a full turn, its placeholder saying 360.
     input.addEventListener("blur", () => {
@@ -219,6 +230,7 @@ export function patternPanel(slot: HTMLElement, on: PatternEvents): PatternPanel
     show(names, spacing, edit) {
       open = true;
       editing = edit?.id ?? null;
+      typedIn.spacing = typedIn.spacing2 = edit !== undefined;
       const start = spacing === undefined ? PATTERN_DEFAULTS : { ...PATTERN_DEFAULTS, spacing: String(spacing), spacing2: String(spacing) };
       fill(edit === undefined ? start : typedOf(edit.values, start));
       title.textContent = edit === undefined ? "Pattern" : `Edit ${edit.name}`;
@@ -237,6 +249,10 @@ export function patternPanel(slot: HTMLElement, on: PatternEvents): PatternPanel
       bodies.textContent = bodiesWords(names, touch());
       bodies.classList.toggle("pattern-panel-empty", names.length === 0);
       okState();
+    },
+    followSpacing(along) {
+      if (!typedIn.spacing) setLength("pattern-spacing", String(along(direction.value as PatternAxis)));
+      if (!typedIn.spacing2) setLength("pattern-spacing2", String(along(direction2.value as PatternAxis)));
     },
     get typed() {
       return {
