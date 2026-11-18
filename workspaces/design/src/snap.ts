@@ -62,6 +62,14 @@
 // sketch's own (0, 0), a point placed there stays on it when the face
 // moves, with no pin.
 //
+// Construction points (step 59a3b2, construct-snap.ts): every construction
+// point drawn in the view and made before the sketch is a point to snap to
+// ("construction point"), seen square onto the sketch's plane, after the
+// bodies' points and before the origin, so a body corner at the same place
+// wins and pins. It is placed, not pinned, as the origin is, and never a
+// column or row to line up with (a sketch is not crossed by guides from
+// every construction point).
+//
 // Snapping off (Fusion's Ctrl): `snapsNow` says what snaps. Holding Ctrl
 // (Cmd on a Mac) while moving or clicking places the point where the
 // pointer is, with no snaps and no grid; the Snap button on the sketch's
@@ -93,8 +101,8 @@ export const SNAP_PIXELS = 10;
  */
 export const SAME_PLACE = 1e-5;
 
-/** What a snapped-to point is: an end of a line or arc, a line's midpoint, the centre of a circle or arc (and no line's or arc's end), or the sketch's origin. */
-export type PointKind = "endpoint" | "midpoint" | "centre" | "origin";
+/** What a snapped-to point is: an end of a line or arc, a line's midpoint, the centre of a circle or arc (and no line's or arc's end), a construction point (59a3b2), or the sketch's origin. */
+export type PointKind = "endpoint" | "midpoint" | "centre" | "construction" | "origin";
 
 /** The sketch's origin, its (0, 0): a point to snap to and the column and row of its two axes. */
 export const ORIGIN: SketchXY = [0, 0];
@@ -122,10 +130,11 @@ export interface SnapTargets {
 /** A body edge as the sketch sees it, to land on part way along: a line, a circle or an arc (projection.ts `edgeShape`). */
 export type EdgeCurve = Exclude<EdgeShape, { kind: "point" }>;
 
-/** What bodies offer a sketch besides their points: edges to land on part way along, and corners in the sketch's plane to line up with. */
+/** What bodies offer a sketch besides their points: edges to land on part way along, and corners in the sketch's plane to line up with; and (59a3b2) the visible construction points before the sketch, seen square onto its plane (construct-snap.ts), points only. */
 export interface BodySnaps {
   curves: readonly EdgeCurve[];
   corners: readonly SketchXY[];
+  constructs?: readonly SketchXY[];
 }
 const NO_BODY: BodySnaps = { curves: [], corners: [] };
 
@@ -173,7 +182,9 @@ function ownClicks(sketch: Sketch, tool: SketchTool): SketchXY[] {
  * neither the first corner nor any point on its column (or row), or within
  * 2·SAME_PLACE of it (`flat`), is offered as a column (or row). `body`: the body edges to land on part
  * way along (`curves`), and the bodies' corners lying in the sketch's
- * plane (`corners`), columns and rows too, after the sketch's own. Last
+ * plane (`corners`), columns and rows too, after the sketch's own, and
+ * the construction points (`constructs`, 59a3b2), points only, after the
+ * `edges`. Last
  * of all, the sketch's origin (0, 0): a point after every other, and a
  * column and a row (its y and x axes) after every other.
  */
@@ -190,6 +201,8 @@ export function snapTargets(sketch: Sketch, tool: SketchTool, edges: readonly Ed
   }
   // The face's edges (26f) after the sketch's own points, so where both are at one spot the click shares the sketch's point.
   for (const e of edges) points.push({ at: e.at, kind: e.kind, pin: e });
+  // Construction points (59a3b2) after the bodies' (a body corner there wins and pins) and before the origin; placed, never pinned.
+  for (const c of body.constructs ?? []) points.push({ at: c, kind: "construction" });
   // The origin last, so a sketch point or a body corner at (0, 0) is the one taken there (SAME_PLACE ties go to the first listed).
   points.push({ at: ORIGIN, kind: "origin" });
   const refs: SketchXY[] = sketch.points.map((p) => [p.x, p.y]);
@@ -335,10 +348,11 @@ export function snapOnSketch(doc: DesignDocument, tool: SketchTool, raw: SketchX
 
 const xy = (p: SketchXY) => `${p[0]},${p[1]}`;
 
-/** The snap in words, for the viewport's data (read by the e2e test): "endpoint 10,0", "edge endpoint 40,30" (26f), "origin 0,0", "vertical from 10,0 and horizontal from 10,20", "on y axis and horizontal from 10,20" (a column or row through the origin is an axis), "" on the grid. */
+/** The snap in words, for the viewport's data (read by the e2e test): "endpoint 10,0", "edge endpoint 40,30" (26f), "construction point 40,30" (59a3b2), "origin 0,0", "vertical from 10,0 and horizontal from 10,20", "on y axis and horizontal from 10,20" (a column or row through the origin is an axis), "" on the grid. */
 export function snapLabel(snap: Snap): string {
   if (snap.kind === "grid") return "";
   if (snap.kind === "on") return `on edge ${xy(snap.at)}`;
+  if (snap.kind === "construction") return `construction point ${xy(snap.at)}`;
   if (snap.kind !== "aligned") return `${snap.edge ? "edge " : ""}${snap.kind} ${xy(snap.at)}`;
   const words = [snap.column && (same(snap.column, ORIGIN) ? "on y axis" : `vertical from ${xy(snap.column)}`), snap.row && (same(snap.row, ORIGIN) ? "on x axis" : `horizontal from ${xy(snap.row)}`)];
   return words.filter(Boolean).join(" and ");
@@ -386,6 +400,8 @@ export function snapMarks(snap: Snap, pixel: number): Segment[] {
   const ring = () => loop(Array.from({ length: 16 }, (_, k): SketchXY => [x + m * Math.cos((Math.PI * k) / 8), y + m * Math.sin((Math.PI * k) / 8)]));
   if (snap.kind === "centre") return ring();
   if (snap.kind === "origin") return [...ring(), [[x - m, y], [x + m, y]], [[x, y - m], [x, y + m]]];
+  // A construction point (59a3b2): an X out to the mark's corners inside a square, apart from the endpoint's plain square.
+  if (snap.kind === "construction") return [...loop([[x - m, y - m], [x + m, y - m], [x + m, y + m], [x - m, y + m]]), [[x - m, y - m], [x + m, y + m]], [[x - m, y + m], [x + m, y - m]]];
   if (snap.kind === "on") return loop([[x, y - m], [x + m, y], [x, y + m], [x - m, y]]);
   if (snap.kind !== "aligned") return [];
   const out: Segment[] = [[[x - m, y - m], [x + m, y + m]], [[x - m, y + m], [x + m, y - m]]];
