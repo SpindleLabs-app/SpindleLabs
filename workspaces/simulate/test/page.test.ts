@@ -19,6 +19,7 @@ import {
   type ViewportPick,
   type WorkspaceContext,
 } from "@fission/core";
+import { pickHint } from "../src/page.ts";
 import { HELD_OVERLAY, loadOverlay, mountTestLabPage, pickedFace, RESULT_OVERLAY, STOPPED, readTestLab, studyNode, studyOverlays, studyLost, type StudyNow } from "../src/index.ts";
 
 const { Window } = await import("happy-dom");
@@ -80,6 +81,7 @@ function context(bodies = 2) {
   const shown: DisplayMesh[] = [];
   const coloured: (readonly number[] | null)[] = [];
   const viewport = {
+    element: el(),
     onPick: null as ((p: ViewportPick) => void) | null,
     showBody: (m: DisplayMesh) => void shown.push(m),
     showColourMap: (colours: readonly number[] | null) => void coloured.push(colours),
@@ -226,6 +228,43 @@ test("hold a face and push another by tapping them: each tap one named undo step
   assert.equal(c.steps.length, before);
   assert.match(c.status(), /Face 4 \(no name of its own\): it has no name of its own after the last edit/);
   page.unmount();
+});
+
+test("T5c5: the picking hint over the view says what a tap does while picking, and goes when picking ends, on sleep and on unmount", async () => {
+  const c = context(1);
+  const page = mountTestLabPage(c.ctx);
+  await page.ready;
+  const hints = () => [...c.viewport.element.querySelectorAll<HTMLElement>("#testlab-view-hint")];
+  const hint = () => hints()[0]!;
+  assert.equal(hints().length, 1, "one hint, in the view");
+  assert.equal(hint().hidden, true, "nothing picked: no hint");
+  chooseMaterial(c, "pla");
+  c.click("[data-testlab=pick-held]");
+  assert.equal(hint().hidden, false);
+  assert.equal(hint().textContent, "Tap the faces to hold. Tap a held face to let it go.");
+  c.click("[data-testlab=add-load]");
+  assert.equal(hint().textContent, "Tap the faces Load 1 pushes. Tap a pushed face to let it go.");
+  c.click("[data-testlab=add-load]");
+  assert.equal(hint().textContent, "Tap the faces Load 2 pushes. Tap a pushed face to let it go.", "the load just added, by its number");
+  c.click("[data-testlab=pick-load]"); // Load 1's Pick faces to push: Load 1 picks now
+  assert.equal(hint().textContent, "Tap the faces Load 1 pushes. Tap a pushed face to let it go.");
+  c.click("[data-testlab=pick-load][aria-pressed=true]"); // Done picking
+  assert.equal(hint().hidden, true, "done picking: no hint");
+  c.click("[data-testlab=pick-held]");
+  assert.equal(hint().hidden, false);
+  page.sleep!();
+  assert.equal(hint().hidden, true, "asleep: another workspace's view has no TestLab hint");
+  page.wake!();
+  page.unmount();
+  assert.equal(hints().length, 0, "unmounted: the hint is gone from the view");
+});
+
+test("pickHint: none when nothing is picked, no study, or a load no longer there", () => {
+  const s = { loads: [{ id: "load-a" }, { id: "load-b" }] } as unknown as Parameters<typeof pickHint>[1];
+  assert.equal(pickHint(null, s), null);
+  assert.equal(pickHint({ kind: "held", fixture: "f" }, null), null);
+  assert.equal(pickHint({ kind: "load", load: "load-b" }, s), "Tap the faces Load 2 pushes. Tap a pushed face to let it go.");
+  assert.equal(pickHint({ kind: "load", load: "gone" }, s), null);
 });
 
 test("a design edit: the faces found again by name, one taken away said in words, a shared one never moved; marked out of date until Run", async () => {

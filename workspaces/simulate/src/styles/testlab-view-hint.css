@@ -1,0 +1,7 @@
+/* TestLab's picking hint over the view (page.ts `viewHint`, T5c5): the same pill as Design's hints over the view. Tokens only. */
+.testlab-view-hint { position: absolute; z-index: 18; top: 12px; left: 50%; transform: translateX(-50%); margin: 0; padding: 6px 12px; pointer-events: none; max-width: calc(100% - 32px); width: max-content; box-sizing: border-box; text-align: center; font-size: 13px; color: var(--look-accent-text, var(--accent-text)); background: var(--look-float, var(--shade-21-27-38-096)); border: 1px solid var(--look-accent, var(--accent)); border-radius: var(--look-radius-pill, 999px); box-shadow: var(--look-glow, 0 0 14px var(--shade-74-168-255-035)); }
+.testlab-view-hint[hidden] { display: none; }
+/* On a phone the top of the view holds the Browser and Properties pills and the Finish bar: the hint goes under them. */
+@media (max-width: 640px) {
+  .testlab-view-hint { top: 122px; }
+}
