@@ -293,9 +293,44 @@ jobs:
   # only, in the "kernel" environment (main only too), so no branch's
   # workflow can read the key that clones the kernel, and no npm code runs
   # beside it. collect adds its line and folder to the golden ones.
+  # This run's key pair for the oracle's full findings (H3c): holds
+  # RESULTS_WRITE and runs no kernel code, like kernel-fuzz.yml's plan; the
+  # private half goes only to kernel-results (seal/<run>-<attempt>/key).
+  oracle-key:
+    needs: gate
+    if: needs.gate.outputs.run == 'true' && github.ref == 'refs/heads/main'
+    environment: kernel
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      public: ${{ steps.keys.outputs.public }}
+      key_folder: ${{ steps.keys.outputs.folder }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          sparse-checkout: .github/scripts
+          persist-credentials: false
+      - name: A key pair for this run (the private half only in kernel-results)
+        id: keys
+        env:
+          RESULTS_WRITE: ${{ secrets.RESULTS_WRITE }}
+        run: |
+          .github/scripts/kernel_ci.sh keygen "$RUNNER_TEMP/keys"
+          mkdir -p "$RUNNER_TEMP/private"
+          mv "$RUNNER_TEMP/keys/private.pem" "$RUNNER_TEMP/private/"
+          folder="seal/$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT"
+          RESULTS_PATH="$folder" .github/scripts/kernel_ci.sh save key "$RUNNER_TEMP/private"
+          echo "public=$(base64 -w0 "$RUNNER_TEMP/keys/public.pem")" >> "$GITHUB_OUTPUT"
+          echo "folder=$folder/key" >> "$GITHUB_OUTPUT"
+
+  # The golden models' STEP files read by the private kernel's oracle. Its
+  # failure folder holds only the models' names and the checks' names
+  # (oracle_public.py: the details say how the kernel judges a body, which
+  # never goes public); the full report is sealed for oracle-save, which
+  # puts it in kernel-results.
   golden-step:
-    needs: golden
-    if: always() && needs.golden.result != 'skipped' && github.ref == 'refs/heads/main'
+    needs: [golden, oracle-key]
+    if: always() && needs.golden.result != 'skipped' && needs.oracle-key.result == 'success' && github.ref == 'refs/heads/main'
     environment: kernel
     runs-on: ubuntu-latest
     timeout-minutes: 20
@@ -326,16 +361,19 @@ jobs:
           pip install -q --require-hashes -r "$GITHUB_WORKSPACE/.github/scripts/oracle-requirements.txt"
           code=0
           # The oracle is private kernel code: its errors (a traceback names its
-          # files and lines) go to a file of the runner's, never this public log.
-          python3 k/prototypes/oracle/golden_step.py "$IN/golden-step.jsonl" "$RUNNER_TEMP/golden-step-report.txt" >"$RUNNER_TEMP/golden-step.txt" 2>"$RUNNER_TEMP/oracle-errors.txt" || code=$?
-          head -1 "$RUNNER_TEMP/golden-step.txt" | tee -a "$OUT/report.txt"
-          if [ -f "$RUNNER_TEMP/golden-step-report.txt" ]; then
+          # files and lines) and its full report go to the sealed folder only,
+          # never this public log; the public folder gets oracle_public.py's reduction.
+          private="$RUNNER_TEMP/private-out"
+          mkdir -p "$private"
+          python3 k/prototypes/oracle/golden_step.py "$IN/golden-step.jsonl" "$private/golden-report.txt" >"$private/golden-step.txt" 2>"$private/oracle-errors.txt" || code=$?
+          head -1 "$private/golden-step.txt" | tee -a "$OUT/report.txt"
+          if [ -f "$private/golden-report.txt" ] || [ "$code" -ne 0 ]; then
             dir="$OUT/seed-golden-step-${{ github.run_id }}"
             mkdir -p "$dir"
-            mv "$RUNNER_TEMP/golden-step-report.txt" "$dir/golden-report.txt"
+            python3 .github/scripts/oracle_public.py golden "$private/golden-report.txt" "$dir/golden-report.txt"
           fi
-          python3 k/prototypes/oracle/golden_step.py "$IN/planted-step/golden-step.jsonl" --planted >"$RUNNER_TEMP/golden-planted.txt" 2>>"$RUNNER_TEMP/oracle-errors.txt" || code=$?
-          tail -1 "$RUNNER_TEMP/golden-planted.txt"
+          python3 k/prototypes/oracle/golden_step.py "$IN/planted-step/golden-step.jsonl" --planted >"$private/golden-planted.txt" 2>>"$private/oracle-errors.txt" || code=$?
+          tail -1 "$private/golden-planted.txt"
           exit $code
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         if: always()
@@ -343,6 +381,58 @@ jobs:
           name: golden-step
           path: ${{ runner.temp }}/golden-step/
           if-no-files-found: ignore
+      - name: Seal the full findings (only oracle-save can open them)
+        if: always()
+        env:
+          PUBLIC: ${{ needs.oracle-key.outputs.public }}
+        run: |
+          mkdir -p "$RUNNER_TEMP/private-out"
+          printf %s "$PUBLIC" | base64 -d > "$RUNNER_TEMP/public.pem"
+          .github/scripts/kernel_ci.sh seal "$RUNNER_TEMP/private-out" "$RUNNER_TEMP/sealed" "$RUNNER_TEMP/public.pem"
+      - name: Hand the sealed findings on
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: sealed-golden-step
+          path: ${{ runner.temp }}/sealed
+          retention-days: 1
+
+  # Opens the oracle's sealed findings (untrusted data: HMAC checked, files
+  # and folders only) and saves them to kernel-results'
+  # runs/<run>-<attempt>/golden-step/. Holds RESULTS_WRITE and runs no
+  # kernel code.
+  oracle-save:
+    needs: [oracle-key, golden-step]
+    if: always() && needs.oracle-key.result == 'success' && needs.golden-step.result != 'skipped'
+    environment: kernel
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          sparse-checkout: .github/scripts
+          persist-credentials: false
+      - name: Take the sealed findings
+        continue-on-error: true
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          pattern: sealed-*
+          path: ${{ runner.temp }}/sealed
+      - name: Open them and save them to kernel-results
+        env:
+          RESULTS_WRITE: ${{ secrets.RESULTS_WRITE }}
+          KEY_FOLDER: ${{ needs.oracle-key.outputs.key_folder }}
+          RUN: ${{ github.run_id }}-${{ github.run_attempt }}
+        run: |
+          ci=.github/scripts/kernel_ci.sh
+          out="$RUNNER_TEMP/opened"
+          mkdir -p "$out" "$RUNNER_TEMP/sealed"
+          code=0
+          $ci fetch "$KEY_FOLDER" "$RUNNER_TEMP/private" || exit 1
+          $ci open-sealed "$RUNNER_TEMP/sealed" "$RUNNER_TEMP/private/private.pem" "$out" || code=1
+          rm -rf "$RUNNER_TEMP/private"
+          if [ -n "$(ls -A "$out")" ]; then RESULTS_PATH=runs $ci save "$RUN" "$out" || code=1; else echo "no findings to save"; fi
+          exit $code
 
   # TypeScript mutation testing (packages/testing/stryker/run.sh), one job
   # per target (the list must match run.sh's, as collect-results.sh's does;
@@ -388,7 +478,7 @@ jobs:
           if-no-files-found: ignore
 
   collect:
-    needs: [gate, journeys, golden, golden-step, monkey, ts-mutants]
+    needs: [gate, journeys, golden, oracle-key, golden-step, oracle-save, monkey, ts-mutants]
     # Also when the gate itself failed: its red job is filed like any other (it was red on the Actions tab only).
     if: always() && (needs.gate.outputs.run == 'true' || needs.gate.result == 'failure')
     runs-on: ubuntu-latest
@@ -423,6 +513,7 @@ jobs:
             cat "$IN/golden-step/report.txt" >>"$IN/golden/report.txt" 2>/dev/null || true
             cp -r "$IN/golden-step"/seed-* "$IN/golden/" 2>/dev/null || true
           fi
-          rm -rf "$IN/golden-step"
+          # The oracle's sealed findings are kernel-results' alone (oracle-save).
+          rm -rf "$IN/golden-step" "$IN"/sealed-*
           cp .github/scripts/collect-results.sh .github/scripts/file_issues.py "$RUNNER_TEMP/"
           bash "$RUNNER_TEMP/collect-results.sh"

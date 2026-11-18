@@ -59,6 +59,9 @@ WRITES = {
 ENVIRONMENTS = {
     ("auto-merge.yml", "merge"): "merge",
     ("fuzz.yml", "sessions-oracle"): "kernel",
+    # The oracle's full findings, sealed for kernel-results (H3c): the run's key pair, then the save.
+    ("fuzz.yml", "oracle-key"): "kernel",
+    ("fuzz.yml", "oracle-save"): "kernel",
     ("kernel-ci.yml", "checks-plan"): "kernel",
     ("kernel-ci.yml", "checks"): "kernel",
     ("kernel-ci.yml", "checks-report"): "kernel",
@@ -79,6 +82,8 @@ ENVIRONMENTS = {
     ("kernel-nightly.yml", "collect"): "kernel",
     ("kernel-nightly.yml", "keys"): "kernel",
     ("nightly.yml", "golden-step"): "kernel",
+    ("nightly.yml", "oracle-key"): "kernel",
+    ("nightly.yml", "oracle-save"): "kernel",
     ("pages.yml", "deploy"): "github-pages",
 }
 
