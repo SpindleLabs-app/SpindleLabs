@@ -15,7 +15,7 @@
 // 4. On a touch screen the Extrude hint does not tell to hold Ctrl or Shift.
 // Each check was red on the build before the fix. Run with `npm run e2e`.
 import assert from "node:assert/strict";
-import { launch } from "./browser.mjs";
+import { assertNoErrors, launch, watchErrors } from "./browser.mjs";
 import { preview } from "vite";
 import { insertPreset } from "./start.mjs";
 
@@ -27,9 +27,8 @@ const fail = (m) => { problems.push(m); console.log("FAIL", m); };
 async function phone(w, h) {
   const context = await browser.newContext({ viewport: { width: w, height: h }, hasTouch: true, isMobile: w < 800, deviceScaleFactor: 2 });
   const page = await context.newPage();
-  page.errors = [];
   await page.addInitScript(() => indexedDB.deleteDatabase("fission"));
-  page.on("pageerror", (e) => page.errors.push(e.message));
+  watchErrors(page);
   await page.goto("http://localhost:4414/?test-hooks#design");
   await page.locator("#start-hint").waitFor();
   return page;
@@ -153,6 +152,8 @@ try {
     if (/ctrl|shift/i.test(hint)) fail(`${w}x${h}: the Extrude hint tells a touch screen to hold Ctrl or Shift: ${hint}`);
     await page.context().close();
   }
+  // Any uncaught exception, console.error or failed request on any page above fails the run (test audit E-7).
+  try { assertNoErrors(); } catch (e) { fail(e.message); }
 } finally { await browser.close(); server.httpServer.close(); }
 if (problems.length) { console.log(`${problems.length} problem(s)`); process.exit(1); }
 console.log("phone-sketch-touch ok");

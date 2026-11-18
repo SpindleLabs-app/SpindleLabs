@@ -3,13 +3,14 @@
 // badge, a downstream chip and a change note placed on the page take their
 // styles. Run with `npm run e2e`, after `npm run build`.
 import assert from "node:assert/strict";
-import { launch } from "./browser.mjs";
+import { assertNoErrors, launch, watchErrors } from "./browser.mjs";
 import { preview } from "vite";
 
 const server = await preview({ preview: { port: 4175, strictPort: true }, logLevel: "error" });
 const browser = await launch();
 try {
   const page = await browser.newPage();
+  watchErrors(page); // every uncaught exception, console.error and failed request fails the run (test audit E-7)
   await page.goto("http://localhost:4175/");
   const style = (cls, prop) =>
     page.evaluate(([cls, prop]) => {
@@ -27,6 +28,7 @@ try {
   assert.equal(await style("downstream-chip", "borderRadius"), "10px");
   assert.equal(await style("change-note", "borderLeftWidth"), "3px");
   assert.equal(await style("no-such-feature", "borderRadius"), "0px");
+  assertNoErrors();
   console.log("PASS feature style files reach the built app (3 checked, 1 unstyled control)");
 } finally {
   await browser.close();
