@@ -1,6 +1,7 @@
 // Browser check of the preview switches (@fission/core preview.ts; Ben, 2026-11-15): on the shipped build,
 //   - with no switch nothing unreleased shows: no Combine, Share, Publish or Home in the menus, no tabs strip, no
-//     Split, two workspaces listed, Slice and Laser and Simulate their placeholders;
+//     Split, two workspaces listed (Design and Slice), Laser and Simulate their placeholders; the Slice page is on for
+//     everyone (switched on 2026-11-18, SP5b1), so it shows without a switch;
 //   - `?community` shows Share… and Publish to the library… in File ▾ (the server still opens them only to its testers),
 //     and nothing else unreleased;
 //   - `?all` shows every one: Combine in Modify ▾, Share, Publish and Home in File ▾, the home screen, the tabs strip,
@@ -91,7 +92,7 @@ try {
       const { context, page } = await fresh(width, tap);
       await open(page, "#design", tap);
       assert.deepEqual(await seen(page, tap), none);
-      assert.equal(await pageOf(page, "#slice", "slice-page"), false);
+      assert.equal(await pageOf(page, "#slice", "slice-page"), true, "the Slice page is released: it shows with no switch");
       assert.equal(await pageOf(page, "#laser", "laser-page"), false);
       assert.equal(await pageOf(page, "#simulate", "testlab-page"), false);
       await shot(page, `preview-none-${width}`);
