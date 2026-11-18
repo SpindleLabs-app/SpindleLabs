@@ -147,7 +147,8 @@ export interface OriginPlane {
 /** What the origin draws in the view (showOrigin): each axis shown or not, X, Y, Z, and the planes shown, by id ("origin-xy") with where each lies. */
 export interface OriginShown {
   axes: readonly [boolean, boolean, boolean];
-  planes: readonly { id: string; plane: Plane }[];
+  /** `centred`: the square is drawn round `plane.origin` (a construction plane, step 59a2), else from it as the origin planes are. */
+  planes: readonly { id: string; plane: Plane; centred?: boolean }[];
   /** The printer's build area, when its eye is open (Design's build-area.ts): left out when not shown. */
   buildArea?: BuildAreaShown;
 }
