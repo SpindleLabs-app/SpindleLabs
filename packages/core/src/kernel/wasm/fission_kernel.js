@@ -150,6 +150,14 @@ export function q4m8zt(p0) {
     }
 }
 
+export function q7nmxa(p0, p1, p2) {
+    const ret = wasm.q7nmxa(p0, p1, p2);
+    if (ret[2]) {
+        throw takeFromExternrefTable0(ret[1]);
+    }
+    return takeFromExternrefTable0(ret[0]);
+}
+
 export function qmdw4c() {
     let deferred1_0;
     let deferred1_1;

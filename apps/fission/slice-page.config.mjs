@@ -1,5 +1,4 @@
-// The one switch for the Slice page (Slice as its own page, so a slicer job can be a tab): while it is off, DESIGN ▾ > Slice
-// opens Slice for printing over Design as before and the Slice workspace is the placeholder page. Flip SLICE_PAGE to true when
-// the page does everything the dialog does; SPINDLE_SLICE_PAGE=1 at build time turns it on without editing this file (its
-// browser check builds that way: `npm run e2e:slice-page`).
-export const SLICE_PAGE = process.env.SPINDLE_SLICE_PAGE === "1" || false;
+// The one switch for the Slice page (Slice as its own page, so a slicer job can be a tab). ON since 2026-11-18 (Ben's go):
+// DESIGN ▾ > Slice shows the Slice page. File ▾ > Slice for printing still opens the older dialog until it is dropped
+// (docs/progress/slice.md, SP5b). SPINDLE_SLICE_PAGE=0 at build time turns the page off again (the dialog route as before).
+export const SLICE_PAGE = process.env.SPINDLE_SLICE_PAGE !== "0";
