@@ -3,7 +3,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import type { BodySpec } from "../src/kernel/kernel-types.ts";
-import { booleanUnits, calibrate, CALIBRATION_TARGET, CALIBRATION_TOOL, sliceUnits, supportUnits, buildFaces, buildUnits, callUnits, facesSize, HEADROOM, LIMIT_FLOOR_MS, limitMs, MAX_MEETING_POINTS, MOST_PAIRS, regionsUnits, sketchUnits, solveUnits, UNITS_PER_ARC_CUBED, UNITS_PER_CHECKED_TRIANGLE, UNITS_PER_CORNER, UNITS_PER_MEETING, UNITS_PER_PAIR } from "../src/kernel/time-limit.ts";
+import { booleanUnits, calibrate, CALIBRATION_TARGET, CALIBRATION_TOOL, sliceUnits, stressUnits, STRESS_WORST_RATIO, supportUnits, buildFaces, buildUnits, callUnits, facesSize, HEADROOM, LIMIT_FLOOR_MS, limitMs, MAX_MEETING_POINTS, MOST_PAIRS, regionsUnits, sketchUnits, solveUnits, UNITS_PER_ARC_CUBED, UNITS_PER_CHECKED_TRIANGLE, UNITS_PER_CORNER, UNITS_PER_MEETING, UNITS_PER_PAIR } from "../src/kernel/time-limit.ts";
 
 /** An L in plan, 6 corners, with a round hole: 2 caps + 6 sides + 1 round side = 9 faces. */
 const lWithHole = {
@@ -313,4 +313,27 @@ test("Export STL's solid check is priced by its triangles, so its limit follows 
   assert.equal(limitMs(3.6, 1.5), LIMIT_FLOOR_MS);
   // A file too short to hold a count has no triangles to check.
   assert.equal(callUnits("check_solid", [new Uint8Array(83)], () => undefined), 0);
+});
+
+test("stress test units: above every timed run, worked by hand (TestLab T5b)", () => {
+  const unit = 12.6; // ms, the local build when they were timed
+  // A 100 × 10 × 10 bar: default size max(10/2, √10200/60 = 1.68) = 5; ratio 10,000 / 125 = 80; 0.5 · 80^1.35 = 185, timed 1,543 ms = 122 units.
+  assert.ok(Math.abs(stressUnits([100, 10, 10]) - 0.5 * 80 ** 1.35) < 1e-9);
+  assert.ok(stressUnits([100, 10, 10]) * unit > 1543);
+  // A 100 × 100 × 4 plate: size max(2, √20016/60 = 2.358) = 2.358; ratio 40,000 / 13.11 = 3,051; timed 184,462 ms.
+  const plate = stressUnits([100, 100, 4]);
+  assert.ok(plate * unit > 184462 && plate < 2 * 25300, `${plate}`);
+  // A named size wins: 100 mm cube at 10 mm, ratio 1000.
+  assert.ok(Math.abs(stressUnits([100, 100, 100], 10) - 0.5 * 1000 ** 1.35) < 1e-6);
+  // Sides unknown (no view yet) or nonsense: the worst the default size can give, a square plate with t = w√(2/899).
+  const worst = 0.5 * STRESS_WORST_RATIO ** 1.35;
+  assert.equal(stressUnits(undefined), worst);
+  assert.equal(stressUnits([0, 10, 10]), worst);
+  const w = 100;
+  const t = w * Math.sqrt(2 / 899);
+  assert.ok(Math.abs(stressUnits([w, w, t]) - worst) / worst < 1e-9, "the worst plate meets the worst ratio");
+  // Any other plate is under it: a little thinner or thicker, or not square.
+  for (const sides of [[w, w, t * 0.9], [w, w, t * 1.1], [w, 0.5 * w, t], [w, w, w]] as const) assert.ok(stressUnits(sides) < worst, `${sides}`);
+  // Through callUnits, from the handle's size.
+  assert.equal(callUnits("stress_test", [1, { youngsModulus: 1, poissonsRatio: 0.3, strength: 1, held: [0], loads: [] }], () => ({ faces: 6, mesh: 1, sides: [100, 10, 10] })), stressUnits([100, 10, 10]));
 });

@@ -9,13 +9,22 @@
 // The study is a node of the project's dependency graph (expensive: it
 // waits for a click), read from every item its body is made from, so a
 // design edit marks it out of date with a change note naming the edit.
-// Run checks the set-up against the design as it is now and says plainly
-// that solving comes with the solver (step T3 to T5): nothing pretends to
-// work out a stress yet. Styles: src/styles/testlab-page.css.
+// Run (T5b) checks the set-up against the design as it is now, then has the
+// kernel test the body Design builds now (core's `withBody`): the faces and
+// the handle come from one rebuild, so a face index is the kernel's own. A
+// progress line and Cancel show while it works; the answer is checked
+// (run.ts `answerProblem`) before it is drawn, bent and coloured in the view
+// with the numbers in the panel (results.ts), and a curved part or any other
+// refusal is said in the kernel's words. Results stay in memory: a set-up
+// change takes them away, a design edit marks them out of date.
+// Styles: src/styles/testlab-page.css, src/styles/testlab-results.css.
 
 import type { AnalysisOverlay, FaceReference, ListedObject, MountedWorkspace, OverlaySeverity, ViewportPick, WorkspaceContext } from "@fission/core";
-import { studyNow, type StudyNow } from "./faces.ts";
+import { KernelError, KERNEL_TEST_STOPPED, materialLibrary } from "@fission/core";
+import { GEOMETRY_OWNER, studyNow, studyOn, type StudyNow } from "./faces.ts";
 import { materialWords, sourceLines, testMaterials } from "./materials.ts";
+import { RESULT_OVERLAY, resultColours, resultOf, resultOverlay, resultSection, type ColourBy, type Result } from "./results.ts";
+import { answerProblem, STAGE_WORDS, stressTestOf } from "./run.ts";
 import {
   addLoad,
   addStudy,
@@ -29,6 +38,7 @@ import {
   removeLoad,
   setLoad,
   setMaterial,
+  studyFaces,
   toggleHeld,
   togglePushed,
   UNIT_WORDS,
@@ -44,8 +54,11 @@ import {
 /** Design's lister for bodies (what Slice lists too). */
 export const BODIES_LISTER = "design";
 
-/** The words Run says while there is no solver, so nobody takes a check for a result. */
-export const NO_SOLVER_YET = "Solving comes with TestLab's solver in a later step: no stress or bend is worked out yet.";
+/** What the panel says after Cancel. */
+export const STOPPED = "Stopped: nothing was worked out.";
+
+/** What the progress line says before the kernel's first stage. */
+export const GETTING_READY = "Getting the part ready…";
 
 /** The overlay ids the page paints: the held faces, and one per load. */
 export const HELD_OVERLAY = "testlab-held";
@@ -91,6 +104,11 @@ export function mountTestLabPage(ctx: WorkspaceContext): MountedWorkspace {
   let framedBody: string | null = null;
   /** Whether Run checked the study, as it is now, against the design on screen since this mount (a remount starts not run: nothing is saved). */
   let ran = false;
+  /** A Run under way: what the progress line says. */
+  let running: { stage: string; cancelled: boolean } | null = null;
+  /** The last Run's result for the study as set up now, in memory only; null when there is none. */
+  let result: Result | null = null;
+  let colourBy: ColourBy = "stress";
 
   const data = (): TestLabData => {
     try {
@@ -102,6 +120,7 @@ export function mountTestLabPage(ctx: WorkspaceContext): MountedWorkspace {
   const store = (next: TestLabData, label: string) => {
     ctx.project.workspaces.simulate = next;
     ran = false; // the set-up changed, so what Run checked is not this one
+    result = null; // and its result was for another set-up
     ctx.projectChanged(label);
   };
   const study = (): Study | null => data().studies[0] ?? null;
@@ -161,6 +180,7 @@ export function mountTestLabPage(ctx: WorkspaceContext): MountedWorkspace {
       if (on) picking = null;
       else {
         set();
+        result = null; // faces are picked on the part as it is, not bent
         panel.dispatchEvent(new Event("properties-conceal", { bubbles: true })); // a phone puts its Properties sheet away so the body can be tapped (main.ts)
       }
       draw();
@@ -292,19 +312,41 @@ export function mountTestLabPage(ctx: WorkspaceContext): MountedWorkspace {
     words.textContent = [note, picking ? "Tap faces of the body to pick them; tap a picked face to let it go." : "", ...problems].filter((x) => x !== "").join(" ");
     drawState();
     const run = button("Run", "run", () => void runStudy());
-    run.disabled = s === null || s.body === null;
-    panel.append(words, stateLine, run, el("p", "testlab-page-note", "A simulation: real prints are weaker across their layers."));
+    run.disabled = s === null || s.body === null || running !== null;
+    panel.append(words, stateLine);
+    if (running) {
+      progress.textContent = running.stage;
+      panel.append(
+        progress,
+        button("Cancel", "cancel", () => {
+          if (!running) return;
+          running.cancelled = true;
+          ctx.kernel.stopTesting?.(); // the kernel let go if the test is under way; else it is never sent
+        }),
+      );
+    } else panel.append(run);
+    if (result && s !== null) panel.append(resultSection(doc, result, colourBy, stateLine.dataset.stale === "true", (by) => ((colourBy = by), draw())));
+    else panel.append(el("p", "testlab-page-note", "A simulation: real prints are weaker across their layers."));
     drawBodies();
     paint();
   };
 
+  /** The progress line while a Run works. */
+  const progress = el("p", "testlab-page-progress");
+  progress.setAttribute("role", "status");
+
   /** Whether the study is out of date with the design (the graph's mark), redrawn alone when the graph changes so typing is never cut off. */
   const stateLine = el("p", "testlab-page-state");
-  const drawState = () => {
+  const staleNow = () => {
     const s = study();
-    const stale = s !== null && ctx.graph.has(studyNode(s.id)) && ctx.graph.isStale(studyNode(s.id));
+    return s !== null && ctx.graph.has(studyNode(s.id)) && ctx.graph.isStale(studyNode(s.id));
+  };
+  const drawState = () => {
+    const stale = staleNow();
     if (stale) ran = false;
-    stateLine.textContent = stale ? "Out of date: the design changed since this study was last checked. Run checks it again." : ran ? "Up to date with the design: set up and checked." : "Not run yet.";
+    stateLine.textContent = stale ? "Out of date: the design changed since this study was last run. Run it again." : ran ? "Up to date with the design." : "Not run yet.";
+    const shown = panel.querySelector<HTMLElement>(".testlab-results");
+    if (shown && shown.dataset.stale !== String(stale)) void show(false); // looked up again and drawn: the result's heading says it is out of date, and the view shows the body now
     stateLine.dataset.stale = String(stale);
   };
 
@@ -336,12 +378,25 @@ export function mountTestLabPage(ctx: WorkspaceContext): MountedWorkspace {
     }
   };
 
+  /** What the view shows: the result, bent and coloured; else the body as it is (`now`). */
+  let viewShows: Result | StudyNow | null = null;
   const paint = () => {
     if (!awake) return;
     for (const id of shownOverlays) ctx.viewport.clearOverlay(id);
     shownOverlays = [];
     const s = study();
+    // An out-of-date result stays in the panel, marked; the view shows the body as the design makes it now.
+    if (result && s !== null && picking === null && !staleNow()) {
+      if (viewShows !== result) ctx.viewport.showBody(result.mesh);
+      viewShows = result;
+      ctx.viewport.showColourMap?.(resultColours(result, colourBy));
+      ctx.viewport.setOverlay(resultOverlay(result));
+      shownOverlays.push(RESULT_OVERLAY);
+      return;
+    }
     if (s === null || now === null) return;
+    if (viewShows !== now) ctx.viewport.showBody(now.faces.mesh);
+    viewShows = now;
     for (const o of studyOverlays(s, now)) {
       ctx.viewport.setOverlay(o);
       shownOverlays.push(o.id);
@@ -403,8 +458,9 @@ export function mountTestLabPage(ctx: WorkspaceContext): MountedWorkspace {
       now = got;
       refused = null;
       keepNode(s, got.faces.inputs);
-      if (awake) {
+      if (awake && (result === null || picking !== null || staleNow())) {
         ctx.viewport.showBody(got.faces.mesh);
+        viewShows = got;
         if (frame || framedBody !== s.body?.ref.id) ctx.viewport.fit();
         framedBody = s.body?.ref.id ?? null;
       }
@@ -413,21 +469,80 @@ export function mountTestLabPage(ctx: WorkspaceContext): MountedWorkspace {
     draw();
   };
 
-  /** Run (T1): the set-up checked against the design now; ready, the study is up to date with it, and says solving is still to come. */
+  /**
+   * Run (T5b): the set-up checked against the design now, then tested by the kernel on the body Design builds now,
+   * with a progress line and Cancel. The answer is checked before it is shown; a refusal is said in words. A Run whose
+   * set-up changed while it worked (an edit here) shows nothing: its answer was for the set-up before.
+   */
   const runStudy = async () => {
+    if (running) return;
     await show(false);
     const s = study();
-    if (!live || s === null) return;
+    if (!live || s === null || s.body === null) return;
     const problems = refused !== null ? [refused] : readyProblems(s, now?.lost ?? []);
     if (problems.length > 0) {
       note = "Not run: fix what is said below first.";
       draw();
       return;
     }
-    if (ctx.graph.has(studyNode(s.id))) ctx.graph.markFresh(studyNode(s.id));
-    ran = true;
-    note = `Set up and checked against the design as it is now. ${NO_SOLVER_YET}`;
+    const material = materialLibrary().get(s.material!);
+    const mechanical = material?.mechanical;
+    if (!material || !mechanical) return; // readyProblems asks for a material; the library's materials all have numbers
+    const asked = JSON.stringify(s);
+    picking = null;
+    result = null;
+    note = "";
+    const run = (running = { stage: GETTING_READY, cancelled: false });
+    const stopListening = ctx.kernel.onTestProgress?.((stage) => {
+      if (!running) return;
+      running.stage = STAGE_WORDS[stage];
+      progress.textContent = running.stage;
+    });
     draw();
+    let said: string;
+    let got: Result | null = null;
+    try {
+      const out = await ctx.representations.withBody(GEOMETRY_OWNER, ctx.project, s.body.ref, studyFaces(s).map((f) => f.ref), async (lent) => {
+        const on = studyOn(s, lent.faces);
+        const left = readyProblems(s, on.lost);
+        if (left.length > 0) return { refused: left.join(" ") };
+        const test = stressTestOf(s, on, mechanical);
+        if ("refused" in test) return test;
+        if (run.cancelled) return { stopped: true as const };
+        return { answer: await ctx.kernel.call("stress_test", lent.handle, test) };
+      });
+      if (run.cancelled || "stopped" in out) said = STOPPED;
+      else if ("refused" in out) said = `Not run: ${out.refused}`;
+      else {
+        const wrong = answerProblem(out.answer);
+        if (wrong !== null) said = wrong;
+        else {
+          got = resultOf(out.answer, { name: material.name, mechanical });
+          said = "";
+        }
+      }
+    } catch (e) {
+      said = run.cancelled || (e instanceof KernelError && e.message === KERNEL_TEST_STOPPED) ? STOPPED : `Not run: ${e instanceof Error ? e.message : String(e)}`;
+    } finally {
+      stopListening?.();
+      running = null;
+    }
+    if (!live) return;
+    const same = study();
+    if (same === null || JSON.stringify(same) !== asked) {
+      note = "The set-up changed while it ran, so that run's answer is not shown: press Run again.";
+      draw();
+      return;
+    }
+    note = said;
+    if (got) {
+      result = got;
+      if (ctx.graph.has(studyNode(same.id))) ctx.graph.markFresh(studyNode(same.id));
+      ran = true;
+    }
+    draw();
+    // The answer is below the set-up: brought into the panel's view (not in every DOM).
+    if (got) ctx.properties.querySelector<HTMLElement>(".testlab-results")?.scrollIntoView?.({ block: "nearest", behavior: "smooth" });
   };
 
   const ready = show(true);
@@ -442,6 +557,8 @@ export function mountTestLabPage(ctx: WorkspaceContext): MountedWorkspace {
       ctx.viewport.onPick = null;
       for (const id of shownOverlays) ctx.viewport.clearOverlay(id);
       shownOverlays = [];
+      ctx.viewport.showColourMap?.(null);
+      viewShows = null; // the next workspace draws its own body
     },
     wake() {
       awake = true;
@@ -454,6 +571,7 @@ export function mountTestLabPage(ctx: WorkspaceContext): MountedWorkspace {
       if (awake) {
         ctx.viewport.onPick = null;
         for (const id of shownOverlays) ctx.viewport.clearOverlay(id);
+        ctx.viewport.showColourMap?.(null);
       }
       list.remove();
       panel.remove();

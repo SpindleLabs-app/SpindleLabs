@@ -1,6 +1,6 @@
 // Main-thread side of the kernel worker: every kernel call is an async
 // message, so a slow operation never freezes the UI.
-import type { BodyHandle, BodySpec, BooleanOp, Motion, BooleanResult, BuildPlate, ChamferResult, ChamferSize, BodyView, KernelErrorKind, KernelFailure, KernelInput, KernelThin, KernelTouch, Measured, MeasurePick, NozzleType, Outline, P1sPrintFile, PatternSpec, SketchArc, SketchCircle, SketchLine, SketchOutline, SketchRegions, SlicedPrint, SolidReport, SliceProgress, SliceStage, StlFile, SupportStyle } from "./kernel-types.ts";
+import type { BodyHandle, BodySpec, BooleanOp, Motion, BooleanResult, BuildPlate, ChamferResult, ChamferSize, BodyView, KernelErrorKind, KernelFailure, KernelInput, KernelThin, KernelTouch, Measured, MeasurePick, NozzleType, Outline, P1sPrintFile, PatternSpec, SketchArc, SketchCircle, SketchLine, SketchOutline, SketchRegions, SlicedPrint, SolidReport, SliceProgress, SliceStage, StlFile, StressStage, StressTest, StressTestResult, SupportStyle } from "./kernel-types.ts";
 import { builtSize, callUnits, DEFAULT_UNIT_MS, facesSize, LIMIT_FLOOR_MS, limitMs, type BodySize } from "./time-limit.ts";
 
 /** Every operation the worker supports, with its arguments and result. */
@@ -63,6 +63,12 @@ export interface KernelOps {
   slice_stl: { args: [stl: Uint8Array<ArrayBuffer>, layerHeight: number, wallCount: number, infillPercent: number, supports: SupportStyle, warmUp: boolean, betterGrip: boolean]; result: SlicedPrint };
   /** The same slice as slice_stl, as a Bambu Lab P1S print file (.gcode.3mf) for the build plate and the nozzle fitted. */
   print_file_stl: { args: [stl: Uint8Array<ArrayBuffer>, layerHeight: number, wallCount: number, infillPercent: number, supports: SupportStyle, plate: BuildPlate, nozzle: NozzleType, warmUp: boolean, betterGrip: boolean]; result: P1sPrintFile };
+  /**
+   * TestLab's stress test (T5) on the kept body `body` where the app shows it: meshed, solved and its stresses worked
+   * out (StressTestResult), or refused in words ("invalid-input": no held face, a face both held and pushed, a curved
+   * part, too big). Reports each stage as it starts (onTestProgress); stopped by stopTesting.
+   */
+  stress_test: { args: [body: BodyHandle, test: StressTest]; result: StressTestResult };
   /** The size of the kernel's WebAssembly memory in bytes (it only ever grows): the soak test checks it levels off. */
   wasm_bytes: { args: []; result: number };
 }
@@ -87,6 +93,9 @@ export type KernelReady = { ready: true; unitMs?: number };
 
 /** What the worker says while a slice (call `id`) works: how far it has got (SliceProgress), at most every PROGRESS_EVERY_MS but at every new stage. */
 export type KernelProgress = { id: number; progress: SliceProgress };
+
+/** What the worker says as a stress test (call `id`) starts each stage. */
+export type KernelTestProgress = { id: number; testStage: StressStage };
 
 /** The least time between two progress messages of one stage (ms): a bar needs no more, and each costs a message. */
 export const PROGRESS_EVERY_MS = 100;
@@ -137,6 +146,9 @@ export const KERNEL_TOOK_TOO_LONG = "This took the geometry kernel too long, so 
 
 /** What a slice answers when the user stopped it (stopSlicing): its kernel was let go, and nothing was made. */
 export const KERNEL_SLICE_STOPPED = "The slice was stopped.";
+
+/** What a stress test answers when the user stopped it (stopTesting): its kernel was let go, and nothing was worked out. */
+export const KERNEL_TEST_STOPPED = "The test was stopped.";
 
 /** What every other call sent to that kernel answers: it was never done, and the app builds again on the fresh kernel. */
 export const KERNEL_STOPPED_FOR_ANOTHER = "The geometry kernel was started again, because a call before this one took too long.";
@@ -248,10 +260,19 @@ export interface KernelCalls {
    * 2026-11-04, ui 3). True if a slice was stopped; with none waiting, the kernel is kept. The app's client has it.
    */
   stopSlicing?(): boolean;
+  /** Calls `listener` as a stress test (stress_test) starts each stage. Returns the way to stop listening. The app's client has it. */
+  onTestProgress?(listener: (stage: StressStage) => void): () => void;
+  /**
+   * Stops every stress test sent and not yet answered, as TestLab's Cancel does, the way stopSlicing stops a slice:
+   * the kernel is let go and a fresh one started. The tests fail with KERNEL_TEST_STOPPED, every other call waiting
+   * with KERNEL_RESTARTED, and the listeners of onRestart hear of it. True if a test was stopped. The app's client has it.
+   */
+  stopTesting?(): boolean;
 }
 
 export class KernelClient implements KernelCalls {
   private progressListeners = new Set<(progress: SliceProgress) => void>();
+  private testListeners = new Set<(stage: StressStage) => void>();
   private worker!: Worker;
   private nextId = 1;
   /** The calls sent and not yet answered, in the order sent, which is the order the worker answers them; each with its size (time-limit.ts). */
@@ -355,8 +376,12 @@ export class KernelClient implements KernelCalls {
     this.worker = worker;
     this.started = false;
     this.watchHead();
-    worker.onmessage = (event: MessageEvent<KernelResponse | KernelReady | KernelProgress>) => {
+    worker.onmessage = (event: MessageEvent<KernelResponse | KernelReady | KernelProgress | KernelTestProgress>) => {
       if (worker !== this.worker) return; // a kernel already replaced
+      if ("testStage" in event.data) {
+        if (this.pending.has(event.data.id)) for (const listener of this.testListeners) listener(event.data.testStage);
+        return;
+      }
       if ("progress" in event.data) {
         // Only for a call still waiting (a late one, after its answer, says nothing).
         if (this.pending.has(event.data.id)) for (const listener of this.progressListeners) listener(event.data.progress);
@@ -409,22 +434,28 @@ export class KernelClient implements KernelCalls {
    * the bodies the old one kept are forgotten and the design is built again
    * on the new one.
    */
-  private restart(message = KERNEL_RESTARTED, slow?: number, slicesStopped = false) {
+  private restart(message = KERNEL_RESTARTED, slow?: number, stopping?: { calls: (op: keyof KernelOps) => boolean; words: string }) {
     this.worker.terminate();
     const stopped = new KernelError({ kind: "internal", inputs: [], message });
     const tooLong = new KernelError({ kind: "timed-out", inputs: [], message: KERNEL_TOOK_TOO_LONG });
-    const sliceStopped = new KernelError({ kind: "internal", inputs: [], message: KERNEL_SLICE_STOPPED });
+    const asked = stopping && new KernelError({ kind: "internal", inputs: [], message: stopping.words });
     const waiting = [...this.pending];
     this.pending.clear();
     this.retire();
     this.start();
-    waiting.forEach(([id, p]) => p.reject(id === slow ? tooLong : slicesStopped && isSlice(p.op) ? sliceStopped : stopped));
+    waiting.forEach(([id, p]) => p.reject(id === slow ? tooLong : asked && stopping.calls(p.op) ? asked : stopped));
     this.restartListeners.forEach((listener) => listener());
   }
 
   stopSlicing(): boolean {
     if (this.failed || ![...this.pending.values()].some((p) => isSlice(p.op))) return false;
-    this.restart(KERNEL_RESTARTED, undefined, true);
+    this.restart(KERNEL_RESTARTED, undefined, { calls: isSlice, words: KERNEL_SLICE_STOPPED });
+    return true;
+  }
+
+  stopTesting(): boolean {
+    if (this.failed || ![...this.pending.values()].some((p) => p.op === "stress_test")) return false;
+    this.restart(KERNEL_RESTARTED, undefined, { calls: (op) => op === "stress_test", words: KERNEL_TEST_STOPPED });
     return true;
   }
 
@@ -466,6 +497,11 @@ export class KernelClient implements KernelCalls {
     return () => void this.restartListeners.delete(listener);
   }
 
+  onTestProgress(listener: (stage: StressStage) => void): () => void {
+    this.testListeners.add(listener);
+    return () => void this.testListeners.delete(listener);
+  }
+
   onProgress(listener: (progress: SliceProgress) => void): () => void {
     this.progressListeners.add(listener);
     return () => void this.progressListeners.delete(listener);
@@ -496,7 +532,7 @@ export class KernelClient implements KernelCalls {
       if (unknown) return Promise.reject(new KernelError({ kind: "unknown-body", inputs: [], message: UNKNOWN_BODY_WORDS }));
       return this.send(op, picks.map((p) => (p === null ? null : { ...p.pick, body: p.held!.body })) as KernelOps[K]["args"], units) as Promise<KernelOps[K]["result"]>;
     }
-    if (op === "body_view" || op === "body_stl" || op === "body_step" || op === "body_free" || op === "body_hide") {
+    if (op === "body_view" || op === "body_stl" || op === "body_step" || op === "body_free" || op === "body_hide" || op === "stress_test") {
       const handle = args[0] as BodyHandle;
       const held = this.bodies.get(handle);
       if (!held) {
@@ -506,12 +542,14 @@ export class KernelClient implements KernelCalls {
       }
       const sent = this.send(op, [held.body, ...args.slice(1)] as KernelOps[K]["args"], units);
       if (op === "body_free") void sent.then(() => this.bodies.get(handle) === held && this.bodies.delete(handle) && this.sizes.delete(handle), () => {});
-      // A view counts the body's faces exactly.
+      // A view counts the body's faces exactly, and says its box (the stress test's limit).
       if (op === "body_view")
         void sent.then(
           (view) => {
             const size = this.sizes.get(handle);
-            if (size && this.bodies.get(handle) === held) this.sizes.set(handle, { ...size, faces: (view as BodyView).faces });
+            const box = (view as Partial<BodyView>).bounds;
+            const sides = box ? ([box[1][0] - box[0][0], box[1][1] - box[0][1], box[1][2] - box[0][2]] as const) : size?.sides;
+            if (size && this.bodies.get(handle) === held) this.sizes.set(handle, { ...size, faces: (view as BodyView).faces, sides });
           },
           () => {},
         );
