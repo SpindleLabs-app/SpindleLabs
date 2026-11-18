@@ -9,7 +9,7 @@
 
 import type { AnalysisOverlay, OriginShown } from "@fission/core";
 import type { ConstructAnswer } from "./construct-data.ts";
-import { constructOf, insertAt, isConstructItem, type DesignDocument } from "./document.ts";
+import { constructHidden, constructOf, insertAt, isConstructItem, type DesignDocument } from "./document.ts";
 
 /** The overlay's id (one for every construction's axes and points). */
 export const CONSTRUCT_OVERLAY = "construct";
@@ -52,7 +52,8 @@ export interface Drawn {
 }
 
 /**
- * Every construction before the marker that is not suppressed, with the
+ * Every construction before the marker that is not suppressed or hidden
+ * by its eye or the Construction folder's (59a3), with the
  * answer the document keeps for it, and `preview` (the answer asked for the
  * picks now, null for none) last.
  */
@@ -60,7 +61,7 @@ export function drawnConstructs(doc: DesignDocument, preview: ConstructAnswer | 
   const at = insertAt(doc);
   const out: Drawn[] = [];
   doc.timeline.features.forEach((f, i) => {
-    if (i < at && isConstructItem(f) && !f.suppressed) out.push({ item: f.id, answer: constructOf(f).answer });
+    if (i < at && isConstructItem(f) && !f.suppressed && !constructHidden(doc, f.id)) out.push({ item: f.id, answer: constructOf(f).answer });
   });
   if (preview !== null) out.push({ item: PREVIEW_ITEM, answer: preview });
   return out;

@@ -14,7 +14,8 @@ import { XY_PLANE } from "@fission/core";
 import { fitId, isFit, type Fit } from "@fission/print";
 import { faceFeature, isFacePlane, squared, type SketchFace, type SketchPlacement } from "./face-sketch.ts";
 import type { EdgeTarget, SketchPin } from "./face-edges.ts";
-import { counted, curvePoints, insertAt, insertItem, hasOwnFaces, heldByBody, isSketchItem, pinnable, nameKey, profileLabel, shown, takenNames, type DesignDocument, type ReadyProfile, type Sketch, type SketchCurve, type SketchLineCurve, type SketchPlane, type SketchPoint } from "./document.ts";
+import { CONSTRUCT_REF, isConstructPlane } from "./construct-data.ts";
+import { constructOf, counted, curvePoints, insertAt, isConstructItem, insertItem, hasOwnFaces, heldByBody, isSketchItem, pinnable, nameKey, profileLabel, shown, takenNames, type DesignDocument, type ReadyProfile, type Sketch, type SketchCurve, type SketchLineCurve, type SketchPlane, type SketchPoint } from "./document.ts";
 import { sketchRoom } from "./sketch-room.ts";
 import { madePoints, profileCurves, projectedOpen, type EdgeShape, type SketchProjection } from "./projection.ts";
 import { readProfileReference } from "./references.ts";
@@ -56,6 +57,8 @@ export function sketchSide(doc: DesignDocument, id: string): 1 | -1 {
 /** `sketchPlane` from the sketch's item and content, found already (sketch-tool.ts finds every sketch's at once). */
 export function planeFor(item: Feature | undefined, content: Sketch | undefined, placed?: ReadonlyMap<string, Plane>): Plane {
   const plane = item?.intent.parameters.plane;
+  // 59a3: on a construction plane, where the last rebuild laid it, else the frame it was drawn with.
+  if (isConstructPlane(plane)) return (item && placed?.get(item.id)) ?? content?.drawn ?? planeOf("XY");
   if (!isFacePlane(plane)) return planeOf((plane as SketchPlane | undefined) ?? "XY");
   return (item && placed?.get(item.id)) ?? content?.face?.held ?? content?.face?.frame ?? planeOf("XY");
 }
@@ -141,7 +144,51 @@ export function addFaceSketch(doc: DesignDocument, face: { plane: string; featur
   return newSketch(doc, (n) => `Sketch ${n} on a face of ${label}`, { plane: face.plane }, [face.feature], [{ workspace: "design", id: face.feature, label }], { frame, side: drawn.side, ...(body ? { body: { ...body, size } } : {}), ...(face.reversed !== undefined && { reversed: face.reversed }) });
 }
 
-function newSketch(doc: DesignDocument, summary: (n: number) => string, parameters: Feature["intent"]["parameters"], dependsOn: string[], from: Feature["provenance"]["from"] = [], face?: SketchFace): { doc: DesignDocument; id: string } {
+/**
+ * The x a sketch on a construction plane with unit normal `n` is drawn with
+ * (59a3), as the origin planes have theirs: the world's X seen square onto
+ * the plane, X − (X·n)n, made unit; when that is shorter than a half (the
+ * plane within 30° of square to X, so X is no guide) the world's Y seen so
+ * instead, which is then at least √3/2 long (n is near ±X). So a plane
+ * offset from XY is drawn as XY is (x = X, y = Y), one from XZ as XZ (x = X),
+ * one from YZ as YZ (x = Y). Kept with the sketch once drawn, so it never
+ * jumps between the two as the plane later tilts.
+ */
+export function constructXAxis(n: readonly number[]): [number, number, number] {
+  const seen = (a: readonly number[]): [number, number, number] => {
+    const k = a[0] * n[0] + a[1] * n[1] + a[2] * n[2];
+    return [a[0] - k * n[0], a[1] - k * n[1], a[2] - k * n[2]];
+  };
+  let x = seen([1, 0, 0]);
+  if (Math.hypot(...x) < 0.5) x = seen([0, 1, 0]);
+  const len = Math.hypot(...x);
+  return [x[0] / len + 0, x[1] / len + 0, x[2] / len + 0];
+}
+
+/**
+ * A new empty sketch on construction plane `item` (step 59a3), put in at the
+ * marker like `addSketch`: its plane "construct:<item>", depending on the
+ * construction so it is greyed with it and can't go before it, its content
+ * keeping the frame it is drawn with: the plane as the construction last
+ * answered, its origin the plane's nearest point to the world's origin (the
+ * answer's `point`), its normal the plane's, its x `constructXAxis`. Refused in words for anything but a
+ * construction plane before the marker that is on.
+ */
+export function addConstructSketch(doc: DesignDocument, item: string): { doc: DesignDocument; id: string } {
+  const at = doc.timeline.features.findIndex((f) => f.id === item);
+  const on = doc.timeline.features[at];
+  if (on === undefined || !isConstructItem(on)) throw new Error("That construction is no longer in the design: pick another plane or a face.");
+  const answer = constructOf(on).answer;
+  const label = on.provenance.self.label;
+  if (answer.kind !== "plane") throw new Error(`${label} is ${answer.kind === "axis" ? "an axis" : "a point"}, not a plane: pick a plane or a face to sketch on.`);
+  if (at >= insertAt(doc)) throw new Error(`${label} comes after the rollback marker, so a sketch put in at the marker can't be on it`);
+  if (on.suppressed) throw new Error(`${label} is suppressed: turn it back on to sketch on it.`);
+  const drawn = squared({ origin: answer.point, xAxis: constructXAxis(answer.normal), normal: answer.normal });
+  if (drawn === null) throw new Error(`${label} has no frame to sketch in`);
+  return newSketch(doc, (n) => `Sketch ${n} on ${label}`, { plane: `${CONSTRUCT_REF}${item}` }, [item], [{ workspace: "design", id: item, label }], undefined, drawn);
+}
+
+function newSketch(doc: DesignDocument, summary: (n: number) => string, parameters: Feature["intent"]["parameters"], dependsOn: string[], from: Feature["provenance"]["from"] = [], face?: SketchFace, drawn?: Plane): { doc: DesignDocument; id: string } {
   const [id, next] = take(doc, "sketch");
   // A name no item has (U0e: one renamed to "Sketch 3" too), nor any sketch's description began with (a renamed one keeps it).
   const names = takenNames(doc);
@@ -157,7 +204,7 @@ function newSketch(doc: DesignDocument, summary: (n: number) => string, paramete
   };
   return {
     id,
-    doc: { ...next, sketches: [...doc.sketches, face ? { id, points: [], curves: [], constraints: [], face } : { id, points: [], curves: [], constraints: [] }], timeline: insertItem(doc, item) },
+    doc: { ...next, sketches: [...doc.sketches, face ? { id, points: [], curves: [], constraints: [], face } : drawn ? { id, points: [], curves: [], constraints: [], drawn } : { id, points: [], curves: [], constraints: [] }], timeline: insertItem(doc, item) },
   };
 }
 

@@ -68,7 +68,7 @@ function panel(unit?: string) {
   doc.body.append(slot);
   const grids: string[] = [];
   const noop = () => {};
-  const p = sketchPanel(slot, { pickPlane: noop, cancel: noop, grid: (t) => grids.push(t), gridSnap: noop, finish: noop, extrude: noop, lookAt: noop });
+  const p = sketchPanel(slot, { pickPlane: noop, pickConstruct: noop, cancel: noop, grid: (t) => grids.push(t), gridSnap: noop, finish: noop, extrude: noop, lookAt: noop });
   p.showEditing("Sketch 1", "10", false, "line");
   const box = () => doc.getElementById("sketch-grid") as HTMLInputElement;
   const type = (text: string) => {

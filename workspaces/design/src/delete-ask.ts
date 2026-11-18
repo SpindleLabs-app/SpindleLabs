@@ -17,6 +17,7 @@ import type { Feature, KernelCalls } from "@fission/core";
 import { bodyItem, isMoveItem, isSketchExtrude, isSketchItem, type DesignDocument } from "./document.ts";
 import { movedBodies } from "./move.ts";
 import { faceFeature, isFaceSketch } from "./face-sketch.ts";
+import { constructPlaneItem } from "./construct-data.ts";
 import { settleKept, type BodyCache } from "./rebuild.ts";
 import { deleteItem, itemName } from "./timeline-edits.ts";
 import { bodyWords, shapings } from "./body-uses.ts";
@@ -69,7 +70,9 @@ export function deleteWords(before: DesignDocument, after: DesignDocument, id: s
     return (parts.length > 0 ? parts : [f]).every((p) => after.kept !== undefined && Object.hasOwn(after.kept, p.id));
   };
   const keeps = users.filter((f) => isSketchExtrude(f) && keptAll(f)).map(itemName);
-  const staying = users.filter((f) => isFaceSketch(f) && faceFeature(f.intent.parameters.plane as string) === id);
+  // 59a3: a sketch on a construction plane deleted stays where it is too, its plane lost.
+  const onPlane = (f: Feature) => isSketchItem(f) && constructPlaneItem(f.intent.parameters.plane) === id;
+  const staying = users.filter((f) => (isFaceSketch(f) && faceFeature(f.intent.parameters.plane as string) === id) || onPlane(f));
   const stays = staying.map(itemName);
   // 27c and 27d (rule 13): a sketch only pinned to its edges, or projecting them, keeps those points and edges where they are.
   const holding = users.filter((f) => isSketchItem(f) && !staying.includes(f));
@@ -104,9 +107,13 @@ export function deleteWords(before: DesignDocument, after: DesignDocument, id: s
   ].join(", and ");
   const on =
     stays.length === users.length
-      ? one(users)
-        ? "is drawn on a face of"
-        : "are drawn on faces of"
+      ? staying.every(onPlane)
+        ? one(users)
+          ? "is drawn on"
+          : "are drawn on"
+        : one(users)
+          ? "is drawn on a face of"
+          : "are drawn on faces of"
       : movers.length === users.length
         ? one(users)
           ? "is a move of"
