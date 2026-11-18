@@ -588,7 +588,8 @@ if (everyWorkspace) {
   toggle.setAttribute("aria-pressed", "false");
   toggle.addEventListener("click", () => {
     if (split) return closeSplit();
-    const id = defaultSplit(splitEntries, shownWorkspace())?.id;
+    // Split opens beside Design with Image, as before the Slice page was a working workspace; Slice is one pick away in the choice.
+    const id = (defaultSplit(splitEntries.filter((e) => e.id !== "slice"), shownWorkspace()) ?? defaultSplit(splitEntries, shownWorkspace()))?.id;
     if (id) mountSplit(id);
   });
   $("viewport").append(toggle);
