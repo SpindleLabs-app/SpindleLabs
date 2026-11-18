@@ -320,6 +320,8 @@ if (__TEST_HOOKS__ && new URLSearchParams(location.search).has("test-hooks"))
       historyBusy: () => ctx.history.working(), // held work running by itself, not a question waiting on the person (SL #397)
       // The home screen's turning picture shows these edges instead of the open project's (e2e/home-backdrop.mjs, STL=).
       homeStandIn: (lines: number[] | null, surface?: { positions: number[]; indices: number[] } | null) => home?.showStandIn(lines, surface),
+      // The home picture reports its angle and frames, each frame counted `ms` slower (e2e/home-backdrop.mjs, run under a paused clock).
+      backdropCost: (ms: number) => home?.probeBackdrop(ms),
     },
   });
 

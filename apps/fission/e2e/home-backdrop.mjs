@@ -14,7 +14,10 @@
 //   General's Full gives the whole story, and Auto the gentle one again (Ben, 2026-11-16: Windows' animations off).
 // - Gentle motion suggested only once the picture was too slow (the computer slowed 40 times after it showed), taken and
 //   kept; never on a quick one.
-// - A weak machine (2 cores): the lightest moving picture, at 1 pixel a CSS pixel. A computer slowed 4 times: still moving.
+// - A weak machine (2 cores): the lightest moving picture, at 1 pixel a CSS pixel. Each frame taking 10 ms to draw: still the
+//   full moving picture; 20 ms: stepped down to a still one, marked slow.
+// - Motion is read on Playwright's paused clock (each draw then takes 0 ms, so a busy runner never steps it down): the
+//   turntable's angle grows by exactly the frames drawn × the frame's time ÷ a turn's (40 s, gently 60 s).
 // - It never takes a press: the card's button under the picture still works; the words keep their contrast (the title, the
 //   guide link and Pause the background against the worst pixel behind them, 4.5 : 1 or more).
 // - At 375 px: nothing runs off the side.
@@ -51,7 +54,47 @@ async function check(name, fn) {
     console.log(`not ok - ${name}\n  ${(e.stack ?? String(e)).split("\n").join("\n  ")}`);
   }
 }
-const until = (page, fn, arg, what, timeout = 15000) => page.waitForFunction(fn, arg, { timeout }).catch(() => assert.fail(`${what}: timed out`));
+/**
+ * Pages whose clock is Playwright's, paused (E-5 of the 2026-11-18 test audit): time moves only by `runFor`, so a frame's
+ * measured draw takes 0 ms and the picture never steps down to a still one on a busy runner, and every motion is read
+ * exactly. Waits on such a page move its clock 100 ms at a time; on other pages they are real waits.
+ */
+const paused = new WeakSet();
+async function until(page, fn, arg, what, timeout = 15000) {
+  if (!paused.has(page)) return page.waitForFunction(fn, arg, { timeout }).catch(() => assert.fail(`${what}: timed out`));
+  for (let t = 0; ; t += 100) {
+    if (await page.evaluate(fn, arg)) return;
+    if (t >= timeout) assert.fail(`${what}: not within ${timeout} ms of the page's clock`);
+    await page.clock.runFor(100);
+  }
+}
+/** Lets `ms` pass: the page's own clock when it is paused, else real time. */
+const wait = (page, ms) => (paused.has(page) ? page.clock.runFor(ms) : page.waitForTimeout(ms));
+/** Pauses the page's clock (installed by newPage) where it is now; the picture then reports its angle and frames. */
+async function pause(page) {
+  // A moment ahead of the page's clock, which runs on while this is asked (pausing in its past is refused).
+  await page.clock.pauseAt(await page.evaluate(() => Date.now() + 1000));
+  paused.add(page);
+}
+/** The turntable's angle (radians) and the moving frames drawn so far, as the picture reports them under ?test-hooks. */
+const turn = (page) => page.$eval("#home .home-backdrop", (c) => ({ yaw: Number(c.dataset.yaw), frames: Number(c.dataset.frames ?? 0) }));
+/**
+ * Runs the paused clock `ms` and checks the turntable turned exactly as far as the frames drawn say. Worked by hand: a
+ * frame is drawn on a 16 ms animation tick once 1000/fps - 1 ms have passed since the last, so every `frameMs` (48 ms at
+ * 30 a second: the third tick; 64 ms at 20 a second: the fourth), and a whole turn takes `turnSeconds`. So in `ms` there
+ * are floor or ceil of ms / frameMs frames, and the angle grows by frames × frameMs / 1000 / turnSeconds × 2π (the
+ * angle is reported to 5 decimals, so within 1e-4). A turntable that stopped, or turned at another speed, fails.
+ */
+async function turnsFor(page, ms, turnSeconds, frameMs) {
+  await page.clock.runFor(frameMs * 2); // a frame or two drawn since the angle was first asked for
+  const a = await turn(page);
+  await page.clock.runFor(ms);
+  const b = await turn(page);
+  const frames = b.frames - a.frames;
+  assert.ok(frames >= Math.floor(ms / frameMs) && frames <= Math.ceil(ms / frameMs), `${frames} frames in ${ms} ms, one every ${frameMs} ms`);
+  const want = ((frames * frameMs) / 1000 / turnSeconds) * Math.PI * 2;
+  assert.ok(Math.abs(b.yaw - a.yaw - want) < 1e-4, `turned ${(b.yaw - a.yaw).toFixed(5)} rad in ${frames} frames, ${want.toFixed(5)} worked by hand`);
+}
 const homeShown = (page) => until(page, () => { const h = document.getElementById("home"); return h && !h.hidden && document.querySelectorAll("#home-items .home-row, #home-status:not(:empty)").length > 0; }, null, "the home screen");
 /** Waits for the picture to be marked ready (the list painted, the design here). */
 const ready = (page) => until(page, () => document.querySelector("#home .home-backdrop")?.dataset.ready === "yes", null, "the picture ready", 8000);
@@ -67,8 +110,11 @@ const painted = (page) =>
     return n;
   });
 
-/** A page; `cores` is what the machine says it has (8 unless given, so a small CI runner still shows the moving picture). */
-async function newPage({ width = 1280, scheme = "dark", reduce = false, cores = 8, all = true } = {}) {
+/**
+ * A page; `cores` is what the machine says it has (8 unless given, so a small CI runner still shows the moving picture).
+ * `clock`: Playwright's clock installed (still running), so `pause` can stop it; "paused" pauses it once the page has loaded.
+ */
+async function newPage({ width = 1280, scheme = "dark", reduce = false, cores = 8, all = true, clock = false } = {}) {
   const context = await browser.newContext({ viewport: { width, height: width > 700 ? 800 : 812 }, hasTouch: width < 700, isMobile: width < 700, colorScheme: scheme, reducedMotion: reduce ? "reduce" : "no-preference" });
   await context.addInitScript((n) => Object.defineProperty(navigator, "hardwareConcurrency", { get: () => n }), cores);
   // Every change of the picture's place, shape and readiness, as it happens (the jump check reads them).
@@ -87,7 +133,10 @@ async function newPage({ width = 1280, scheme = "dark", reduce = false, cores = 
   });
   const page = await context.newPage();
   page.on("pageerror", (e) => errors.push(process.env.STACKS ? e.stack : e.message));
+  if (clock) await page.clock.install();
   await page.goto(url + (all ? "?all&test-hooks#design" : "#design"));
+  if (clock === "paused") await pause(page);
+  if (clock && all) await page.evaluate(() => window.fissionTest.backdropCost(0));
   return { context, page };
 }
 
@@ -164,13 +213,16 @@ async function readable(page, id) {
   assert.ok(worst >= 4.5, `${id} contrast ${worst.toFixed(2)} : 1 at its worst pixel, ${spot}`);
 }
 
-async function withProject(page, tap = false) {
+/** Keeps a project (the box) and reloads, so the screen opens over it; on a page with Playwright's clock, paused from the reload on. */
+async function withProject(page, tap = false, { clock = true } = {}) {
   await homeShown(page);
   await page.click("#home-close");
   await startWithBox(page, tap);
   await until(page, () => document.querySelector("#save-status").dataset.state === "saved", null, "Saved");
   await page.waitForTimeout(400);
+  if (clock) await pause(page);
   await page.reload();
+  if (clock) await page.evaluate(() => window.fissionTest.backdropCost(0));
   await homeShown(page);
   await ready(page);
 }
@@ -183,15 +235,17 @@ await check("without ?all there is no home screen, so no background", async () =
 });
 {
   await check("a first visit: the background moves, paints, and turns the neutral cube", async () => {
-    const { context, page } = await newPage();
+    const { context, page } = await newPage({ clock: "paused" });
     await homeShown(page);
     await ready(page);
     assert.equal(await mode(page), "live");
     assert.equal(await shape(page), "neutral");
     assert.equal(await page.$eval("#home .home-backdrop", (c) => c.dataset.faces), "6", "the cube's six faces painted");
     await until(page, () => document.querySelector("#home .home-backdrop").dataset.hides === "yes", null, "the cube's back lines hidden behind its faces", 12000);
+    // The turntable turns at 9° a second (TURN_SECONDS 40), a frame every 48 ms (30 a second).
+    await turnsFor(page, 600, 40, 48);
     const a = await picture(page);
-    await page.waitForTimeout(600);
+    await wait(page, 600);
     assert.ok((await picture(page)) !== a, "two pictures 600 ms apart differ");
     assert.ok((await painted(page)) > 200, "something is painted");
     assert.equal(await page.$eval("#home .home-backdrop", (c) => c.getAttribute("aria-hidden")), "true");
@@ -221,12 +275,12 @@ await check("without ?all there is no home screen, so no background", async () =
 
   for (const [width, scheme] of [[1280, "dark"], [1280, "light"], [375, "dark"], [375, "light"]]) {
     await check(`${width} px ${scheme}: the project's own shape turns behind the screen, and the screen still works over it`, async () => {
-      const { context, page } = await newPage({ width, scheme });
+      const { context, page } = await newPage({ width, scheme, clock: true });
       await withProject(page, width < 700);
       // From its first frame (marked ready) it is the project's shape, at one place and size, kept for the next 3 s.
       assert.match(await shape(page), /^project \d+$/);
       assert.equal(await page.$eval("#home .home-backdrop", (c) => c.dataset.faces), "6", "the box's six faces painted");
-      await page.waitForTimeout(3000);
+      await wait(page, 3000);
       const seen = await page.evaluate(() => window.__picture);
       const first = seen.findIndex((e) => e.ready === "yes");
       assert.ok(first >= 0, "marked ready");
@@ -253,7 +307,7 @@ await check("without ?all there is no home screen, so no background", async () =
         await until(page, () => document.querySelector("#home .home-backdrop").dataset.build === "0.6" && document.querySelector("#home .home-backdrop").dataset.stage === "building", null, "part built", 45000);
         await page.screenshot({ path: `${shots}/home-${width}-${scheme}-build.png` });
         await until(page, () => document.querySelector("#home .home-backdrop").dataset.stage === "ripple", null, "a ripple", 20000);
-        await page.waitForTimeout(1500);
+        await wait(page, 1500);
         await page.screenshot({ path: `${shots}/home-${width}-${scheme}.png` });
         if (scheme === "dark") {
           await until(page, () => document.querySelector("#home .home-backdrop").dataset.extrude === "0.24", null, "the top face held pulled out", 20000);
@@ -269,27 +323,31 @@ await check("without ?all there is no home screen, so no background", async () =
   }
 
   await check("a hidden tab draws nothing, and moves again once shown", async () => {
-    const { context, page } = await newPage();
+    const { context, page } = await newPage({ clock: "paused" });
     await homeShown(page);
     await ready(page);
+    await wait(page, 200);
     await page.evaluate(() => {
       Object.defineProperty(document, "hidden", { configurable: true, get: () => true });
       document.dispatchEvent(new Event("visibilitychange"));
     });
     const a = await picture(page);
-    await page.waitForTimeout(600);
+    const before = await turn(page);
+    await wait(page, 600);
     assert.ok((await picture(page)) === a, "hidden: the same picture");
+    assert.deepEqual(await turn(page), before, "hidden: no frame drawn, the turntable where it was");
     await page.evaluate(() => {
       Object.defineProperty(document, "hidden", { configurable: true, get: () => false });
       document.dispatchEvent(new Event("visibilitychange"));
     });
-    await page.waitForTimeout(600);
+    await wait(page, 600);
     assert.ok((await picture(page)) !== a, "shown again: it moves");
+    await turnsFor(page, 600, 40, 48);
     await context.close();
   });
 
   await check("reduced motion: it moves gently; Pause gives a still picture, remembered; Settings' Full gives the whole story and Auto the gentle one", async () => {
-    const { context, page } = await newPage({ reduce: true });
+    const { context, page } = await newPage({ reduce: true, clock: true });
     await withProject(page);
     await until(page, () => /^project \d+$/.test(document.querySelector("#home .home-backdrop")?.dataset.shape ?? ""), null, "the project's shape", 3000);
     const data = (key) => page.$eval("#home .home-backdrop", (c, k) => c.dataset[k] ?? "", key);
@@ -297,8 +355,10 @@ await check("without ?all there is no home screen, so no background", async () =
     assert.equal(await mode(page), "live");
     assert.equal(await data("motion"), "gentle");
     assert.equal(await data("still"), "", "no still picture");
+    // Gently: 6° a second (GENTLE_TURN 60), a frame every 64 ms (20 a second).
+    await turnsFor(page, 700, 60, 64);
     const a = await picture(page);
-    await page.waitForTimeout(700);
+    await wait(page, 700);
     assert.ok((await picture(page)) !== a, "two pictures 700 ms apart differ: it moves");
     assert.ok((await painted(page)) > 200, "painted");
     assert.equal(await named("home-motion"), "Pause the background");
@@ -306,16 +366,12 @@ await check("without ?all there is no home screen, so no background", async () =
     assert.equal(await page.$("#home-full-motion"), null, "full and gentle motion are Settings' choices");
     assert.equal(await page.$eval("#home-motion-tip", (t) => t.hidden), true, "nothing slow: no suggestion");
     // 13 s: past where the full story builds (to 10.8 s) and its first ripple starts (11.9 s). Gently: built and at rest.
-    const seen = await page.evaluate(
-      () =>
-        new Promise((done) => {
-          const c = document.querySelector("#home .home-backdrop");
-          const states = new Set();
-          const tick = setInterval(() => states.add(`${c.dataset.stage} ${c.dataset.build} ${c.dataset.extrude}`), 100);
-          setTimeout(() => (clearInterval(tick), done([...states])), 13000);
-        }),
-    );
-    assert.deepEqual(seen, ["rest 1.0 0.00"], "only ever built and at rest");
+    const states = new Set();
+    for (let t = 0; t < 13000; t += 100) {
+      states.add(await page.$eval("#home .home-backdrop", (c) => `${c.dataset.stage} ${c.dataset.build} ${c.dataset.extrude}`));
+      await wait(page, 100);
+    }
+    assert.deepEqual([...states], ["rest 1.0 0.00"], "only ever built and at rest");
     if (shots) await page.screenshot({ path: `${shots}/home-gentle-1280.png` });
     // Pause: one still picture, the icon saying Play, remembered over a reload.
     await page.click("#home-motion");
@@ -323,8 +379,10 @@ await check("without ?all there is no home screen, so no background", async () =
     assert.equal(await data("still"), "paused");
     assert.equal(await named("home-motion"), "Play the background");
     const b = await picture(page);
-    await page.waitForTimeout(700);
+    const still = await turn(page);
+    await wait(page, 700);
     assert.ok((await picture(page)) === b, "paused: the same picture");
+    assert.deepEqual(await turn(page), still, "paused: no frame drawn");
     await page.reload();
     await homeShown(page);
     await ready(page);
@@ -373,17 +431,20 @@ await check("without ?all there is no home screen, so no background", async () =
   });
 
   await check("full motion: Pause keeps one still picture, Play moves the whole story again", async () => {
-    const { context, page } = await newPage();
+    const { context, page } = await newPage({ clock: "paused" });
     await homeShown(page);
     await ready(page);
+    await wait(page, 3000); // past the 20 untimed frames and a timed window of 30, each taking 0 ms of the paused clock
     assert.equal(await page.$eval("#home-motion-tip", (t) => t.hidden), true, "a quick computer: no suggestion");
     await page.click("#home-motion");
     assert.equal(await mode(page), "still");
     await page.click("#home-motion");
     assert.equal(await mode(page), "live");
     assert.equal(await page.$eval("#home .home-backdrop", (c) => c.dataset.motion), "full");
+    await wait(page, 200);
+    await turnsFor(page, 600, 40, 48);
     const a = await picture(page);
-    await page.waitForTimeout(600);
+    await wait(page, 600);
     assert.ok((await picture(page)) !== a, "moving again");
     await context.close();
   });
@@ -393,7 +454,7 @@ await check("without ?all there is no home screen, so no background", async () =
       const tap = width < 700;
       const press = (selector) => (tap ? page.tap(selector) : page.click(selector));
       const { context, page } = await newPage({ width });
-      await withProject(page, tap);
+      await withProject(page, tap, { clock: false });
       const home = () => page.$eval("#home", (h) => ({ shown: !h.hidden, folded: h.classList.contains("home-folded") }));
       const place = () => page.$eval("#home .home-backdrop", (c) => c.dataset.place.split(" ").map(Number));
       const icons = () => Promise.all(["#home-motion", "#home-fold"].map((s) => page.locator(s).boundingBox()));
@@ -462,33 +523,41 @@ await check("without ?all there is no home screen, so no background", async () =
   }
 
   await check("a 2-core machine: the lightest moving picture, not a still one (Ben's laptop)", async () => {
-    const { context, page } = await newPage({ cores: 2 });
+    const { context, page } = await newPage({ cores: 2, clock: true });
     await withProject(page);
     await until(page, () => /^project \d+$/.test(document.querySelector("#home .home-backdrop")?.dataset.shape ?? ""), null, "the project's shape", 3000);
     assert.equal(await mode(page), "live");
     assert.equal(await page.$eval("#home .home-backdrop", (c) => c.dataset.quality), "2");
+    await turnsFor(page, 600, 40, 64); // the lightest version: 20 frames a second
     const a = await picture(page);
-    await page.waitForTimeout(600);
+    await wait(page, 600);
     assert.ok((await picture(page)) !== a, "it moves");
     // Drawn at 1 pixel a CSS pixel: the canvas is the window's width.
     assert.equal(await page.$eval("#home .home-backdrop", (c) => c.width), 1280);
     await context.close();
   });
 
-  await check("a computer slowed 4 times: still moving after the warm-up and a timed window", async () => {
-    const { context, page } = await newPage();
-    const cdp = await context.newCDPSession(page);
-    await cdp.send("Emulation.setCPUThrottlingRate", { rate: 4 });
-    await withProject(page);
-    await page.waitForTimeout(6000); // the warm-up frames and a timed window or two at 30 a second
-    const state = await page.$eval("#home .home-backdrop", (c) => ({ mode: c.dataset.backdrop, quality: c.dataset.quality, cost: c.dataset.cost }));
-    console.log(`  (slowed 4×: ${JSON.stringify(state)})`);
-    assert.equal(state.mode, "live");
-    const a = await picture(page);
-    await page.waitForTimeout(600);
-    assert.ok((await picture(page)) !== a, "it moves");
-    await context.close();
-  });
+  // A slow computer stood in for by each frame's measured draw (the clock paused, so a draw takes 0 ms plus the hook's
+  // extra): 10 ms is under SLOW_MS (14), so every timed window passes and the full picture keeps moving; 20 ms is over it,
+  // so each window steps down: 20 untimed then 30 timed frames a step, at 48, 48 and 64 ms a frame (30, 30 and 20 a
+  // second), 2.4 + 2.4 + 3.2 = 8 s from the start to a still picture marked slow. 12 s leaves room for a window already
+  // part way when the cost was set. (packages/ui/test/home-backdrop.test.ts works the stepping itself by hand.)
+  for (const [cost, want] of [[10, { mode: "live", quality: "0", still: "" }], [20, { mode: "still", quality: "2", still: "slow" }]]) {
+    await check(`each frame taking ${cost} ms to draw: ${want.mode === "live" ? "the full picture keeps moving" : "it steps down to a still picture"}`, async () => {
+      const { context, page } = await newPage({ clock: "paused" });
+      await homeShown(page);
+      await ready(page);
+      await page.evaluate((ms) => window.fissionTest.backdropCost(ms), cost);
+      await wait(page, 12000);
+      const state = await page.$eval("#home .home-backdrop", (c) => ({ mode: c.dataset.backdrop, quality: c.dataset.quality, still: c.dataset.still ?? "" }));
+      assert.deepEqual(state, want);
+      const a = await turn(page);
+      await wait(page, 600);
+      if (want.mode === "live") await turnsFor(page, 600, 40, 48);
+      else assert.deepEqual(await turn(page), a, "still: no frame drawn");
+      await context.close();
+    });
+  }
 }
 
 await browser.close();
