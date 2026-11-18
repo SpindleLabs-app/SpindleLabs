@@ -218,6 +218,8 @@ jobs:
           .github/scripts/apt-mirror.sh
           apt=(-o Acquire::Retries=5 -o Acquire::http::Timeout=60 -o Acquire::https::Timeout=60 -qq)
           for try in 1 2 3 4; do
+            # A mirror that resolves can still stall: tries 2 on move to another one (see the script).
+            [ $try = 1 ] || .github/scripts/apt-mirror.sh switch $try
             sudo timeout 600 apt-get "${apt[@]}" update >/dev/null 2>&1 && sudo timeout 600 apt-get "${apt[@]}" install -y valgrind prusa-slicer >/dev/null 2>&1 && exit 0
             echo "apt-get try $try failed"
             [ $try = 4 ] || sleep $((60 * 2 ** (try - 1)))
