@@ -1954,7 +1954,9 @@ async function start() {
       keep(newest, kept === null, newestAt, kept !== null);
       saveStatus(kept === null ? { state: "saved" } : { state: "error", message: "this browser's storage had no room for your latest changes. They're kept until it has, and Save keeps them as a file." });
       opened = newest;
-    } else keep(newId());
+      // A first visit's empty design is kept from its first change, as every new one is: kept at once, a New project
+      // or a file opened left it behind as an empty "Untitled" (a second design tab; app bug hunt 2026-11-18, D-4).
+    } else keepOnFirstChange();
   } catch (e) {
     guard.finished(); // refused with a message, which is not a freeze
     keepOnFirstChange(); // stored only once changed, so a reload tries the old one again (real-use hunt A1)
