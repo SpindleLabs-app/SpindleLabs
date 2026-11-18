@@ -180,6 +180,8 @@ try {
     near(await pixel(0.5, 0.5), BACKGROUND, "the empty view's centre (Design's body was there)");
     assert.equal(await page.isVisible(".view-cube"), false);
     assert.equal(await page.$eval("#viewport", (el) => el.dataset.image ?? null), "none");
+    assert.equal(await page.$eval("#viewport", (el) => el.classList.contains("image-empty")), true, "the empty view carries the prompt's class");
+    assert.equal(await page.$eval("#viewport", (el) => getComputedStyle(el, "::after").content), '"Open a PNG or JPEG to start"');
     await page.screenshot({ path: "e2e/image-empty.png" });
   });
 
@@ -197,6 +199,7 @@ try {
     assert.match(await page.textContent("#image-not-saved"), /^Not saved with the project yet/);
     assert.equal(await page.textContent("#image-error"), "");
     assert.equal(await page.$eval("#viewport", (el) => el.dataset.image), "200 x 100 px, 20 x 10 mm");
+    assert.equal(await page.$eval("#viewport", (el) => el.classList.contains("image-empty")), false, "an open image takes the prompt away");
   });
 
   await settle();
