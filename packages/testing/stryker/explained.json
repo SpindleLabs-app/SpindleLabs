@@ -681,23 +681,128 @@
   {
     "file": "packages/viewport/src/picking.ts",
     "mutator": "ConditionalExpression",
-    "original": "![ax, ay, bx, by].every(Number.isFinite)",
+    "original": "!(Number.isFinite(ax) && Number.isFinite(ay) && Number.isFinite(bx) && Number.isFinite(by))",
     "replacement": "false",
-    "why": "A NaN or infinite end makes the distance NaN or Infinity (Infinity - Infinity is NaN, hypot of an infinite part is Infinity), and neither is < radius, so the segment is left out all the same."
+    "why": "A NaN, infinite or missing end makes t NaN (an infinite part over an infinite len2, or NaN throughout) and so the distance NaN, never < radius, so the segment is left out all the same; the check only saves the arithmetic."
   },
   {
     "file": "packages/viewport/src/picking.ts",
-    "mutator": "MethodExpression",
-    "original": "[ax, ay, bx, by].every(Number.isFinite)",
-    "replacement": "[ax, ay, bx, by].some(Number.isFinite)",
-    "why": "A NaN or infinite end makes the distance NaN or Infinity, never < radius, so the segment is left out all the same."
+    "mutator": "LogicalOperator",
+    "original": "Number.isFinite(ax) && Number.isFinite(ay) && Number.isFinite(bx) && Number.isFinite(by)",
+    "replacement": "Number.isFinite(ax) && Number.isFinite(ay) && Number.isFinite(bx) || Number.isFinite(by)",
+    "why": "A NaN, infinite or missing end makes t NaN (an infinite part over an infinite len2, or NaN throughout) and so the distance NaN, never < radius, so the segment is left out all the same; the check only saves the arithmetic."
   },
   {
     "file": "packages/viewport/src/picking.ts",
+    "mutator": "ConditionalExpression",
+    "original": "Number.isFinite(ax) && Number.isFinite(ay) && Number.isFinite(bx) && Number.isFinite(by)",
+    "replacement": "true",
+    "why": "A NaN, infinite or missing end makes t NaN (an infinite part over an infinite len2, or NaN throughout) and so the distance NaN, never < radius, so the segment is left out all the same; the check only saves the arithmetic."
+  },
+  {
+    "file": "packages/viewport/src/picking.ts",
+    "mutator": "ConditionalExpression",
+    "original": "Number.isFinite(ax) && Number.isFinite(ay) && Number.isFinite(bx)",
+    "replacement": "true",
+    "why": "A NaN, infinite or missing end makes t NaN (an infinite part over an infinite len2, or NaN throughout) and so the distance NaN, never < radius, so the segment is left out all the same; the check only saves the arithmetic."
+  },
+  {
+    "file": "packages/viewport/src/picking.ts",
+    "mutator": "LogicalOperator",
+    "original": "Number.isFinite(ax) && Number.isFinite(ay) && Number.isFinite(bx)",
+    "replacement": "Number.isFinite(ax) && Number.isFinite(ay) || Number.isFinite(bx)",
+    "why": "A NaN, infinite or missing end makes t NaN (an infinite part over an infinite len2, or NaN throughout) and so the distance NaN, never < radius, so the segment is left out all the same; the check only saves the arithmetic."
+  },
+  {
+    "file": "packages/viewport/src/picking.ts",
+    "mutator": "ConditionalExpression",
+    "original": "Number.isFinite(ax) && Number.isFinite(ay)",
+    "replacement": "true",
+    "why": "A NaN, infinite or missing end makes t NaN (an infinite part over an infinite len2, or NaN throughout) and so the distance NaN, never < radius, so the segment is left out all the same; the check only saves the arithmetic."
+  },
+  {
+    "file": "packages/viewport/src/picking.ts",
+    "mutator": "LogicalOperator",
+    "original": "Number.isFinite(ax) && Number.isFinite(ay)",
+    "replacement": "Number.isFinite(ax) || Number.isFinite(ay)",
+    "why": "A NaN, infinite or missing end makes t NaN (an infinite part over an infinite len2, or NaN throughout) and so the distance NaN, never < radius, so the segment is left out all the same; the check only saves the arithmetic."
+  },
+  {
+    "file": "packages/core/src/model/history.ts",
+    "mutator": "ConditionalExpression",
+    "original": "at < 0",
+    "replacement": "false",
+    "why": "The floor's id is always among the entries: dropEntry moves it to a kept neighbour whenever its entry goes (the limit's dropEntry(0) to the next, a fold or amendStep to the one before, never at index 0), and a record or step only cuts entries after the present, which is at or above the floor. So findIndex never gives -1."
+  },
+  {
+    "file": "packages/core/src/model/history.ts",
+    "mutator": "EqualityOperator",
+    "original": "at < 0",
+    "replacement": "at <= 0",
+    "why": "At 0 both return 0: at itself or the 0 meant for a floor dropped past the limit."
+  },
+  {
+    "file": "packages/core/src/model/history.ts",
+    "mutator": "LogicalOperator",
+    "original": "entries[at + 1]?.id ?? -1",
+    "replacement": "entries[at + 1]?.id && -1",
+    "why": "Reached only when the floor is entries[0] being dropped by the limit, and the next entry (the new oldest) then gives index 0 to floor(); the mutant's -1 (or 0) is no kept id, so floor() falls back to 0: the same index. Later drops at 0 keep both at the oldest kept entry."
+  },
+  {
+    "file": "packages/core/src/model/history.ts",
+    "mutator": "OptionalChaining",
+    "original": "entries[at + 1]?.id",
+    "replacement": "entries[at + 1].id",
+    "why": "The floor at index 0 is dropped only by the limit, with more than limit + 1 >= 2 entries, so entries[1] always exists."
+  },
+  {
+    "file": "packages/core/src/model/history.ts",
+    "mutator": "ArithmeticOperator",
+    "original": "at + 1",
+    "replacement": "at - 1",
+    "why": "Reached only for at = 0 (the limit's drop of the oldest): entries[-1] is undefined, the floor becomes -1, no entry's id, and floor() falls back to 0, the oldest kept, as the next entry's id gives."
+  },
+  {
+    "file": "packages/core/src/model/history.ts",
+    "mutator": "UnaryOperator",
+    "original": "-1",
+    "replacement": "+1",
+    "why": "The fallback is never reached: entries[at + 1] always exists when the floor at index 0 is dropped (more than limit + 1 >= 2 entries)."
+  },
+  {
+    "file": "packages/core/src/model/history.ts",
+    "mutator": "UpdateOperator",
+    "original": "nextId++",
+    "replacement": "nextId--",
+    "why": "Ids only need to be distinct and are compared only for equality (fence floor, outside set); 0, -1, -2 ... are as distinct as 0, 1, 2 ..., and the -1 fallback is never reached."
+  },
+  {
+    "file": "workspaces/design/src/document.ts",
+    "mutator": "EqualityOperator",
+    "original": "there.at >= byId.get(f.id)!.at",
+    "replacement": "there.at > byId.get(f.id)!.at",
+    "why": "In checkChamfer equal places mean the Chamfer names its own id as its body, and isBodyOf refuses that anyway: a Chamfer neither makes a body nor pieces."
+  },
+  {
+    "file": "workspaces/design/src/document.ts",
+    "mutator": "ConditionalExpression",
+    "original": "maker === null",
+    "replacement": "false",
+    "why": "In isBodyOf, with maker null byId.get(null) is undefined, so both of the returns that follow are false (each needs at !== undefined)."
+  },
+  {
+    "file": "workspaces/design/src/document.ts",
     "mutator": "ArrayDeclaration",
-    "original": "[ax, ay, bx, by]",
-    "replacement": "[]",
-    "why": "[].every is true, so the check never skips; a NaN or infinite end still gives a NaN or infinite distance, never < radius."
+    "original": "[]",
+    "replacement": "[\"Stryker was here\"]",
+    "why": "hasVersion15Fields reads the list only for records with pins or projections: a string has neither, so nothing is found."
+  },
+  {
+    "file": "workspaces/design/src/document.ts",
+    "mutator": "ArrayDeclaration",
+    "original": "[]",
+    "replacement": "[\"Stryker was here\"]",
+    "why": "migrateDesignV19's loop over the features skips anything that is not a record, so a list holding one string adds no kept shape."
   },
   {
     "file": "packages/viewport/src/picking.ts",
