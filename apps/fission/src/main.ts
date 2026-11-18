@@ -1835,6 +1835,8 @@ phone.addEventListener("change", () => {
       (props.querySelector("#combine-panel:not([hidden])") !== null && document.querySelector("#combine-hint[hidden]") !== null) ||
       // Chamfer's size boxes and OK once an edge is picked, its hint over the view gone (44a-app2).
       (props.querySelector("#chamfer-panel:not([hidden])") !== null && document.querySelector("#chamfer-hint[hidden]") !== null) ||
+      // Shell's thickness box and OK once a face or body is picked, its hint over the view gone (35h2c-app2).
+      (props.querySelector("#shell-panel:not([hidden])") !== null && document.querySelector("#shell-hint[hidden]") !== null) ||
       // Construct's rows, lists and number (step 59a2): the sheet opens with it, a tap on the view puts it away to pick.
       props.querySelector("#construct-panel:not([hidden])") !== null;
     const again = (props.querySelector<HTMLElement>("#combine-panel:not([hidden])") ?? props.querySelector<HTMLElement>("#construct-panel:not([hidden])"))?.dataset.shows ?? "";
