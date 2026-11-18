@@ -4,9 +4,8 @@ The sessions' extrudes (fuzz.yml sessions-oracle) and the golden models'
 STEP files (nightly.yml golden-step) are judged by the kernel's private
 oracle on this public repo's runners. Its findings went into public
 artifacts, this repo's public test-results branch and public issues in
-full: each check's details name how it judges a body (copies moved home,
-caps centred on their axes, what OpenCascade read), an oracle error's repr
-and the oracle's own file name. The kernel's rule is that a description of
+full: each check's details say how it judges a body, an oracle error's
+repr, and the oracle's own file name. The kernel's rule is that a description of
 how the kernel works never goes public.
 
 So the public file keeps only what file_issues.py turns into a kind: the

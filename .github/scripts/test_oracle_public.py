@@ -24,9 +24,9 @@ SHAPE = '{"Extrude": {"outer": {"Path": {"points": [[0, 0], [10, 0], [10, 5]], "
 FULL = (
     f"line 4: {SHAPE}\n"
     "  volume: fission 75.0, exact 74.2 (session 3, step 12)\n"
-    "  step validity: as written: caps centred on their axes, moved up to 3e-09 mm (moved home by (1, 0, 0))\n"
-    "  step orientation: cylinder face #3 doesn't run counter-clockwise round its normal: (u, v) area -1.2 (turned inside out)\n"
-    "  oracle error: KeyError('fission_faces') (session 3, step 12)\n"
+    "  step validity: as written: HIDDEN-DETAIL-A, 3e-09 mm (HIDDEN-DETAIL-B (1, 0, 0))\n"
+    "  step orientation: face #3 HIDDEN-DETAIL-C: HIDDEN-DETAIL-D -1.2 (HIDDEN-DETAIL-E)\n"
+    "  oracle error: HiddenError('hidden_field') (session 3, step 12)\n"
     "  bounds highest x: fission 10.0, occ 10.5\n"
 )
 # By hand: the shape line is kept; then the words before each line's first colon.
@@ -34,9 +34,9 @@ PUBLIC = f"line 4: {SHAPE}\n  volume\n  step validity\n  step orientation\n  ora
 
 # golden_step.py's report: header naming the script, then one failure line a model.
 GOLDEN_FULL = (
-    "Golden models' STEP files (prototypes/oracle/golden_step.py): 2 of 31 bodies failed\n"
-    "failure: gear: step faces: OpenCascade read 12, the kernel has 11 (gear, Body 1 (feature-3)) | "
-    "also: step volume: OpenCascade read 3.1 from the file, exact 3.0, allowed 1e-06 (gear, Body 1 (feature-3)); \n"
+    "Golden models' STEP files (hidden/oracle_file.py): 2 of 31 bodies failed\n"
+    "failure: gear: step faces: HIDDEN-DETAIL-F 12, 11 (gear, Body 1 (feature-3)) | "
+    "also: step volume: HIDDEN-DETAIL-G 3.1, 3.0, 1e-06 (gear, Body 1 (feature-3)); \n"
     "failure: l-bracket: no hand-worked answers for this body, so its STEP file isn't judged (l-bracket, Body 2 (feature-9)) | \n"
 )
 # By hand: the header keeps only "2 of 31"; gear's first check is "step faces", its other "step volume";
@@ -47,9 +47,8 @@ GOLDEN_PUBLIC = (
     "failure: l-bracket: no hand-worked answers for this body, so its STEP file isn't judged\n"
 )
 
-# Words of the oracle's method, numbers it measured and its file: none may reach the public text.
-PRIVATE = ("caps centred", "moved home", "counter-clockwise", "(u, v)", "KeyError", "fission_faces", "prototypes/oracle",
-           "golden_step.py", "OpenCascade read", "allowed", "75.0", "10.5", "feature-3")
+# Stand-ins for the oracle's method words (HIDDEN-...), numbers it measured and its file: none may reach the public text.
+PRIVATE = ("HIDDEN", "Hidden", "hidden", "oracle_file.py", "75.0", "10.5", "3e-09", "1e-06", "feature-3", "session 3")
 
 
 class Sessions(unittest.TestCase):
@@ -66,7 +65,7 @@ class Sessions(unittest.TestCase):
         self.assertEqual(len(oracle_kinds(FULL)), 5)
 
     def test_other_lines_are_never_copied(self):
-        full = "occ-rounding, line 3: volume: occ 1.00001, exact 1.0 (moved home by (1, 2, 3))\noracle crashed: Traceback in compare.py line 40\n"
+        full = "occ-rounding, line 3: volume: occ 1.00001, exact 1.0 (HIDDEN-DETAIL-H)\noracle crashed: HiddenError in hidden.py line 40\n"
         self.assertEqual(sessions(full), f"other note\n{CRASHED}\n")
         self.assertEqual([k for k, _ in oracle_kinds(sessions(full))], ["OpenCascade oracle crashed"])
 
