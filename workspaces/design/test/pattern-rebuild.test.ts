@@ -208,13 +208,13 @@ test("Join of a body with a curved face is refused in the Pattern's words while 
 });
 
 test("the data: version 25 holds a Pattern and reads back the same; version 24 holding one is refused; every break is refused", () => {
-  assert.equal(DESIGN_VERSION, 26);
+  assert.equal(DESIGN_VERSION, 28);
   const { doc: d0, body } = cube();
   const { doc, id } = insertPattern(d0, [body], row({ direction2: "Y", spacing2: 20, count2: 2 }));
   const saved = JSON.parse(JSON.stringify(doc));
   assert.deepEqual(readDesignDocument(saved), doc, "round trip");
   const at = saved.timeline.features.findIndex((f: { id: string }) => f.id === id);
-  const broken = (patch: (f: Record<string, any>) => void, version = 25) => {
+  const broken = (patch: (f: Record<string, any>) => void, version = 28) => {
     const copy = JSON.parse(JSON.stringify(saved));
     patch(copy.timeline.features[at]);
     return { ...copy, version };
@@ -245,10 +245,10 @@ test("the data's limits either side: a spacing 0.9 × and 1.1 × of 1 µm, 256 i
     return copy;
   };
   // 1 µm is the least spacing: 0.0011 mm opens, 0.0009 mm is refused in the tool's words.
-  assert.equal(readDesignDocument(withParams({ spacing: 0.0011 })).version, 26);
+  assert.equal(readDesignDocument(withParams({ spacing: 0.0011 })).version, 28);
   assert.throws(() => readDesignDocument(withParams({ spacing: 0.0009 })), { message: `Design pattern ${id}: The spacing must be at least 0.001 mm (it can be negative to go the other way).` });
   // 256 instances fit one Join; 257 are refused.
-  assert.equal(readDesignDocument(withParams({ count: 256 })).version, 26);
+  assert.equal(readDesignDocument(withParams({ count: 256 })).version, 28);
   assert.throws(() => readDesignDocument(withParams({ count: 257 })), { message: `Design pattern ${id}: A pattern makes at most 256, the body included; this one would make 257.` });
 });
 

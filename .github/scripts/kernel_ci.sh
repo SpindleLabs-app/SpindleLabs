@@ -206,7 +206,7 @@ describe)
   if [ -n "$failing" ]; then echo "Failed: $failing"; else echo "$3"; fi
   ;;
 filter)
-  grep -E '^(RESULT [a-z0-9-]+ (PASS|FAIL) [0-9]+|count ([0-9]+|error)|shards \[[0-9,]*\]|missed [0-9]+)$' || true
+  grep -E '^(RESULT [a-z0-9-]+ (PASS|FAIL) [0-9]+|count ([0-9]+|error)|shards \[[0-9,]*\]|missed [0-9]+|crates (none|(kernel|slice|fea)(,(kernel|slice|fea))*))$' || true
   ;;
 keygen|seal|seal-tar|unseal)
   exec python3 "$(dirname "${BASH_SOURCE[0]}")/seal.py" "$@"

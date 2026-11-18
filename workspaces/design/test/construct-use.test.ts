@@ -358,3 +358,30 @@ test("eyes: a construction's own and the Construction folder's hide it from the 
   // Deleted, its eye goes too.
   assert.equal(deleteItem(shut, plane).hidden, undefined);
 });
+
+test("version 28 (59a3): version 27 data using a construction plane, a Mirror across one or a construction's eye is refused; without, it opens as 28", async () => {
+  const { doc: d0, id: plane } = insertConstruct(partDocument("box", 40, 30, 20), "offset_plane", { plane: TOP }, 5, PLANE);
+  const settledDoc = await settled(d0);
+  const as27 = (d: DesignDocument) => ({ ...JSON.parse(JSON.stringify(d)), version: 27 });
+  const refused = (what: string) => ({ message: "Design data says version 27 but uses a construction plane or its eye, which version 28 brought", what });
+  // A plane alone, no sketch on it, no Mirror, no eye: 26 brought it, so version 27 data with it opens as 28.
+  assert.equal(readDesignDocument(as27(settledDoc)).version, 28);
+  const sketched = addConstructSketch(settledDoc, plane).doc;
+  assert.throws(() => readDesignDocument(as27(sketched)), { message: refused("sketch").message });
+  // Its `drawn` alone is enough: a version 27 reader never wrote it (the plane put back to XY, so only `drawn` says 28).
+  const drawnOnly = as27(sketched);
+  const sk = drawnOnly.timeline.features.at(-1);
+  sk.intent.parameters.plane = "XY";
+  sk.dependsOn = [];
+  assert.throws(() => readDesignDocument(drawnOnly), { message: refused("drawn").message });
+  const mirrored = insertDuplicates(settledDoc, ["body:feature-1"], `construct:${plane}`).doc;
+  assert.throws(() => readDesignDocument(as27(mirrored)), { message: refused("mirror").message });
+  // A Mirror across an origin plane is version 12's: still opens.
+  assert.equal(readDesignDocument(as27(insertDuplicates(settledDoc, ["body:feature-1"], "XY").doc)).version, 28);
+  assert.throws(() => readDesignDocument(as27(hideRow(settledDoc, plane, true))), { message: refused("eye").message });
+  assert.throws(() => readDesignDocument(as27(hideRow(settledDoc, EYE_FOLDERS.constructions, true))), { message: refused("folder").message });
+  // Another eye (the Bodies folder's) is older than 28: still opens.
+  assert.equal(readDesignDocument(as27(hideRow(settledDoc, EYE_FOLDERS.bodies, true))).version, 28);
+  // Each read back at 28 as saved.
+  for (const d of [sketched, mirrored, hideRow(settledDoc, plane, true)]) assert.deepEqual(readDesignDocument(JSON.parse(JSON.stringify(d))), d);
+});

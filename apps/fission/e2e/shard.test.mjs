@@ -3,8 +3,23 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { existsSync, readFileSync } from "node:fs";
-import { fileOf, shares, UNKNOWN } from "./shard.mjs";
+import { spawnSync } from "node:child_process";
+import { fileOf, refusal, shares, UNKNOWN } from "./shard.mjs";
 import { allChecks } from "./checks.mjs";
+
+test("a share refuses to run with ONLY set (it would skip whole files' checks and pass)", () => {
+  assert.equal(refusal({}), null);
+  assert.equal(refusal({ ONLY: "" }), null);
+  assert.match(refusal({ ONLY: "phone" }), /ONLY is set \("phone"\)/);
+  // The real script: red before it runs anything.
+  const r = spawnSync(process.execPath, [new URL("./shard.mjs", import.meta.url).pathname, "1", "1"], {
+    env: { ...process.env, ONLY: "phone" },
+    encoding: "utf8",
+  });
+  assert.equal(r.status, 1);
+  assert.match(r.stdout, /ONLY is set/);
+  assert.doesNotMatch(r.stdout, /e2e share/);
+});
 
 test("shares are dealt longest first onto the lightest share, worked by hand", () => {
   const cmds = ["node e2e/a.mjs", "node e2e/b.mjs", "node e2e/c.mjs", "node e2e/d.mjs"];
