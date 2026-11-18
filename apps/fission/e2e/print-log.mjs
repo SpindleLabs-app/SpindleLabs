@@ -6,6 +6,7 @@
 import assert from "node:assert/strict";
 import { preview } from "vite";
 import { launch } from "./browser.mjs";
+import { openSlice } from "./slice-page-lib.mjs";
 import { chooseFile, startWithBox } from "./start.mjs";
 
 const server = await preview({ preview: { port: 4921, strictPort: true }, logLevel: "error" });
@@ -53,12 +54,10 @@ for (const [width, tap] of [[1280, false], [375, true]]) {
       assert.equal(await page.textContent("#print-log-summary"), "No prints yet. Each time you save a print file from Slice for printing, it is added here.");
       await press("#print-log-close");
       // Slice and download: saved, and the result says it went into the log.
-      await chooseFile(page, "file-slice-print", tap);
-      await page.waitForSelector("#slice-print-dialog[open]");
-      await Promise.all([page.waitForEvent("download"), press("#slice-print-go")]);
-      await page.waitForFunction(() => document.getElementById("slice-print-status")?.textContent.startsWith("Saved"));
-      assert.match(await page.textContent("#slice-print-status"), /Added to your print log: say how it printed from File, Print log….$/);
-      await press("#slice-print-close");
+      await openSlice(page, tap);
+      await Promise.all([page.waitForEvent("download"), press("#slice-page-download")]);
+      await page.waitForFunction(() => document.getElementById("slice-page-status")?.textContent.startsWith("Saved"));
+      assert.match(await page.textContent("#slice-page-status"), /Added to your print log\.$/);
       await chooseFile(page, "file-print-log", tap);
       await page.waitForSelector("#print-log[open]");
       const [first] = await rows(page);
