@@ -1,0 +1,5 @@
+/* The words for a browser with no 3D drawing (src/no-3d.ts), in place of the loading shapes: shown at once, still, and
+   readable (the skeleton's own rules keep it invisible for 200 ms and let presses through). */
+#app-skeleton.no-3d, #viewport.no-3d { display: flex; flex-direction: column; justify-content: center; align-items: center; gap: 10px; padding: 24px; text-align: center; opacity: 1; animation: none; pointer-events: auto; }
+.no-3d p { margin: 0; max-width: 34rem; font-size: 15px; line-height: 1.5; }
+.no-3d p:first-child { font-size: 17px; font-weight: 600; }

@@ -170,7 +170,7 @@ test("Through all only on a Cut or Intersect, never symmetric; Join or a new bod
 test("the data: version 23 holds through and reads back the same; the reader refuses each break of it", () => {
   const plate = box([10, 10, 10], [0, 0, -5]);
   const cut = squareCut(plate.doc, 7, { operation: "cut", bodies: [plate.body] }, true);
-  assert.equal(DESIGN_VERSION, 25);
+  assert.equal(DESIGN_VERSION, 26);
   const saved = JSON.parse(JSON.stringify(cut.doc));
   assert.deepEqual(readDesignDocument(saved), cut.doc, "round trip");
   const withParams = (patch: (p: Record<string, unknown>) => Record<string, unknown>, version = 23) => ({
@@ -184,8 +184,8 @@ test("the data: version 23 holds through and reads back the same; the reader ref
   assert.throws(() => readDesignDocument(withParams((p) => ({ ...p, symmetric: true }))), { message: `Design feature ${cut.id} goes through all and is symmetric: Through all goes one way from its sketch` });
   // Controls: version 22 without it opens, upgraded; Intersect through all opens.
   const { through: _, ...plain } = saved.timeline.features.at(-1).intent.parameters;
-  assert.equal(readDesignDocument(withParams(() => plain, 22)).version, 25);
-  assert.equal(readDesignDocument(withParams((p) => ({ ...p, operation: "intersect" }))).version, 25);
+  assert.equal(readDesignDocument(withParams(() => plain, 22)).version, 26);
+  assert.equal(readDesignDocument(withParams((p) => ({ ...p, operation: "intersect" }))).version, 26);
 });
 
 const { Window } = await import("happy-dom");

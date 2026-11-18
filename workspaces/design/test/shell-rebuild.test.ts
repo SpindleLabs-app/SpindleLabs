@@ -1,6 +1,6 @@
 // Step 35h2c-app1: the Shell item built by the real rebuild on the real kernel
 // (rebuild.ts `shellRun`), its data (document.ts `checkShell`, Design data
-// version 25) and `insertShell` (shell.ts). Every volume is worked out by hand
+// version 26) and `insertShell` (shell.ts). Every volume is worked out by hand
 // from the box's sizes beside it: walls t thick inside a box take away the box
 // moved in by t on every closed face, so a w × d × h box loses
 // (w − 2t)(d − 2t)(h − 2t) sealed, (w − 2t)(d − 2t)(h − t) with its top open.
@@ -169,10 +169,10 @@ test("an open face an edit split in two is never guessed between: the Shell fail
   await cache.clear();
 });
 
-test("the Shell's data: written as version 25, read back the same; every part checked; version 24 data holding one refused", () => {
+test("the Shell's data: written as version 26, read back the same; every part checked; version 25 data holding one refused", () => {
   const { doc: d0, body } = cube();
   const { doc, id } = insertShell(d0, body, ["face:feature-1/top"], 1);
-  assert.equal(DESIGN_VERSION, 25);
+  assert.equal(DESIGN_VERSION, 26);
   const saved = JSON.parse(JSON.stringify(doc));
   assert.deepEqual(readDesignDocument(saved), doc);
   assert.deepEqual(shellOf(doc.timeline.features.find((f) => f.id === id)!), { body, faces: ["face:feature-1/top"], thickness: 1 });
@@ -195,11 +195,11 @@ test("the Shell's data: written as version 25, read back the same; every part ch
   assert.throws(broken((p) => (p.thickness = 0)), /wall thickness 0 is not from/);
   assert.throws(broken((p) => (p.thickness = Number.NaN)), /wall thickness null is not from|wall thickness NaN is not from/);
   assert.throws(broken((_, f) => (f.dependsOn = [])), /must depend on exactly the item that made the body it hollows \(feature-1\)/);
-  // Version 24 data has no Shell: one there is refused, not built by a reader that would drop it.
-  const old = { ...JSON.parse(JSON.stringify(doc)), version: 24 };
-  assert.throws(() => readDesignDocument(old), /Design data says version 24 but has a Shell, which version 25 brought/);
-  // Version 24 data with no Shell reads as it is.
-  assert.equal(readDesignDocument({ ...JSON.parse(JSON.stringify(d0)), version: 24 }).version, 25);
+  // Version 25 data has no Shell: one there is refused, not built by a reader that would drop it.
+  const old = { ...JSON.parse(JSON.stringify(doc)), version: 25 };
+  assert.throws(() => readDesignDocument(old), /Design data says version 25 but has a Shell, which version 26 brought/);
+  // Version 25 data with no Shell reads as it is.
+  assert.equal(readDesignDocument({ ...JSON.parse(JSON.stringify(d0)), version: 25 }).version, 26);
 });
 
 test("the wall thickness's limits, 1 um and 1 km, at 0.9 x and 1.1 x: inside allowed, outside refused by insertShell and by the reader", () => {

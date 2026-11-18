@@ -392,6 +392,17 @@ export interface ChamferResult {
   faces: ({ from: "face"; face: number } | { from: "edge"; edge: number })[];
 }
 
+/**
+ * A pattern as the kernel's `pattern_motions` takes it (step 61): a row along
+ * `along` (a unit direction), `count` instances `spacing` mm apart, with an
+ * optional second row `across` (a grid); or `count` instances round `axis`
+ * through `pivot`, over `angle` radians or, left out, evenly over a full
+ * turn. Counts include the original.
+ */
+export type PatternSpec =
+  | { linear: { along: [number, number, number]; spacing: number; count: number; across?: { along: [number, number, number]; spacing: number; count: number } } }
+  | { circular: { pivot: [number, number, number]; axis: [number, number, number]; count: number; angle?: number } };
+
 /** What kind of failure a kernel call had. */
 export type KernelErrorKind =
   /** The kernel refuses an input; the user's to fix. */

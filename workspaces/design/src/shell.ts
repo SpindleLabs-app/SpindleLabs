@@ -1,6 +1,6 @@
 // Shell (step 35h2c): one body hollowed out, walls of one thickness inside
 // it, the faces picked left open, as a timeline item (document.ts
-// `isShellItem`, Design data version 25); built in the rebuild (rebuild.ts
+// `isShellItem`, Design data version 26); built in the rebuild (rebuild.ts
 // `shellRun`) by the kernel's shell. Here: the item put in at the marker,
 // its description and its undo step. The open faces are held by their
 // design-wide names, as the screen names them, so a Shell finds them again

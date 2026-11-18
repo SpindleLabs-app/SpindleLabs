@@ -180,6 +180,25 @@ if (!WITH_HOME) {
     await second.context.close();
   });
 
+  await check("keys typed after a press on the picture never reach the design behind the screen (bug hunt 2026-11-18 D-1)", async () => {
+    const { context, page } = await newPage();
+    await homeShown(page);
+    await page.click("#home-close");
+    await startWithBox(page);
+    await chooseFile(page, "file-home"); // mid-session, so Insert Box is there to undo
+    await homeShown(page);
+    await page.mouse.click(640, 700); // the picture, not a button: the focus goes to the page's body
+    assert.equal(await page.evaluate(() => document.getElementById("home").contains(document.activeElement)), false, "the press left the focus outside the screen (the case being checked)");
+    await page.keyboard.press("ControlOrMeta+z"); // undid Insert Box unseen, and the autosave kept it so
+    await page.keyboard.press("e");
+    assert.equal(await page.evaluate(() => !document.getElementById("home").hidden), true, "the screen is still up");
+    await page.click("#home-close");
+    await homeGone(page);
+    assert.deepEqual(await page.$$eval("#timeline li[data-item]", (l) => l.length), 1, "Box 1 is still in the timeline");
+    assert.match(await page.getAttribute("#undo", "title"), /Undo Insert Box/);
+    await context.close();
+  });
+
   for (const [label, width, touch] of [["1280 px", 1280, false], ["393 px with taps", 393, true]]) {
     await check(`fits the screen at ${label}, both themes (screenshots with SHOTS)`, async () => {
       for (const scheme of ["dark", "light"]) {
