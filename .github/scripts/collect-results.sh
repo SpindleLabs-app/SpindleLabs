@@ -80,7 +80,9 @@ add_run() {
   elif [ -d golden ]; then
     echo "tested commit $short on $BRANCH, $today UTC ($RUN_URL)"$'\n'"no report: the golden job stopped before the run" >golden/latest.txt
   fi
-  for f in "$IN"/golden/seed-*; do
+  # golden-step/: the golden models' STEP files read by OpenCascade (the
+  # golden-step job's own artifact; H3c, 2026-11-18: it was never read).
+  for f in "$IN"/golden/seed-* "$IN"/golden-step/seed-*; do
     [ -d "$f" ] || continue
     mkdir -p failures && cp -r "$f" failures/
     echo "tested commit $COMMIT on branch $BRANCH ($RUN_URL)" >"failures/$(basename "$f")/commit.txt"

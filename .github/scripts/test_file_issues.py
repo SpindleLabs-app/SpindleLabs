@@ -468,9 +468,11 @@ class Checks(unittest.TestCase):
         self.assertEqual(kinds({}, {"test": "failure"}, {"endless-a-1", "endless-a-2"}, ["endless-a-1", "endless-a-2"]), [])
         # "fuzz-sessions" is its folder exactly: the oracle's folder doesn't explain a red sessions job...
         self.assertEqual(kinds({}, {"sessions": "failure"}, {"fuzz-sessions-oracle"}, ["fuzz-sessions-oracle"]), [red("sessions")])
-        # ...and explains its own job (it was missing from JOB_DIRS, so a second, misleading issue was filed), as golden/ does golden-step's.
+        # ...and explains its own job (it was missing from JOB_DIRS, so a second, misleading issue was filed), as golden-step/ does golden-step's.
         self.assertEqual(kinds({}, {"sessions-oracle": "failure"}, {"fuzz-sessions-oracle"}, ["fuzz-sessions-oracle"]), [])
-        self.assertEqual(kinds({}, {"golden-step": "failure"}, {"golden"}, ["golden"]), [])
+        self.assertEqual(kinds({}, {"golden-step": "failure"}, {"golden-step"}, ["golden-step"]), [])
+        # golden-step's artifact is its own folder (H3c: it was mapped to golden/, which hid a red golden-step job).
+        self.assertEqual(kinds({}, {"golden-step": "failure"}, {"golden"}, ["golden"]), [red("golden-step")])
         # The soak's problems are kinds of their own, beside a journey FAIL, numbers out.
         soak = json.dumps({"seed": 7, "problems": ["heap grew 12 MB over 60 cycles"]})
         self.assertEqual(kinds({"journeys/report.txt": "FAIL a: 5 clicks\n", "journeys/soak.json": soak}, {"journeys": "failure"}, set()),
