@@ -340,10 +340,19 @@ export function mountTestLabPage(ctx: WorkspaceContext): MountedWorkspace {
       );
       panel.append(held, loads);
     }
-    const words = el("p", "testlab-page-status");
+    const words = el("div", "testlab-page-status");
     words.setAttribute("role", "status");
     const problems = s === null ? [] : refused !== null ? [refused] : readyProblems(s, now?.lost ?? []);
-    words.textContent = [note, picking ? "Tap faces of the body to pick them; tap a picked face to let it go." : "", ...problems].filter((x) => x !== "").join(" ");
+    // What happened on its own line, then each thing to fix on a line of its own below it (SL #820 D-6); the spaces
+    // between keep the words apart for a screen reader and for anything reading the whole status.
+    const first = [note, picking ? "Tap faces of the body to pick them; tap a picked face to let it go." : ""].filter((x) => x !== "").join(" ");
+    if (first !== "") words.append(el("p", undefined, first));
+    if (problems.length > 0) {
+      if (first !== "") words.append(" ");
+      const list = el("ul", "testlab-page-problems");
+      problems.forEach((p, i) => list.append(...(i > 0 ? [" "] : []), el("li", undefined, p)));
+      words.append(list);
+    }
     drawState();
     const run = button("Run", "run", () => void runStudy());
     run.disabled = s === null || s.body === null || running !== null;
@@ -433,6 +442,7 @@ export function mountTestLabPage(ctx: WorkspaceContext): MountedWorkspace {
     if (viewShows !== now) ctx.viewport.showBody(now.faces.mesh);
     viewShows = now;
     for (const o of studyOverlays(s, now)) {
+      if (o.marks.length === 0) continue; // a tag over the body with nothing held or pushed there misleads (SL #820 D-6)
       ctx.viewport.setOverlay(o);
       shownOverlays.push(o.id);
     }
