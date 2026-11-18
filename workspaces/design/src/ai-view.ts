@@ -12,7 +12,7 @@
 import type { AIView, Command, CommandSpec } from "@fission/core";
 import { builtFrom, DESIGN_COMMANDS, DRAW_OPS, EXTRUDE_OP, extrudable, RENAME_OP } from "./commands.ts";
 import { inSketch } from "./face-edges.ts";
-import { bodyHidden, bodyIdOf, bodyNumbers, insertAt, isChamferItem, isCombineItem, isShellItem, isDuplicateItem, isMoveItem, isPatternItem, isOperationExtrude, isSketchItem, keptOf, partFeature, partOf, SKETCH_PLANES, type DesignDocument } from "./document.ts";
+import { bodyHidden, bodyIdOf, bodyNumbers, insertAt, isChamferItem, isCombineItem, isConstructItem, isShellItem, isDuplicateItem, isMoveItem, isOperationExtrude, isSketchItem, keptOf, partFeature, partOf, SKETCH_PLANES, type DesignDocument, isPatternItem } from "./document.ts";
 import { sketchSpot } from "./face-pick.ts";
 import type { Scene } from "./scene.ts";
 import { addSketch } from "./sketch.ts";
@@ -198,6 +198,7 @@ function timelineNotes(doc: DesignDocument, failed: ReadonlySet<string>, sizes: 
     // 26e (Q3): built on a suppressed item, it is greyed with it.
     if (item.greyed !== null) return `${label} Greyed: builds nothing while ${item.greyed}, which it is built on, is suppressed.`;
     if (isSketchItem(f)) return `${label} A sketch: builds no body.`;
+    if (isConstructItem(f)) return `${label} A construction plane, axis or point: builds no body.`;
     if (isCombineItem(f)) return `${label} A combine: makes no new body; ${item.failed ? "failed, so its bodies stay as they were" : "its target body is the result from here on, its tools used up unless kept"}.`;
     if (isOperationExtrude(f)) return `${label} An extrude that joins, cuts or intersects: makes no new body; ${item.failed ? "failed, so the bodies it works on stay as they were" : "the bodies it works on are the result from here on"}.`;
     if (isChamferItem(f)) return `${label} A chamfer: builds no body; ${item.failed ? "failed, so its body stays as it was" : "the body it chamfers is the result from here on"}.`;

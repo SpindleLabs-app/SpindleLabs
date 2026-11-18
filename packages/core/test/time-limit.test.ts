@@ -86,6 +86,9 @@ test("each call's units: the quick ones none, a body's view its mesh, a build it
   assert.equal(callUnits("body_stl", [7, "x"], sizeOf), 77);
   assert.equal(callUnits("body_step", [7], sizeOf), 77);
   assert.equal(callUnits("body_view", [8], sizeOf), 0, "an unknown handle is refused at once: the floor");
+  // A construction (step 59): each picked body's mesh, a body picked twice counted twice (77 + 77); values cost nothing.
+  assert.equal(callUnits("body_construct", [{ kind: "mid_plane", first: { pick: { body: 7, face: 0 } }, second: { pick: { body: 7, face: 1 } } }], sizeOf), 154);
+  assert.equal(callUnits("body_construct", [{ kind: "offset_plane", plane: { plane: { point: [0, 0, 0], normal: [0, 0, 1] } }, distance: 5 }], sizeOf), 0);
   assert.equal(callUnits("body_build", [lWithHole], sizeOf), 77);
   assert.equal(callUnits("export_stl", [lWithHole, "x"], sizeOf), 77);
   assert.equal(callUnits("make_extrude", [lWithHole.extrude.profile, 3], sizeOf), 7 * UNITS_PER_CORNER);

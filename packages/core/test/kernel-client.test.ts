@@ -739,6 +739,32 @@ test("body_measure with the app's handles: the kernel's numbers sent for each pi
     assert.equal(worker.posted.length, sent);
   }));
 
+test("body_construct with the app's handles (step 59): each pick's kernel number sent, values and the kind as given; an unknown body refused before sending", () =>
+  withFakeWorker(async (client, worker) => {
+    worker.ready(1);
+    const a = client.call("body_build", { box: { width: 10, depth: 10, height: 10 } });
+    worker.answer(1, 11);
+    const b = client.call("body_build", CUBE_MOVED);
+    worker.answer(2, 12);
+    assert.deepEqual([await a, await b], [1, 2]);
+    // Two picks on two bodies: each body as the kernel holds it, the face and edge numbers as given.
+    const mid = client.call("body_construct", { kind: "mid_plane", first: { pick: { body: 1, face: 5 } }, second: { pick: { body: 2, face: 4 } } });
+    assert.deepEqual(worker.posted.at(-1), { id: 3, op: "body_construct", args: [{ kind: "mid_plane", first: { pick: { body: 11, face: 5 } }, second: { pick: { body: 12, face: 4 } } }] });
+    const plane = { kind: "plane", point: [0, 0, 10], normal: [0, 0, 1], near: [5, 5, 10] };
+    worker.answer(3, plane);
+    assert.deepEqual(await mid, plane);
+    // A value and a number are sent untouched.
+    const offset = client.call("body_construct", { kind: "offset_plane", plane: { plane: { point: [0, 0, 0], normal: [0, 0, 1] } }, distance: 5 });
+    assert.deepEqual(worker.posted.at(-1), { id: 4, op: "body_construct", args: [{ kind: "offset_plane", plane: { plane: { point: [0, 0, 0], normal: [0, 0, 1] } }, distance: 5 }] });
+    worker.answer(4, { kind: "plane", point: [0, 0, 5], normal: [0, 0, 1], near: [0, 0, 5] });
+    await offset;
+    // An unknown body in any slot is refused in the kernel's words before anything is sent.
+    const sent = worker.posted.length;
+    await assert.rejects(client.call("body_construct", { kind: "point_at", point: { pick: { body: 9, vertex: 0 } } }), (e: KernelError) => e.kind === "unknown-body" && e.message === UNKNOWN_BODY_WORDS);
+    await assert.rejects(client.call("body_construct", { kind: "axis_through_points", first: { pick: { body: 1, vertex: 0 } }, second: { pick: { body: 8, vertex: 1 } } }), (e: KernelError) => e.kind === "unknown-body" && e.message === UNKNOWN_BODY_WORDS);
+    assert.equal(worker.posted.length, sent);
+  }));
+
 test("body_move with the app's handles (35f1f2a): the kernel's number sent, the moved body given a handle of its own, timed and sized as the body moved", (t) =>
   withFakeWorker(async (client, worker) => {
     t.mock.timers.enable({ apis: ["setTimeout"] });

@@ -36,8 +36,9 @@
 
 import { extrudeSketches, hasMoreProfiles, moreProfiles, profileParts, sameProfile, type ProfileRef } from "./extrude-profiles.ts";
 import { contactGroups, mergedOutline } from "./extrude-merge.ts";
-import { KERNEL_TOOK_TOO_LONG, KernelError, type BodyHandle, type BodySpec, type BodyView, type BooleanOp, type BooleanResult, type ChamferResult, type ChamferSize, type ShellResult, SHELL_INSIDE, type Motion, type KernelTouch, type KernelThin, type Feature, type KernelCalls, type KernelInput, type Outline, type Plane, type SketchXY } from "@fission/core";
-import { bodyIdOf, bodyItem, bodyNumbers, buildingItems, chamferOf, insideWallName, isChamferItem, isShellItem, shellOf, isPatternItem, isPiece, numberPieces, combineBodies, duplicatedBody, extrudeOperation, isCombineItem, isDuplicateItem, isOperationExtrude, isMoveItem, isSketchExtrude, isSketchItem, keptOf, ownShape, profileSizeRefused, sketchInputs, specOf, type CombineOperation, type DesignDocument, type KeptShape, type Sketch, type SketchPlane } from "./document.ts";
+import { KERNEL_TOOK_TOO_LONG, KernelError, type BodyHandle, type BodySpec, type BodyView, type BooleanOp, type BooleanResult, type ChamferResult, type ChamferSize, type ConstructGiven, type ConstructMake, type ShellResult, SHELL_INSIDE, type Motion, type KernelTouch, type KernelThin, type Feature, type KernelCalls, type KernelInput, type Outline, type Plane, type SketchXY } from "@fission/core";
+import { CONSTRUCT_KINDS, readConstructRef, sameAnswer, type ConstructAnswer } from "./construct-data.ts";
+import { bodyIdOf, bodyItem, bodyNumbers, buildingItems, chamferOf, constructOf, isChamferItem, isConstructItem, insideWallName, isShellItem, shellOf, isPatternItem, isPiece, numberPieces, combineBodies, duplicatedBody, extrudeOperation, isCombineItem, isDuplicateItem, isOperationExtrude, isMoveItem, isSketchExtrude, isSketchItem, keptOf, ownShape, profileSizeRefused, sketchInputs, specOf, type CombineOperation, type DesignDocument, type KeptShape, type Sketch, type SketchPlane } from "./document.ts";
 import { centredSpec, isSymmetricParams } from "./extrude-symmetric.ts";
 import { isThroughParams, throughDistance, throughWords, withDistance } from "./extrude-through.ts";
 import { carried, faceFeature, faceReference, frameNow, frameOf, isFaceSketch, movedFrame, planeWords, sketchMiddle, squared, type PlaneWarning, type SketchPlacement } from "./face-sketch.ts";
@@ -107,6 +108,10 @@ export type FeatureResult =
       constraints?: { message: string };
       /** A Move's (35e2): the bodies it moved, as they were before it, kept so the next rebuild needn't build them again. */
       holds?: BodyHandle[];
+      /** A construction's (step 59a1): where it is now, made again from its names, or held at its last answer (`held`). */
+      construct?: ConstructAnswer;
+      /** A construction held at its last answer (step 59a1): a name of what it is made from found nowhere now ("lost") or twice ("ambiguous"), the slot and the row's words. */
+      held?: { cause: "lost" | "ambiguous"; slot: string; message: string };
       /** A Chamfer's (44a-app3): the kernel's edges it cut on the body it holds, and the body it made, so Edit feature previews a new size on the same body. */
       chamfered?: { edges: number[]; body: BodyHandle };
       /** A Shell's (35h2c): the kernel's faces it opened on the body it holds, for the tool's preview of a new thickness on the same body. */
@@ -1325,7 +1330,9 @@ export function followedDoc(doc: DesignDocument, build: TimelineBuild): DesignDo
     moved ||= next !== s;
     return next;
   });
-  const followed = moved ? { ...doc, sketches } : doc;
+  const sketched = moved ? { ...doc, sketches } : doc;
+  // A construction made again keeps that answer as its last (step 59a1), where it is held should a name go later.
+  const followed = withAnswers(sketched, build);
   // A Move that moved new pieces of a body it holds (SL #583 item 2) holds them from now on, numbered first as the
   // workspace numbers them (`numberPieces`; its own call after this one gives them their remembered faces), so they
   // stay moved after this rebuild.
@@ -1358,6 +1365,19 @@ export function followedDoc(doc: DesignDocument, build: TimelineBuild): DesignDo
   let next = numberPieces(followed, Object.keys(build.bodies));
   for (const [f, takes] of takers) next = changedMove(next, f.id, moveValues(f), [...movedBodies(f), ...takes]);
   return next;
+}
+
+/** `doc` with each construction's last answer as `build` made it again (not held); `doc` itself when none changed. */
+function withAnswers(doc: DesignDocument, build: TimelineBuild): DesignDocument {
+  let changed = false;
+  const features = doc.timeline.features.map((f) => {
+    const r = build.results[f.id];
+    if (!isConstructItem(f) || r?.status !== "built" || r.construct === undefined || r.held !== undefined) return f;
+    if (sameAnswer(r.construct, f.intent.parameters.answer)) return f;
+    changed = true;
+    return { ...f, intent: { ...f.intent, parameters: { ...f.intent.parameters, answer: { ...r.construct } } } };
+  });
+  return changed ? { ...doc, timeline: { ...doc.timeline, features } } : doc;
 }
 
 /**
@@ -1541,6 +1561,7 @@ async function buildFeature(doc: DesignDocument, f: Feature, done: Record<string
     if (isCombineItem(f)) return await combineRun(doc, f, done, bodies, cache);
     if (isDuplicateItem(f)) return await copyBody(f, done, bodies, cache);
     if (isChamferItem(f)) return await chamferRun(doc, f, done, bodies, cache);
+    if (isConstructItem(f)) return await constructRun(f, done, bodies, cache, kernel);
     if (isPatternItem(f)) return await patternRun(doc, f, done, bodies, cache);
     if (isShellItem(f)) return await shellRun(doc, f, done, bodies, cache);
     if (!isSketchExtrude(f)) {
@@ -1999,6 +2020,101 @@ async function shellRun(doc: DesignDocument, f: Feature, done: Record<string, Fe
   const shown = named.renumbered.map((id) => `Body ${doc.bodies!.find((x) => x.id === id)!.number}`);
   const warn = shown.length === 0 ? {} : { pieces: { renumbered: named.renumbered, message: `${label}'s pieces changed since they were numbered, so ${shown.join(" and ")} may now be ${shown.length === 1 ? "another piece" : "other pieces"}: check the items that use ${shown.length === 1 ? "it" : "them"}, then edit ${label} to keep its pieces as they are now` } };
   return { status: "built", bodies: kept, holds: [b.handle], shelled: { open, bodies: [...out.bodies] }, ...(Object.keys(pieceFaces).length > 0 ? { pieceFaces } : {}), ...warn };
+}
+
+/** The origin's planes, axes and point as the kernel takes them: the planes facing as the sketch planes do (sketch.ts `planeOf`). */
+const ORIGIN_GIVEN: Record<string, ConstructGiven> = {
+  XY: { plane: { point: [0, 0, 0], normal: [0, 0, 1] } },
+  XZ: { plane: { point: [0, 0, 0], normal: [0, -1, 0] } },
+  YZ: { plane: { point: [0, 0, 0], normal: [1, 0, 0] } },
+  X: { axis: { point: [0, 0, 0], direction: [1, 0, 0] } },
+  Y: { axis: { point: [0, 0, 0], direction: [0, 1, 0] } },
+  Z: { axis: { point: [0, 0, 0], direction: [0, 0, 1] } },
+  O: { point: [0, 0, 0] },
+};
+
+/**
+ * An earlier construction's answer as the kernel takes it back (kernel #220's
+ * bug hunt): only its point and normal or direction, any other key being
+ * refused, and its `near` (where it is drawn, beside what it was made from)
+ * as its point, not its foot, so a midplane of it sees it from where it lies.
+ */
+export function givenOf(a: ConstructAnswer): ConstructGiven {
+  if (a.kind === "plane") return { plane: { point: a.near, normal: a.normal } };
+  if (a.kind === "axis") return { axis: { point: a.near, direction: a.direction } };
+  return { point: a.point };
+}
+
+/**
+ * A construction's result (step 59a1): greyed while an item it is made from
+ * is suppressed or greyed (Q3, as a sketch by its face); else each name found
+ * again on the bodies built so far (rule 3 for a face, rule 5 for an edge, a
+ * corner where all its edges meet) or an earlier construction's answer, and
+ * the kernel's `body_construct` asked, its answer the item's now. A name found
+ * nowhere or twice holds the item at its last answer (`held`), never moved
+ * onto something else; a construction the kernel refuses (planes now
+ * parallel) fails the item in the kernel's words.
+ */
+async function constructRun(f: Feature, done: Record<string, FeatureResult>, bodies: Bodies, cache: BodyCache, kernel: KernelCalls): Promise<FeatureResult> {
+  for (const id of f.dependsOn) {
+    const r = done[id];
+    if (r?.status === "suppressed") return { status: "greyed", by: id };
+    if (r?.status === "greyed") return { status: "greyed", by: r.by };
+  }
+  const label = f.provenance.self.label;
+  const c = constructOf(f);
+  const held = (cause: "lost" | "ambiguous", slot: string, message: string): FeatureResult => ({ status: "built", construct: c.answer, held: { cause, slot, message } });
+  const lostWords = (slot: string) => `${label} can't find its ${slot} any more: an edit before it changed or removed it, so it stays where it was`;
+  const twiceWords = (slot: string) => `${label} can't tell which is its ${slot} any more: an edit before it made two alike, so it stays where it was`;
+  // Every body built so far, named as the screen names them (as a Chamfer's edges and a pin's are found).
+  const ids = Object.keys(bodies);
+  let named: { list: NamedBody[]; names: DesignNames } | null = null;
+  const names = async () => {
+    if (named === null) {
+      const list = await Promise.all(ids.map((k) => namedOf(k, bodies[k], cache, 0)));
+      named = { list, names: designNames(list) };
+    }
+    return named;
+  };
+  const make: Record<string, unknown> = { kind: c.make };
+  for (const slot of CONSTRUCT_KINDS[c.make].slots as readonly string[]) {
+    const ref = readConstructRef(c.inputs[slot])!;
+    if (ref.kind === "origin") make[slot] = ORIGIN_GIVEN[ref.name];
+    else if (ref.kind === "construct") {
+      const r = done[ref.item];
+      if (r?.status !== "built" || r.construct === undefined) return held("lost", slot, r === undefined ? `${label}'s ${slot} was deleted, so it stays where it was` : `${label}'s ${slot} is not built, so it stays where it was`);
+      make[slot] = givenOf(r.construct);
+    } else if (ref.kind === "face") {
+      const { list, names: n } = await names();
+      const found = resolveFaceName(list, n, { name: ref.name });
+      if ("lost" in found) return held("lost", slot, lostWords(slot));
+      // A face split in two (or found whole on one piece of two) is never guessed between.
+      if ("ambiguous" in found || found.warning !== null) return held("ambiguous", slot, twiceWords(slot));
+      make[slot] = { pick: { body: bodies[ids[found.body]].handle, face: found.index } };
+    } else {
+      const { list, names: n } = await names();
+      const edges = (ref.kind === "edge" ? [ref.held] : ref.edges).map((e) => heldEdgeAt(e, n));
+      const why = edges.find((e) => "cause" in e);
+      if (why !== undefined && "cause" in why) return why.cause === "point-lost" ? held("lost", slot, lostWords(slot)) : held("ambiguous", slot, twiceWords(slot));
+      const found = edges as { body: number; edge: number }[];
+      const body = found[0].body;
+      if (found.some((e) => e.body !== body)) return held("lost", slot, lostWords(slot));
+      if (ref.kind === "edge") make[slot] = { pick: { body: bodies[ids[body]].handle, edge: found[0].edge } };
+      else {
+        // The corner where every one of its edges ends: exactly one, or it is lost (they no longer meet) or ambiguous.
+        const view = list[body].view;
+        const ends = found.map((e) => new Set(view.edge_vertices[e.edge] ?? []));
+        const shared = [...ends[0]].filter((v) => ends.every((set) => set.has(v)));
+        if (shared.length === 0) return held("lost", slot, lostWords(slot));
+        if (shared.length > 1) return held("ambiguous", slot, twiceWords(slot));
+        make[slot] = { pick: { body: bodies[ids[body]].handle, vertex: shared[0] } };
+      }
+    }
+  }
+  if (c.distance !== undefined) make.distance = c.distance;
+  if (c.angle !== undefined) make.angle = c.angle;
+  const answer = await kernel.call("body_construct", make as ConstructMake);
+  return { status: "built", construct: answer as ConstructAnswer };
 }
 
 /** Combine's operations as the kernel names them. */
