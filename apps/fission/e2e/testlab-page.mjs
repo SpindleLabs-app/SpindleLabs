@@ -14,7 +14,7 @@
 //   runs off the side. The picking hint over the view (T5c5) shows inside the window, uncovered, at both widths.
 // - The results card (Ben, 19 Nov): the verdict, Body 1, PLA, the 5 kg on the top and the front held, and where it would
 //   start to break; 1,000 kg says Would break with no stress or bend on the card, at 1280 and 375 px.
-// Screenshots: E2E_SHOTS=<dir> saves testlab-1280.png, testlab-taller-1280.png, testlab-lost-1280.png, testlab-375.png, the picking hint over the view as testlab-hint-1280.png and testlab-hint-375.png, and the cards as testlab-card-holds-1280.png and testlab-card-breaks-{1280,375}.png (with testlab-page-breaks-*.png).
+// Screenshots: E2E_SHOTS=<dir> saves testlab-1280.png, testlab-taller-1280.png, testlab-lost-1280.png, testlab-375.png, the picking hint over the view as testlab-hint-1280.png and testlab-hint-375.png, and the cards as testlab-card-holds-1280.png and testlab-card-breaks-{1280,375}.png (with testlab-page-breaks-*.png), and the suggestions as testlab-suggest-{1280,375}.png.
 import assert from "node:assert/strict";
 import { preview } from "vite";
 import { launch } from "./browser.mjs";
@@ -220,6 +220,32 @@ async function breaks(page, tap, shot) {
   await dotsExplained(page);
   if (shots) await page.locator(".testlab-results-card").screenshot({ path: `${shots}/${shot}` });
   if (shots) await page.screenshot({ path: `${shots}/${shot.replace("card", "page")}` });
+  await suggestions(page, shot.replace("card-breaks", "suggest"));
+}
+
+/**
+ * T5c6: under the card, ways to make it hold, open because it would break: thicker at the red dot (no number), stronger
+ * materials and the layers (numbers from the result), and the load that gives a safety factor of 2, in kg: SF / 2
+ * times the 1,000 kg. Wholly on screen once scrolled to, nothing running off its side.
+ */
+async function suggestions(page, shot) {
+  const box = page.locator(".testlab-suggest");
+  assert.equal(await box.evaluate((d) => d.open), true, "open when it would break");
+  assert.equal(await box.locator("summary").textContent(), "How to make it hold");
+  const ids = await box.locator("li").evaluateAll((lis) => lis.map((li) => li.dataset.suggest));
+  for (const id of ["thicker", "material", "layers", "load"]) assert.ok(ids.includes(id), `${id} in ${ids}`);
+  assert.equal(await box.locator("[data-suggest=thicker] .testlab-suggest-gain").count(), 0, "no number for a change of shape");
+  const factor = Number((await page.locator(".testlab-results-factor-value").textContent()).replace(/,/g, ""));
+  const words = await box.locator("[data-suggest=load] p").textContent();
+  const kg = Number(words.match(/keep the load to about ([\d,.]+) kg\./)[1].replace(/,/g, ""));
+  assert.ok(Math.abs(kg - (1000 * factor) / 2) <= 0.01 * kg, `${kg} kg against 1,000 × ${factor} / 2`);
+  await box.scrollIntoViewIfNeeded();
+  const r = await box.evaluate((d) => {
+    const b = d.getBoundingClientRect();
+    return { left: b.left, right: b.right, width: innerWidth, spill: d.scrollWidth - d.clientWidth };
+  });
+  assert.ok(r.left >= 0 && r.right <= r.width && r.spill <= 0, `the suggestions on screen: ${JSON.stringify(r)}`);
+  if (shots) await box.screenshot({ path: `${shots}/${shot}` });
 }
 
 try {

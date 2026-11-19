@@ -18,6 +18,7 @@ import { weakerWay } from "@fission/core";
 import { mpaWords } from "./materials.ts";
 import { bends, bentMesh, boxDiagonal, drawnScale, ESTIMATE, figure, safetyBand, safetyWords, scaleColour, vertexColours, type SafetyBand } from "./run.ts";
 import { DIRECTION_WORDS, newtons, newtonWords, type Load, type Study } from "./study.ts";
+import { suggestSection } from "./suggest.ts";
 
 /** What the view's colours show. */
 export type ColourBy = "stress" | "bend";
@@ -252,6 +253,9 @@ export function resultSection(doc: Document, r: Result, by: ColourBy, stale: boo
   foot.append(el("span", "testlab-results-estimate", "An estimate, not a promise."), copy, copied);
   card.append(foot);
   box.append(card);
+  // T5c6: ways to make it hold more, read from this result (suggest.ts).
+  const help = suggestSection(doc, r);
+  if (help !== null) box.append(help);
   // The colour scale: what the colours mean, from 0 to the largest.
   const choose = el("div", "testlab-results-by");
   choose.setAttribute("role", "group");
