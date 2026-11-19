@@ -23,7 +23,7 @@ import type { AnalysisOverlay, FaceReference, ListedObject, MountedWorkspace, Ov
 import { KernelError, KERNEL_TEST_STOPPED, materialLibrary } from "@fission/core";
 import { GEOMETRY_OWNER, studyNow, studyOn, type StudyNow } from "./faces.ts";
 import { materialWords, sourceLines, testMaterials } from "./materials.ts";
-import { RESULT_OVERLAY, resultColours, resultOf, resultOverlay, resultSection, type ColourBy, type Result } from "./results.ts";
+import { resultColours, resultOf, resultOverlays, resultSection, setUpOf, type ColourBy, type Result } from "./results.ts";
 import { answerProblem, STAGE_WORDS, stressTestOf } from "./run.ts";
 import {
   addLoad,
@@ -434,8 +434,10 @@ export function mountTestLabPage(ctx: WorkspaceContext): MountedWorkspace {
       if (viewShows !== result) ctx.viewport.showBody(result.mesh);
       viewShows = result;
       ctx.viewport.showColourMap?.(resultColours(result, colourBy));
-      ctx.viewport.setOverlay(resultOverlay(result));
-      shownOverlays.push(RESULT_OVERLAY);
+      for (const o of resultOverlays(result)) {
+        ctx.viewport.setOverlay(o);
+        shownOverlays.push(o.id);
+      }
       return;
     }
     if (s === null || now === null) return;
@@ -562,7 +564,7 @@ export function mountTestLabPage(ctx: WorkspaceContext): MountedWorkspace {
         const wrong = answerProblem(out.answer, out.strength);
         if (wrong !== null) said = wrong;
         else {
-          got = resultOf(out.answer, { name: material.name, mechanical });
+          got = resultOf(out.answer, { name: material.name, mechanical }, setUpOf(s));
           said = "";
         }
       }
