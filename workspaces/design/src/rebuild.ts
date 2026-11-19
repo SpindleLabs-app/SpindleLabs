@@ -46,7 +46,7 @@ import { pinNow, pointWords, vertexNames, type PinNow, type PointWarning } from 
 import type { BodyNames } from "./naming.ts";
 import { combineNames, designNames, resolveFaceName, shownFaces, type DesignNames, type FaceNames, type NamedBody } from "./boolean-names.ts";
 import { DESIGN_EDGE, heldEdgeAt, isHeldDesignName, pinNameNow, withHeldEdges } from "./design-edges.ts";
-import { copiedNames, frameOfFace, framesOfResult, namedBody, namedFrame, namesOfBody, reversedOfResult } from "./built-body.ts";
+import { copiedNames, frameOfFace, framesOfResult, namedBody, namedFrame, namesOfBody, originFrameNow, reversedOfResult } from "./built-body.ts";
 import { pieceIds } from "./boolean-names.ts";
 import { cornerOrder, edgeNamed, edgeShape, madeKind, madePoints, profileCurves, placesOf, projectedOpen, projectionWords, type HeldCause, type ProjectionWarning } from "./projection.ts";
 import { changedMove, movedBodies, moveMotions, movedSpec, moveValues } from "./move.ts";
@@ -106,6 +106,8 @@ export type FeatureResult =
        */
       solved?: { point: string; at: SketchXY }[];
       constraints?: { message: string };
+      /** A face sketch marked as drawn before version 22 (`SketchFace.first`) on which the mark changes nothing now (SL #759 item 2): `followedDoc` takes it off. */
+      unmark?: true;
       /** A Move's (35e2): the bodies it moved, as they were before it, kept so the next rebuild needn't build them again. */
       holds?: BodyHandle[];
       /** A construction's (step 59a1): where it is now, made again from its names, or held at its last answer (`held`). */
@@ -1254,7 +1256,12 @@ async function placeSketch(f: Feature, done: Record<string, FeatureResult>, bodi
     const outward = view.face_normals[face]!;
     const placement = { plane: frameNow(squared(p.frame)!, outward, view.face_centroids[face], carry), side: p.side };
     const warn = split ? { plane: { cause: "plane-split" as const, face: plane, message: planeWords("plane-split", f.provenance.self.label, whole) } } : {};
-    return { status: "built", placement, ...warn, ...(await follow(f, index, done, bodies, cache, placement.plane, featureId, kernel)) };
+    // SL #759 item 2: the mark from before version 22 changes nothing while no face built holds the sketch's name as an
+    // input face that is not its first, so `followedDoc` takes it off (`unmark`) and a later merge carries the sketch by
+    // the part it was drawn on, as one drawn today. The version 21 upgrade marks every face sketch; most were never on a
+    // merged face.
+    const unmark = p.first === true && (name === undefined || !Object.values(bodies).some((b) => b.named?.faces.some((x) => (x.origins?.findIndex((o) => o.names.includes(name)) ?? -1) > 0)));
+    return { status: "built", placement, ...warn, ...(unmark && { unmark: true as const }), ...(await follow(f, index, done, bodies, cache, placement.plane, featureId, kernel)) };
   };
   // SL #430: a reference made on a piece (it holds a tag) is read by rule 3 even when no Combine is built now (the one
   // that split its face suppressed, or no longer touching): found on the face whole again, with a warning when that face
@@ -1302,10 +1309,15 @@ async function placeSketch(f: Feature, done: Record<string, FeatureResult>, bodi
  * Sketch `content` with each of its pinned points where `r` (its result in
  * a rebuild) found it (26f), and each projection that found its edge where
  * that edge is seen now, a circle's radius too (27d); `content` itself
- * when nothing moved.
+ * when nothing moved; and its mark from before version 22 taken off when it changes nothing (`unmark`, SL #759 item 2).
  */
 export function followedSketch(content: Sketch, r: FeatureResult | undefined): Sketch {
-  if (r?.status !== "built" || (!r.pinned && !r.projected)) return content;
+  if (r?.status !== "built") return content;
+  if (r.unmark && content.face?.first === true) {
+    const { first: _, ...face } = content.face;
+    content = { ...content, face };
+  }
+  if (!r.pinned && !r.projected) return content;
   return movedTo(content, [...(r.pinned ?? []), ...(r.projected ?? []).flatMap((q) => q.points), ...(r.solved ?? [])], (r.projected ?? []).flatMap((q) => (q.radius === undefined ? [] : [{ projection: q.id, radius: q.radius }])));
 }
 
@@ -2429,25 +2441,43 @@ export function missesMessage(doc: DesignDocument, f: Feature, misses: readonly 
 /**
  * A boolean result's face names with, on each face merged from several
  * input faces lying level (the history's `also`), the input faces it lies on
- * (boolean-names.ts `FaceNames.origins`, SL #502) and its frame then.
+ * (boolean-names.ts `FaceNames.origins`, SL #502) and its frame then. An
+ * input face that was itself merged by an earlier boolean hands on its own
+ * origins in its place, each one's frame brought to now (`originFrameNow`),
+ * on a face this boolean merges or leaves as it was (SL #759 item 1): the
+ * input faces last through a later Cut or Join of the body, so a sketch on
+ * a merged face keeps following the part it was drawn on.
  */
 function withOrigins(faces: readonly FaceNames[], h: BooleanResult["history"][number] | undefined, inputs: readonly NamedBody[], frames: readonly (Plane | null)[] | undefined, built: ReadonlyMap<BodyHandle, BuiltBody>): readonly FaceNames[] {
-  if (h?.also === undefined || !h.also.some((a) => a.length > 0)) return faces;
+  if (h === undefined) return faces;
   const byHandle = new Map(inputs.map((x) => [x.handle, x] as const));
+  const had = (from: { body: BodyHandle; face: number } | undefined) => (from === undefined ? undefined : byHandle.get(from.body)?.faces[from.face]?.origins);
+  const originsOf = (from: { body: BodyHandle; face: number } | undefined): NonNullable<FaceNames["origins"]> => {
+    const input = from === undefined ? undefined : byHandle.get(from.body);
+    if (input === undefined) return [];
+    // Its own frame then (SL #707), for a sketch named after it to be carried by its input's Moves.
+    const b = built.get(from!.body);
+    const frame = b === undefined ? null : frameOfFace(b, from!.face);
+    const merged = input.faces[from!.face];
+    if (merged?.origins !== undefined)
+      return merged.origins.map((o) => {
+        const now = originFrameNow(frame, merged.frame, o.frame ?? null);
+        return { names: o.names, view: o.view, face: o.face, ...(now !== null && { frame: now }), seen: o.seen ?? o.frame ?? WORLD_FRAME };
+      });
+    return [{ names: merged?.names ?? [], view: input.view, face: from!.face, ...(frame !== null && { frame }) }];
+  };
+  if (!h.faces.some((from, i) => (h.also?.[i]?.length ?? 0) > 0 || had(from) !== undefined)) return faces;
   return faces.map((face, i) => {
-    const more = h.also![i] ?? [];
-    if (more.length === 0) return face;
-    const origins = [h.faces[i], ...more].flatMap((from) => {
-      const input = from === undefined ? undefined : byHandle.get(from.body);
-      // Its own frame then (SL #707), for a sketch named after it to be carried by its input's Moves.
-      const b = built.get(from.body);
-      const frame = b === undefined ? null : frameOfFace(b, from.face);
-      return input === undefined ? [] : [{ names: input.faces[from.face]?.names ?? [], view: input.view, face: from.face, ...(frame !== null && { frame }) }];
-    });
+    const more = h.also?.[i] ?? [];
+    if (more.length === 0 && had(h.faces[i]) === undefined) return face;
+    const origins = [h.faces[i], ...more].flatMap(originsOf);
     const frame = frames?.[i] ?? null;
     return { ...face, origins, ...(frame !== null && { frame }) };
   });
 }
+
+/** The world's frame: an origin's frame when nothing moved it. */
+const WORLD_FRAME: Plane = { origin: [0, 0, 0], xAxis: [1, 0, 0], normal: [0, 0, 1] };
 
 /** Each piece the build made, by id, with the shown names of its faces as its item made them (hunt 11-06). */
 export function builtPieceFaces(build: Pick<TimelineBuild, "results">): Map<string, string[]> {
