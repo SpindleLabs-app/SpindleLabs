@@ -20,6 +20,7 @@ export * from "./suggest.ts";
 export { readTestLabFlag, setTestLabShown, TESTLAB_KEY, testlabShown } from "./flag.ts";
 export { BODIES_LISTER, GETTING_READY, HELD_OVERLAY, loadOverlay, mountTestLabPage, pickedFace, STOPPED, studyNode, studyOverlays, type Picking } from "./page.ts";
 export * from "./study.ts";
+export * from "./test-file.ts";
 
 const SUMMARY = "Finite element analysis on the kernel's exact geometry: static stress first, then thermal and modal.";
 

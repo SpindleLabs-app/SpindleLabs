@@ -5,7 +5,7 @@
 // unlisted workspaces, no Split) is in e2e/workspace-list.mjs.
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { listedWorkspaces, PUBLIC_WORKSPACES } from "../src/listed-workspaces.ts";
+import { greyedInMenu, listedWorkspaces, PUBLIC_WORKSPACES } from "../src/listed-workspaces.ts";
 
 const TEN = ["design", "render", "simulate", "manufacture", "laser", "slice", "circuit", "vector", "image", "layout"].map((id) => ({ id }));
 
@@ -25,4 +25,17 @@ test("the switch lists all ten in the app's order, a copy (the list given is nev
 test("the app's order is kept, not the public list's; a workspace the app lacks is not made up", () => {
   assert.deepEqual(listedWorkspaces([{ id: "slice" }, { id: "image" }, { id: "design" }], false).map((w) => w.id), ["slice", "design"]);
   assert.deepEqual(listedWorkspaces([{ id: "image" }], false), []);
+});
+
+test("hand-worked: a placeholder is greyed unless its switch turned its page on; a working workspace never is", () => {
+  const testlab = { id: "simulate", status: "placeholder" };
+  const design = { id: "design", status: "real" };
+  // ?all-workspaces alone: TestLab is still the placeholder, so greyed with its date.
+  assert.equal(greyedInMenu(testlab, () => false), true);
+  // ?testlab (or ?all, which turns it on): its page opens, so not greyed.
+  assert.equal(greyedInMenu(testlab, (id) => id === "simulate"), false);
+  // Another workspace's switch leaves TestLab greyed (the switch is per workspace).
+  assert.equal(greyedInMenu(testlab, (id) => id === "laser"), true);
+  // A workspace that is built is never greyed, whatever the switches say.
+  assert.equal(greyedInMenu(design, () => false), false);
 });

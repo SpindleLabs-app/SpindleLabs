@@ -12,9 +12,11 @@
 //   lost, said in words; Undo brings them back.
 // - At 375 px with taps: picking puts the Properties sheet away so the body can be tapped; Run shows the result; nothing
 //   runs off the side. The picking hint over the view (T5c5) shows inside the window, uncovered, at both widths.
+// - Export test file (Ben, 19 Nov): the card's button saves body-1.testlab.json with the run in it, at 1280 and 375 px.
 // - The results card (Ben, 19 Nov): the verdict, Body 1, PLA, the 5 kg on the top and the front held, and where it would
 //   start to break; 1,000 kg says Would break with no stress or bend on the card, at 1280 and 375 px.
 // Screenshots: E2E_SHOTS=<dir> saves testlab-1280.png, testlab-taller-1280.png, testlab-lost-1280.png, testlab-375.png, the picking hint over the view as testlab-hint-1280.png and testlab-hint-375.png, and the cards as testlab-card-holds-1280.png and testlab-card-breaks-{1280,375}.png (with testlab-page-breaks-*.png), and the suggestions as testlab-suggest-{1280,375}.png.
+import { readFileSync, writeFileSync } from "node:fs";
 import assert from "node:assert/strict";
 import { preview } from "vite";
 import { launch } from "./browser.mjs";
@@ -197,6 +199,37 @@ async function cardInSight(page) {
 }
 
 /**
+ * Export test file (Ben, 19 Nov): the button on the card, wholly on screen, saves one file named for the part with the
+ * whole run in it: the 5 kg (5 × 9.80665 = 49.03 N) down on the top as sent, the part as STEP, the card's summary.
+ * E2E_SHOTS keeps the file beside the screenshots (testlab-export-<width>.testlab.json), to run again with
+ * `npm run testlab-rerun -w @fission/testing -- <file>`.
+ */
+async function exported(page, tap, width) {
+  const button = page.locator(".testlab-results-card [data-testlab=export-file]");
+  await button.scrollIntoViewIfNeeded();
+  const r = await button.evaluate((b) => {
+    const box = b.getBoundingClientRect();
+    return { left: box.left, right: box.right, top: box.top, bottom: box.bottom, width: innerWidth, height: innerHeight };
+  });
+  assert.ok(r.left >= 0 && r.right <= r.width && r.top >= 0 && r.bottom <= r.height, `Export test file on screen: ${JSON.stringify(r)}`);
+  const [download] = await Promise.all([page.waitForEvent("download"), tap ? button.tap() : button.click()]);
+  assert.equal(download.suggestedFilename(), "body-1.testlab.json");
+  const text = readFileSync(await download.path(), "utf8");
+  const file = JSON.parse(text);
+  assert.equal(file.format, "spindlelabs-testlab-run");
+  assert.equal(file.version, 1);
+  assert.match(file.part.step, /^ISO-10303-21;/);
+  assert.equal(file.sent.loads.length, 1);
+  assert.ok(Math.abs(Math.hypot(...file.sent.loads[0].force) - 49.03325) < 1e-9, JSON.stringify(file.sent.loads));
+  assert.ok(Math.abs(file.sent.loads[0].force[2] + 49.03325) < 1e-9, "straight down");
+  assert.equal(file.answer.maxVonMises, Math.max(...file.answer.vonMises));
+  assert.match(file.summary, /^TestLab result: Holds \(safety factor [\d.,]+\)\nPart: Body 1\nMade of: PLA, printed\n/);
+  assert.deepEqual(Object.keys(file.project.workspaces).sort(), ["design", "simulate"]);
+  assert.equal(await page.locator(".testlab-results-copied").textContent(), "Test file saved.");
+  if (shots) writeFileSync(`${shots}/testlab-export-${width}.testlab.json`, text);
+}
+
+/**
  * Ben's case (19 Nov): far past breaking. 1,000 kg on the box's top: about 200 times the 5 kg that gave a factor near
  * 100, so a factor near 0.5 or under: "Would break", where it would start to break in kg, and never the linear stress
  * or bend on the card (not real once broken); the details say so first.
@@ -267,6 +300,7 @@ try {
     assert.equal(await page.getAttribute(".testlab-page-state", "data-stale"), "false");
     if (shots) await page.screenshot({ path: `${shots}/testlab-1280.png` });
     if (shots) await page.locator(".testlab-results-card").screenshot({ path: `${shots}/testlab-card-holds-1280.png` });
+    await exported(page, false, 1280);
     // Colour by Bend: the legend runs 0 mm to the biggest bend.
     await page.click("[data-testlab-by=bend]");
     await until(page, () => /^0 mm.* mm$/.test(document.querySelector(".testlab-results-legend")?.textContent ?? ""), null, "the bend's legend");
@@ -317,6 +351,8 @@ try {
     const wide = await page.evaluate(() => document.documentElement.scrollWidth);
     assert.ok(wide <= 375, `the page is ${wide} px wide`);
     if (shots) await page.screenshot({ path: `${shots}/testlab-375.png` });
+    await exported(page, tap, 375);
+    if (shots) await page.locator(".testlab-results-card").screenshot({ path: `${shots}/testlab-card-export-375.png` });
     await breaks(page, tap, "testlab-card-breaks-375.png");
     await context.close();
   });
