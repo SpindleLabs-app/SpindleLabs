@@ -25,7 +25,7 @@ class Filter(unittest.TestCase):
     def test_public_lines_pass(self):
         lines = "RESULT clippy PASS 12\nRESULT boolean-facts FAIL 340\nRESULT mutants-shard-3 PASS 900\ncount 41\ncount error\nshards [0,1]\nshards []\nmissed 0\n"
         # Which crates the mutants plan found changed lines in (test audit E-3): fixed names only.
-        lines += "crates none\ncrates kernel\ncrates slice,fea\ncrates kernel,slice,fea\n"
+        lines += "crates none\ncrates kernel\ncrates slice,fea\ncrates kernel,slice,fea\ncrates kernel,iga\n"
         self.assertEqual(filtered(lines), lines)
 
     def test_leaks_are_dropped(self):
