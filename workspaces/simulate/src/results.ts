@@ -52,8 +52,10 @@ export function setUpOf(study: Pick<Study, "body" | "fixtures" | "loads">): RunS
   };
 }
 
-/** The overlay that marks where the biggest stress and the biggest bend are. */
+/** The overlay of the red dot where the stress is biggest. */
 export const RESULT_OVERLAY = "testlab-result";
+/** The overlay of the violet dot where the part moves most. */
+export const BEND_OVERLAY = "testlab-result-bend";
 
 /** A checked answer ready to draw. */
 export function resultOf(answer: StressTestResult, material: Result["material"], setUp: RunSetUp): Result {
@@ -80,18 +82,28 @@ function drawnAt(r: Result, at: readonly number[]): [number, number, number] {
   return [p[best] + r.scale * u[best], p[best + 1] + r.scale * u[best + 1], p[best + 2] + r.scale * u[best + 2]];
 }
 
-/** Dots at the biggest stress (red) and the biggest bend (violet), drawn over the coloured part. */
-export function resultOverlay(r: Result): AnalysisOverlay {
-  return {
-    id: RESULT_OVERLAY,
-    label: "Biggest stress and bend",
-    detail: "The red dot is where the stress is biggest; the violet dot is where the part moves most.",
-    marks: [],
-    places: [
-      { severity: "info", point: drawnAt(r, r.answer.maxDisplacementAt) },
-      { severity: "error", point: drawnAt(r, r.answer.maxVonMisesAt) },
-    ],
-  };
+/**
+ * The two dots over the coloured part, each its own overlay so the view's legend has a line for each in its dot's colour
+ * (Ben, 19 Nov: one red line for both left the violet dot unexplained): red at the biggest stress, violet at the
+ * biggest bend.
+ */
+export function resultOverlays(r: Result): AnalysisOverlay[] {
+  return [
+    {
+      id: RESULT_OVERLAY,
+      label: "● Red dot: biggest stress",
+      detail: "The red dot is where the stress is biggest: where the part would start to break first.",
+      marks: [],
+      places: [{ severity: "error", point: drawnAt(r, r.answer.maxVonMisesAt) }],
+    },
+    {
+      id: BEND_OVERLAY,
+      label: "● Violet dot: biggest bend",
+      detail: "The violet dot is where the part moves most under the loads.",
+      marks: [],
+      places: [{ severity: "info", point: drawnAt(r, r.answer.maxDisplacementAt) }],
+    },
+  ];
 }
 
 /** "Drawn 2,000 times bigger than the real bend", or that it is drawn as it is. */

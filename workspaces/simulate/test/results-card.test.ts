@@ -3,7 +3,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { materialLibrary, type StableId, type StressTestResult } from "@fission/core";
-import { cardLines, limitWords, pushedWords, resultOf, resultSection, summaryText, verdictWords, type RunSetUp } from "../src/results.ts";
+import { BEND_OVERLAY, cardLines, limitWords, pushedWords, RESULT_OVERLAY, resultOf, resultOverlays, resultSection, summaryText, verdictWords, type RunSetUp } from "../src/results.ts";
 import type { Load } from "../src/study.ts";
 
 const { Window } = await import("happy-dom");
@@ -130,4 +130,22 @@ test("Copy summary puts the card's text on the clipboard and says so; a refused 
   (box.querySelector("[data-testlab=copy-summary]") as HTMLButtonElement).click();
   await new Promise((done) => setTimeout(done, 0));
   assert.equal(box.querySelector(".testlab-results-copied")!.textContent, "Couldn't copy: select the card's words and copy them instead.");
+});
+
+// Ben (19 Nov): the one red tag "Biggest stress and bend" floated away from the dots, and the violet dot had no words at
+// all. Each dot now has its own legend line in its own colour, saying which colour it is and what it marks.
+test("the view's dots: one legend line each, in its dot's colour, naming the colour and what it marks", () => {
+  const r = resultOf(answer(0.182, 192, 8.03), pla, bens);
+  const [stress, bend] = resultOverlays(r);
+  assert.equal(stress.id, RESULT_OVERLAY);
+  assert.equal(stress.label, "● Red dot: biggest stress");
+  assert.deepEqual(stress.places!.map((p) => p.severity), ["error"]); // drawn red (core SEVERITY_COLOURS.error), its legend line red too
+  assert.equal(bend.id, BEND_OVERLAY);
+  assert.equal(bend.label, "● Violet dot: biggest bend");
+  assert.deepEqual(bend.places!.map((p) => p.severity), ["info"]); // drawn violet (SEVERITY_COLOURS.info)
+  // The red dot where the kernel says the stress is biggest, (0, 0, 0): the first point, which does not move.
+  assert.deepEqual("point" in stress.places![0] && stress.places![0].point, [0, 0, 0]);
+  // The violet dot at (100, 0, 0) drawn moved by the bend times the drawn scale along x: 100 + 8.03 · scale.
+  assert.deepEqual("point" in bend.places![0] && bend.places![0].point, [100 + 8.03 * r.scale, 0, 0]);
+  assert.equal(stress.marks.length + bend.marks.length, 0, "no faces painted: the colour map is the paint");
 });

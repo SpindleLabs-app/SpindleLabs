@@ -169,6 +169,21 @@ async function shownResult(page) {
   assert.deepEqual(setUp, ["Part", "Body 1", "Made of", "PLA, printed", "Pushed", "5 kg hanging (49.0 N) down on Top face", "Held", "Front face"]);
   assert.match(await page.locator(".testlab-results-limit").textContent(), /^It could take about [\d,]+ kg before it starts to break\.$/);
   await cardInSight(page);
+  await dotsExplained(page);
+}
+
+/**
+ * Ben (19 Nov): each dot over the result has its own legend line, in the dot's own colour and naming it (the one red
+ * "Biggest stress and bend" left the violet dot unexplained); the lines wholly on screen.
+ */
+async function dotsExplained(page) {
+  const lines = await page.locator("#viewport .overlay-legend li").evaluateAll((lis) => lis.map((li) => {
+    const r = li.getBoundingClientRect();
+    return { words: li.textContent, severity: li.dataset.severity, colour: getComputedStyle(li).color, inside: r.left >= 0 && r.right <= innerWidth && r.top >= 0 && r.bottom <= innerHeight };
+  }));
+  assert.deepEqual(lines.map((l) => [l.words, l.severity]), [["● Red dot: biggest stress", "error"], ["● Violet dot: biggest bend", "info"]]);
+  assert.notEqual(lines[0].colour, lines[1].colour, "each line in its own dot's colour");
+  assert.ok(lines.every((l) => l.inside), JSON.stringify(lines));
 }
 
 /** The card is wholly on screen in the panel once scrolled to, and nothing in it runs off its side. */
@@ -202,6 +217,7 @@ async function breaks(page, tap, shot) {
   assert.match(await page.locator(".testlab-results-broken").textContent(), /^Worked out as if the part stayed in one piece/);
   assert.equal(await page.locator(".testlab-results-broken").isVisible(), false, "behind How it was worked out");
   await cardInSight(page);
+  await dotsExplained(page);
   if (shots) await page.locator(".testlab-results-card").screenshot({ path: `${shots}/${shot}` });
   if (shots) await page.screenshot({ path: `${shots}/${shot.replace("card", "page")}` });
 }
