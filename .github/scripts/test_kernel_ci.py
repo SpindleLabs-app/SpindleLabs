@@ -975,5 +975,52 @@ class LabelCheck(unittest.TestCase):
                 self.assertFalse(re.fullmatch(pattern, bad), bad)
 
 
+def self_hosted_uses(texts):
+    """Lines of a set of workflows ({file: text}) that could send a job to a
+    self-hosted runner, as "file:line" strings; empty when none can."""
+    found = []
+    for name, text in sorted(texts.items()):
+        for n, line in enumerate(text.split("\n"), 1):
+            if not re.match(r"^\s*runs-on:", line):
+                continue
+            if re.search(r"self-hosted|home-7800x3d", line):
+                found.append(f"{name}:{n}")
+            # A runner named by a variable: only the paid hosted one's own name may pass.
+            elif "vars." in line and not re.fullmatch(
+                    r"\s*runs-on: \$\{\{ github\.event_name == 'workflow_dispatch' && vars\.KERNEL_CHECKS_RUNNER == 'spindle-8core' && 'spindle-8core' \|\| 'ubuntu-24\.04' \}\}", line):
+                found.append(f"{name}:{n}")
+    return found
+
+
+class NoSelfHostedRunner(unittest.TestCase):
+    """Self-hosted runners serve only the private kernel repo (2026-11-19): a
+    public repo's workflow can be sent code by anyone, and a self-hosted
+    runner runs it on its owner's machine. Their runner group refuses public
+    repositories; this makes sure no workflow here even asks."""
+
+    def texts(self):
+        root = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "workflows")
+        out = {}
+        for f in sorted(os.listdir(root)):
+            if f.endswith((".yml", ".yaml")):
+                with open(os.path.join(root, f)) as fh:
+                    out[f] = fh.read()
+        return out
+
+    def test_every_workflow(self):
+        texts = self.texts()
+        self.assertIn("vars.KERNEL_CHECKS_RUNNER == 'spindle-8core'", texts["kernel-ci.yml"])
+        self.assertEqual(self_hosted_uses(texts), [])
+
+    def test_the_check_catches_each_way_in(self):
+        for line in ("    runs-on: self-hosted",
+                     "    runs-on: [self-hosted, linux]",
+                     "    runs-on: home-7800x3d",
+                     "    runs-on: ${{ vars.KERNEL_CHECKS_RUNNER || 'ubuntu-24.04' }}",
+                     "    runs-on: ${{ github.event_name == 'workflow_dispatch' && vars.KERNEL_CHECKS_RUNNER || 'ubuntu-24.04' }}"):
+            self.assertEqual(self_hosted_uses({"a.yml": "jobs:\n  x:\n" + line + "\n"}), ["a.yml:3"], line)
+        self.assertEqual(self_hosted_uses({"a.yml": "jobs:\n  x:\n    runs-on: ubuntu-24.04\n"}), [])
+
+
 if __name__ == "__main__":
     unittest.main()
