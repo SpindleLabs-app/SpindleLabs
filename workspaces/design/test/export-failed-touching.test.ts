@@ -16,7 +16,6 @@ import { addFaceSketch, drawCircle, drawRectangle } from "../src/sketch.ts";
 import { extrudeSketch } from "../src/extrude.ts";
 import { BodyCache, rebuildTimeline } from "../src/rebuild.ts";
 import { badgeFor, CHECKED_HEADER } from "../src/solid-badge.ts";
-import { slicePrint } from "../src/slice-print.ts";
 
 const kernel = nodeKernel();
 
@@ -84,31 +83,6 @@ test("the failed-items note names each failed item in timeline order, and nothin
   assert.equal(failedItemsNote(doc, new Set([cut, box]), "print"), "Box 1 and Extrude 1 failed, so they are not in the print: the part is printed without them. Fix them in the timeline (red) to include them.");
 });
 
-test("regression (hunt D 1): Slice for printing says which item failed, as the dialog opens and with the slice's result", async () => {
-  const { Window } = await import("happy-dom");
-  const window = new Window();
-  const document = window.document as unknown as Document;
-  const slot = document.createElement("div");
-  document.body.append(slot);
-  let missing = "Extrude 1 failed, so it is not in the print: the part is printed without it. Fix it in the timeline (red) to include it.";
-  const facts = { gcode: "G1 X1\n", layers: 100, filamentMm: 1730, filamentG: 5.16, retractions: 0, unprintedVolume: 0, printTimeS: 257, preview: [] };
-  const d = slicePrint(slot, { slice: async () => ({ print: facts as never, saved: true, name: "part.gcode.3mf" }), preview: async () => {}, missing: () => missing });
-  const $ = (id: string) => document.getElementById(id)!;
-  d.ask();
-  assert.equal($("slice-print-missing").hidden, false);
-  assert.equal($("slice-print-missing").textContent, missing);
-  $("slice-print-go").click();
-  await new Promise((r) => setTimeout(r, 0));
-  // The result leads with it and is a warning: the file was made, without the failed item.
-  assert.match($("slice-print-status").textContent!, /^Saved part\.gcode\.3mf: 100 layers, .* Extrude 1 failed, so it is not in the print/);
-  assert.equal($("slice-print-status").classList.contains("slice-print-bad"), true);
-  // Fixed (nothing failed): the next opening says nothing of it.
-  $("slice-print-close").click();
-  missing = "";
-  d.ask();
-  assert.equal($("slice-print-missing").hidden, true);
-  await window.happyDOM.close();
-});
 
 test("regression (hunt D 2): a body sitting on another, each solid alone, is said to touch, never 'Not solid'", async () => {
   const { doc } = stacked();

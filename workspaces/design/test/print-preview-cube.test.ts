@@ -8,7 +8,7 @@ import { checkLayers, checkPrinter, checkProblems } from "../../../packages/test
 import { nodeKernel } from "../../../packages/testing/src/node-kernel.ts";
 import { bodyFeatures } from "../src/browser.ts";
 import { partDocument } from "../src/document.ts";
-import { sliceBodies } from "../src/slice-print.ts";
+import { sliceBodies } from "./slice-bodies-lib.ts";
 import { PRINT_DEFAULTS } from "@fission/print";
 
 test("a 20 mm cube from the shipped build plays as the engine sliced it: 100 layers of 0.2 mm, every layer's kinds the same", async () => {

@@ -13,7 +13,7 @@ import { type AuthClient, forgetSettingsBase, type SettingSpec, settingsApi, typ
 export const SYNCED_SETTINGS: readonly (SettingSpec & { readonly words: string })[] = [
   // The Settings page's own (packages/ui settings.ts SETTINGS_KEY): the theme and its custom colours, the units.
   { key: "spindlelabs-settings", kind: "map", words: "the Settings page's choices: the theme, its custom colours and the units" },
-  // Slice for printing (workspaces/design slice-presets.ts and slice-print.ts).
+  // Slice for printing (packages/print slice-presets.ts, shown by the Slice page).
   { key: "spindlelabs.slice.presets", kind: "list-by-id", words: "your slicer presets" },
   { key: "spindlelabs.slice.preset", kind: "text", words: "the preset you picked last" },
   { key: "spindlelabs.slice.nozzle", kind: "text", words: "the nozzle you chose" },

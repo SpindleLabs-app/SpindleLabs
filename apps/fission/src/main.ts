@@ -41,11 +41,7 @@ import { renderWorkspace } from "@fission/render";
 import { simulateWorkspace, testlabShown } from "@fission/simulate";
 import { manufactureWorkspace } from "@fission/manufacture";
 import { laserShown, laserWorkspace } from "@fission/laser";
-import { sliceWorkspace, slicePageWorkspace } from "@fission/slice";
-/** The Slice page (slice-page.config.mjs): off in the shipped build until it does everything Slice for printing does. */
-declare const __SLICE_PAGE__: boolean;
-// The build-time switches, also on for a tab opened with `?all` (@fission/core preview.ts): the shipped build carries their code.
-const SLICE_PAGE = __SLICE_PAGE__ || previews().all;
+import { slicePageWorkspace } from "@fission/slice";
 import { circuitWorkspace } from "@fission/circuit";
 import { vectorWorkspace } from "@fission/vector";
 import { imageWorkspace } from "@fission/image";
@@ -67,7 +63,7 @@ const workspaces: WorkspacePlugin[] = [
   simulateWorkspace,
   manufactureWorkspace,
   laserWorkspace,
-  SLICE_PAGE ? slicePageWorkspace : sliceWorkspace,
+  slicePageWorkspace,
   circuitWorkspace,
   vectorWorkspace,
   imageWorkspace,
@@ -399,18 +395,9 @@ const SLICE_SUMMARY = "Slice for printing: slice the design and save the printer
 const markTab = workspaceSwitcher(
   $("workspaces"),
   listed.map((w) => (w.id === "slice" ? { id: w.id, title: w.title, summary: SLICE_SUMMARY, placeholder: false } : { id: w.id, title: w.title, summary: w.summary, placeholder: greyedInMenu(w, pageOn) })),
-  (id) => (id === "slice" && !SLICE_PAGE ? sliceForPrinting() : show(id as WorkspaceId)),
+  (id) => show(id as WorkspaceId),
   { community: "Community", ...Object.fromEntries(workspaces.map((w) => [w.id, w.title])) },
 );
-/** DESIGN ▾'s Slice: Design on screen, then its File ▾ > Slice for printing, or the reason there is nothing to slice. */
-function sliceForPrinting() {
-  if (current !== "design") show("design");
-  const entry = pool.awake("main")?.view.fileEntries?.()?.exports?.find((e) => e.id === "file-slice-print");
-  if (!entry) return;
-  if (entry.off) return passingStatus(entry.off);
-  entry.run();
-}
-
 // The assistant (AI2): changes Design's part through Design's own run, as one undo step.
 const assistant = createAssistant(
   $("assistant"),
