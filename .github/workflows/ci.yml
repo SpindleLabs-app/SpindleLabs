@@ -251,11 +251,26 @@ jobs:
       - run: npm ci
       - run: npm run build
         working-directory: apps/fission
+      # Chromium and apt's packages for it, kept between runs as for the phone job (keyed on the image and
+      # Playwright's version): on 2026-11-19 a stalled mirror took 11 to 14 minutes of these jobs' 45.
+      - id: browser-key
+        working-directory: apps/fission
+        run: |
+          prefix="browser-chromium-$ImageOS-"
+          echo "prefix=$prefix" >> "$GITHUB_OUTPUT"
+          echo "key=$prefix$(node -p "require('playwright-core/package.json').version")" >> "$GITHUB_OUTPUT"
+      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: |
+            ~/.cache/ms-playwright
+            ~/.cache/apt-browser
+          key: ${{ steps.browser-key.outputs.key }}
+          restore-keys: ${{ steps.browser-key.outputs.prefix }}
       # Retries and time limits for apt's stalls: see the script.
       - name: Install the browser (chromium)
         working-directory: apps/fission
         timeout-minutes: 27
-        run: ../../.github/scripts/install-browser.sh chromium
+        run: APT_CACHE="$HOME/.cache/apt-browser" ../../.github/scripts/install-browser.sh chromium
       - run: node e2e/shard.mjs ${{ matrix.shard }} 5
         working-directory: apps/fission
       # A golden image that no longer matches leaves the actual image and a diff (red where different).
@@ -285,11 +300,26 @@ jobs:
           cache: npm
           cache-dependency-path: package-lock.json
       - run: npm ci
+      # Chromium and apt's packages for it, kept between runs as for the phone job (keyed on the image and
+      # Playwright's version): on 2026-11-19 a stalled mirror took 11 to 14 minutes of these jobs' 45.
+      - id: browser-key
+        working-directory: apps/fission
+        run: |
+          prefix="browser-chromium-$ImageOS-"
+          echo "prefix=$prefix" >> "$GITHUB_OUTPUT"
+          echo "key=$prefix$(node -p "require('playwright-core/package.json').version")" >> "$GITHUB_OUTPUT"
+      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: |
+            ~/.cache/ms-playwright
+            ~/.cache/apt-browser
+          key: ${{ steps.browser-key.outputs.key }}
+          restore-keys: ${{ steps.browser-key.outputs.prefix }}
       # Retries and time limits for apt's stalls: see the script.
       - name: Install the browser (chromium)
         working-directory: apps/fission
         timeout-minutes: 27
-        run: ../../.github/scripts/install-browser.sh chromium
+        run: APT_CACHE="$HOME/.cache/apt-browser" ../../.github/scripts/install-browser.sh chromium
       - run: npm run e2e:tabs
         working-directory: apps/fission
       - run: npm run e2e:home
@@ -315,11 +345,26 @@ jobs:
       - run: npm ci
       - run: npm run build
         working-directory: apps/fission
+      # Chromium and apt's packages for it, kept between runs as for the phone job (keyed on the image and
+      # Playwright's version): on 2026-11-19 a stalled mirror took 11 to 14 minutes of these jobs' 45.
+      - id: browser-key
+        working-directory: apps/fission
+        run: |
+          prefix="browser-chromium-$ImageOS-"
+          echo "prefix=$prefix" >> "$GITHUB_OUTPUT"
+          echo "key=$prefix$(node -p "require('playwright-core/package.json').version")" >> "$GITHUB_OUTPUT"
+      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: |
+            ~/.cache/ms-playwright
+            ~/.cache/apt-browser
+          key: ${{ steps.browser-key.outputs.key }}
+          restore-keys: ${{ steps.browser-key.outputs.prefix }}
       # Retries and time limits for apt's stalls: see the script.
       - name: Install the browser (chromium)
         working-directory: apps/fission
         timeout-minutes: 27
-        run: ../../.github/scripts/install-browser.sh chromium
+        run: APT_CACHE="$HOME/.cache/apt-browser" ../../.github/scripts/install-browser.sh chromium
       - run: node e2e/smoke.mjs
         working-directory: apps/fission
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
