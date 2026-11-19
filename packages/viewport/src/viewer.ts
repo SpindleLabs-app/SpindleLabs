@@ -15,7 +15,7 @@ import { faceFraming, lookAtFraming, partFraming, pieceCount, pointsInPlane, sel
 import { checkTextureSize, imageSheet, imageZoomRange, topDownDistance } from "./image-sheet.ts";
 import { gridSheet, pixelSize, rayOnPlane, sketchGrid, toWorld } from "./sketch-view.ts";
 import { MOUSE_ATTRIBUTE, MOUSE_EVENT, leftDragOf, readMousePreset } from "@fission/core";
-import { clampZoom, cubeDragAngles, FARTHEST_VIEW, NEAREST_VIEW, dragAction, orbitBy, dragZoomFactor, panBy, wheelFactor, zoomAt, type CameraPose, type NavMode } from "./navigation.ts";
+import { clampZoom, clipRange, cubeDragAngles, FARTHEST_VIEW, NEAREST_VIEW, dragAction, orbitBy, dragZoomFactor, panBy, wheelFactor, zoomAt, type CameraPose, type NavMode, type Vec3 } from "./navigation.ts";
 import { navBar } from "./nav-bar.ts";
 import { ARROW_GRAB_PX, ARROW_PX, arrowDistance, arrowLength } from "./extrude-pick.ts";
 import { ExtrudeLayer } from "./extrude-layer.ts";
@@ -186,6 +186,9 @@ export class ViewportView {
     // Never so far out or close in that the camera's numbers break: the wheel, a drag in Zoom mode and a pinch all stop here.
     this.controls.minDistance = NEAREST_VIEW;
     this.controls.maxDistance = FARTHEST_VIEW;
+    // OrbitControls' own moves (an orbit, a finger's pinch) set the clipping range too: a pinch in kept the near plane
+    // of the distance before and cut the part away close up.
+    this.controls.addEventListener("change", () => this.clip());
     this.dragArrow(); // first, so a press on Extrude's arrow is a drag whatever the navigation mode
     this.dragMoveHandle(); // and a press on a Move handle (35e2c)
     this.dragSketchPoint(); // and a press on a sketch point the Select tool can drag (47d3)
@@ -464,26 +467,47 @@ export class ViewportView {
 
   /**
    * Puts the camera back at `pose` from `cameraPose()` earlier (a design tab returned to, tabs step 2), the near and far
-   * planes scaled with the change in distance as zooming does. A pose with a number that is not finite is ignored.
+   * planes set for its distance (`clip`). A pose with a number that is not finite is ignored. The pose's up is the
+   * screen's up, so it only picks the roll straight down or up (`orbitSafeOffset`, as the standard views do): the camera's
+   * own up stays Z, the orbit's axis. It once became the screen's up, tilted, and from then on that view's camera rolled
+   * and flipped wherever it looked along that tilt, the view cube with it (Ben's tabs, 2026-11-19).
    */
   restorePose(pose: CameraPose) {
     if (![...pose.position, ...pose.target, ...pose.up].every(Number.isFinite)) return;
-    const before = this.camera.position.distanceTo(this.controls.target);
-    const after = new THREE.Vector3(...pose.position).distanceTo(new THREE.Vector3(...pose.target));
-    this.camera.up.set(...pose.up);
-    this.setPose(pose, before > 0 && after > 0 ? after / before : 1);
+    const offset = orbitSafeOffset(pose.position.map((x, i) => x - pose.target[i]) as Vec3, pose.up);
+    this.camera.up.set(0, 0, 1);
+    this.setPose({ position: offset.map((x, i) => x + pose.target[i]) as Vec3, target: pose.target, up: [0, 0, 1] });
   }
 
-  /** Moves the camera to `pose` (same direction, so OrbitControls only re-aims); `zoom` scales the near and far planes with the distance in 3D, so nothing is clipped close up. */
-  private setPose(pose: CameraPose, zoom = 1) {
+  /** The camera's near and far clipping distances now, mm (read by the e2e test). */
+  clipRange(): { near: number; far: number } {
+    return { near: this.camera.near, far: this.camera.far };
+  }
+
+  /** Moves the camera to `pose` (same direction, so OrbitControls only re-aims), with the near and far planes set for where it is now (`clip`), so nothing is clipped close up or far off. */
+  private setPose(pose: CameraPose) {
     this.camera.position.set(...pose.position);
     this.controls.target.set(...pose.target);
-    if (zoom !== 1 && !this.image) {
-      this.camera.near *= zoom;
-      this.camera.far *= zoom;
-      this.camera.updateProjectionMatrix();
-    }
     this.controls.update();
+    this.clip();
+  }
+
+  /**
+   * The near and far planes for the camera where it is (navigation.ts `clipRange`): from its distance to the target and
+   * its reach past everything Fit frames. Called after every move of ours, and on OrbitControls' own (orbit, a pinch).
+   * A flat image view keeps the range it was given.
+   */
+  private clip() {
+    if (this.image) return;
+    const distance = this.camera.position.distanceTo(this.controls.target);
+    if (!(distance > 0)) return;
+    const framing = this.host.fitFraming();
+    const reach = framing.radius > 0 ? this.camera.position.distanceTo(new THREE.Vector3(...framing.centre)) + framing.radius : Number.NaN;
+    const { near, far } = clipRange(distance, reach);
+    if (near === this.camera.near && far === this.camera.far) return;
+    this.camera.near = near;
+    this.camera.far = far;
+    this.camera.updateProjectionMatrix();
   }
 
   /** Zooms by `factor` toward the point under (clientX, clientY), within the view's allowed distances. */
@@ -493,7 +517,13 @@ export class ViewportView {
     const distance = this.camera.position.distanceTo(this.controls.target);
     const f = clampZoom(distance, factor, this.controls.minDistance, this.controls.maxDistance);
     if (f === 1 || !(f > 0)) return;
-    this.setPose(zoomAt(this.cameraPose(), [ndc.x, ndc.y], { fov: this.camera.fov, aspect: this.camera.aspect }, f), f);
+    // Toward the part's own point under the cursor when there is one (navigation.ts zoomAt). While a sketch is edited,
+    // toward the sketch plane's point instead: the body is see-through then and the sketch is what is drawn on, and
+    // closing in on a body face above the plane stopped the zoom tens of mm short of the sketch (free-placement.mjs).
+    const plane = this.host.sketchPlane();
+    const onPlane = plane ? this.onPlane(clientX, clientY, plane) : null;
+    const onBody = plane && onPlane ? toWorld(plane, onPlane) : (this.faceHitAt(clientX, clientY)?.point ?? null);
+    this.setPose(zoomAt(this.cameraPose(), [ndc.x, ndc.y], { fov: this.camera.fov, aspect: this.camera.aspect }, f, onBody));
   }
 
   /**
@@ -1106,10 +1136,13 @@ export class ViewportView {
     const offset = new THREE.Vector3(...orbitSafeOffset(raw.toArray(), [up[0], up[1], up[2]]));
     this.controls.target.set(target[0], target[1], target[2]);
     this.camera.position.copy(this.controls.target).add(offset);
-    this.camera.near = dist / 1000;
-    this.camera.far = dist * 100;
-    this.camera.updateProjectionMatrix();
+    if (dist > 0) {
+      this.camera.near = dist / 1000;
+      this.camera.far = dist * 100;
+      this.camera.updateProjectionMatrix();
+    }
     this.controls.update();
+    this.clip();
   }
 
   /**
@@ -1243,7 +1276,7 @@ export class ViewportView {
       const { position, target, up } = this.cameraPose();
       const away = this.camera.position.distanceTo(this.controls.target);
       const k = away > 0 ? Math.min(Math.max(away * scale, this.controls.minDistance), this.controls.maxDistance) / away : 1;
-      if (Number.isFinite(k) && k > 0 && k !== 1) this.setPose({ position: position.map((p, i) => target[i] + (p - target[i]) * k) as CameraPose["position"], target, up }, k);
+      if (Number.isFinite(k) && k > 0 && k !== 1) this.setPose({ position: position.map((p, i) => target[i] + (p - target[i]) * k) as CameraPose["position"], target, up });
     }
   }
 

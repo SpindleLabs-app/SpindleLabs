@@ -558,3 +558,20 @@ export async function shrinkFailure(list, fails, { budget = 200, deadline = Infi
 
 /** A failure's kind, for the shrinker: the check's name and its message with numbers and ids blurred. */
 export const signature = (failure) => `${failure.check}: ${String(failure.message).split("\n")[0].replace(/\d+(\.\d+)?/g, "#")}`;
+
+/**
+ * Presses `locator` (Playwright's click, at most `timeout` ms); true once pressed. A press whose wait ran out
+ * (TimeoutError) still counts when `landed()` says the page shows it took effect: Playwright waits for its own input
+ * acknowledgement after dispatching, which in headless Chromium waits for a frame, and a long software-rendered session
+ * can make none for over a second after the press has already landed (issue #398, traced: Finish Sketch handled in
+ * 87 ms, the click still waiting 2 s later). Any other failure, or a press that never landed, is thrown.
+ */
+export async function pressed(locator, landed, timeout = 2000) {
+  try {
+    await locator.click({ timeout });
+    return true;
+  } catch (e) {
+    if (e?.name === "TimeoutError" && (await landed())) return true;
+    throw e;
+  }
+}

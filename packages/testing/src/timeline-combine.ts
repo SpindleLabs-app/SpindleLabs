@@ -265,8 +265,8 @@ export const faceMotion = (b: ModelBody, f: ModelFace, name?: FaceName): Motion2
  * SL #430 (Design's rule from SL #707): for a result face lying on two or more level input faces (merged by this Combine,
  * rule 4), each of its other names' input face's motion (`ModelFace.alsoMotion`): the input face (target first) carrying
  * the name whose region holds the middle of one of the result face's rectangles, when that is not the face its shown
- * name lies on. Undefined for a face lying on one input face (a name it carried from before is carried by that face's
- * motion, as Design takes a merged face's first input's frame through a later boolean; so is each input face here).
+ * name lies on, or a name carried from an earlier merge (that merge's input face's, SL #759 item 1). Undefined when
+ * every name is carried by the face's own motion.
  */
 function mergedMotions(f: DescribedFace, inputs: readonly ModelBody[]): ModelFace["alsoMotion"] {
   if (f.names.length < 2) return undefined;
@@ -281,10 +281,10 @@ function mergedMotions(f: DescribedFace, inputs: readonly ModelBody[]): ModelFac
   for (const n of f.names.slice(1).map(parseName)) {
     const key = plainKey(n);
     const at = under(key);
-    if (at === undefined || at.g === first?.g) continue;
-    // That input face's own motion: Design keeps a merged face's other inputs for one boolean only (its frame then is
-    // its first input's), so a name it carried from an earlier merge is carried as that face is.
-    const motion = faceMotion(at.b, at.g);
+    // SL #759 item 1: a name an input face carried from an earlier merge keeps that merge's input face's motion (Design
+    // hands a merged face's origins on through every later boolean), so it is carried by its own part's Moves.
+    if (at === undefined || (at.g === first?.g && at.g.alsoMotion?.[key] === undefined)) continue;
+    const motion = faceMotion(at.b, at.g, n);
     out[key] = motion ? { motion: { a: motion.a, t: [motion.t[0], motion.t[1]] } } : {};
   }
   return Object.keys(out).length > 0 ? out : undefined;

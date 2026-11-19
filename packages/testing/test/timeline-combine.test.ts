@@ -254,3 +254,36 @@ test("hand-worked: a sketch on a tool's top that a Join merges with the target's
   assert.deepEqual(r2.results["item-5"], { status: "built", lift: 10, turn: { x: [1, 0], at: [3, 0] } });
   assert.deepEqual(r2.results["item-7"], { status: "built", lift: 10, turn: { x: [1, 0], at: [2, 0] } });
 });
+
+test("hand-worked: a later Cut of the joined body keeps a sketch on the tool's part of the merged top carried by the tool's Moves (SL #759 item 1)", () => {
+  // As above: A 20 × 20 × 10 at x 10..30, B the same at x 25..45, a circle on each top drawn first, then Join 1 (A the
+  // target) put in before both sketches. Then, also before them, C 4 × 4 × 20 moved (12, 5, −5) (x 12..16, y 5..9,
+  // z −5..15) cut from the joined body: a hole through A's part only, so the top is still one face, 700 − 16 = 684,
+  // still answering to B's name. B's Move made +28: B's top has moved (3, 0) since its sketch was drawn, and its sketch
+  // with it, as with no Cut; A's has not moved. Before the rule a merged face's other inputs lasted one boolean only, so
+  // after the Cut B's sketch was carried by A's Moves (no turn).
+  const m = createModel();
+  run(
+    m,
+    { op: "add-preset", kind: "box", sizes: [20, 20, 10] },
+    { op: "add-move", bodies: ["item-1"], shift: [10, 0, 0], turnZ: 0, pivot: [0, 0] },
+    { op: "add-preset", kind: "box", sizes: [20, 20, 10] },
+    { op: "add-move", bodies: ["item-3"], shift: [25, 0, 0], turnZ: 0, pivot: [0, 0] },
+    { op: "add-face-sketch", shape: { kind: "circle", centre: [35, 10], radius: 1 }, face: { feature: "item-3", role: "top" } },
+    { op: "add-face-sketch", shape: { kind: "circle", centre: [20, 10], radius: 1 }, face: { feature: "item-1", role: "top" } },
+    { op: "marker", at: "item-4" },
+    { op: "add-combine", target: "item-1", tool: "item-3", operation: "join", keep: false },
+    { op: "add-preset", kind: "box", sizes: [4, 4, 20] },
+    { op: "add-move", bodies: ["item-10"], shift: [12, 5, -5], turnZ: 0, pivot: [0, 0] },
+    { op: "add-combine", target: "item-1", tool: "item-10", operation: "cut", keep: false },
+    { op: "marker", at: null },
+  );
+  const r0 = rebuild(m.doc);
+  const top = (r0.results["item-1"] as { body?: ModelBody }).body?.faces.find((f) => faceKey(f.name) === "item-1/top");
+  assert.deepEqual([(top?.also ?? []).map(faceKey), top?.area], [["item-3/top"], 684]);
+  assert.deepEqual([r0.results["item-5"], r0.results["item-7"]], [{ status: "built", lift: 10 }, { status: "built", lift: 10 }]);
+  run(m, { op: "set-move", item: "item-4", shift: [28, 0, 0], turnZ: 0, pivot: [0, 0] });
+  const r1 = rebuild(m.doc);
+  assert.deepEqual(r1.results["item-5"], { status: "built", lift: 10, turn: { x: [1, 0], at: [3, 0] } });
+  assert.deepEqual(r1.results["item-7"], { status: "built", lift: 10 });
+});
