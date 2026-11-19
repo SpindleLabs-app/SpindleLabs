@@ -2618,6 +2618,370 @@
     "why": "Differs only when a later neck's ratio is exactly 1e-9 below the best so far, to the bit: equals keep the lowest either way."
   },
   {
+    "file": "packages/core/src/print/gcode.ts",
+    "mutator": "Regex",
+    "original": "/\\s+/g",
+    "replacement": "/\\s/g",
+    "why": "parseLine's word body: replacing every whitespace character with nothing, one at a time or a run at a time, leaves the same string."
+  },
+  {
+    "file": "packages/core/src/print/gcode.ts",
+    "mutator": "Regex",
+    "original": "/^([GMT])0*(\\d)/",
+    "replacement": "/([GMT])0*(\\d)/",
+    "why": "The leading-zero rewrite only sees commands built from a first G, M or T word (a macro name returns earlier), so the command always starts with that letter and has no other letter: a match anywhere is a match at the start."
+  },
+  {
+    "file": "packages/core/src/print/gcode.ts",
+    "mutator": "StringLiteral",
+    "original": "\"marlin\"",
+    "replacement": "\"\"",
+    "why": "The flavour is only ever compared with \"klipper\"; any other value, \"\" included, is read as Marlin, the default."
+  },
+  {
+    "file": "packages/core/src/print/gcode.ts",
+    "mutator": "ObjectLiteral",
+    "original": "{ x: 0, y: 0, z: 0, e: 0 }",
+    "replacement": "{}",
+    "why": "replay's first value for out.end: it is always overwritten after the last line, before replay returns, and nothing reads it in between."
+  },
+  {
+    "file": "packages/core/src/print/gcode.ts",
+    "mutator": "ConditionalExpression",
+    "original": "sweep > 2 * Math.PI",
+    "replacement": "false",
+    "why": "A dead guard: a0 and a1 are atan2 results in [-π, π], so the sweep starts in [-2π, 2π]; the loop before it adds 2π to a value of at most 0 (rounding is monotonic, so at most 2π comes out), which leaves the sweep in (0, 2π]. It is never above 2π, so this loop never runs."
+  },
+  {
+    "file": "packages/core/src/print/gcode.ts",
+    "mutator": "AssignmentOperator",
+    "original": "sweep -= 2 * Math.PI",
+    "replacement": "sweep += 2 * Math.PI",
+    "why": "Inside the dead loop (sweep is already in (0, 2π], see its condition's entry): the body never runs."
+  },
+  {
+    "file": "packages/core/src/print/gcode.ts",
+    "mutator": "ArithmeticOperator",
+    "original": "2 * Math.PI",
+    "replacement": "2 / Math.PI",
+    "why": "The 2π the dead loop subtracts (sweep is already in (0, 2π], see its condition's entry): the body never runs. The loop's own 2π limit, and the 2π the loop before adds, are killed by tests."
+  },
+  {
+    "file": "packages/core/src/print/playback.ts",
+    "mutator": "StringLiteral",
+    "original": "\"\"",
+    "replacement": "\"Stryker was here!\"",
+    "why": "kindOf(undefined): \"\" and \"stryker was here!\" are both names no slicer writes, so both give \"other\"."
+  },
+  {
+    "file": "packages/core/src/kernel/kernel-client.ts",
+    "mutator": "UnaryOperator",
+    "original": "-Infinity",
+    "replacement": "+Infinity",
+    "why": "progressPoster's first `last`: it is only read when the new stage equals the last one, and the last starts null, which no engine stage is, so the first report always posts and sets `last` before it is ever read."
+  },
+  {
+    "file": "packages/core/src/kernel/kernel-client.ts",
+    "mutator": "ConditionalExpression",
+    "original": "typeof x === \"number\"",
+    "replacement": "true",
+    "why": "isPoint: Number.isFinite is false for anything that isn't a number, so the typeof test changes nothing."
+  },
+  {
+    "file": "packages/core/src/kernel/kernel-client.ts",
+    "mutator": "ConditionalExpression",
+    "original": "typeof t !== \"object\"",
+    "replacement": "false",
+    "why": "touchesOf: with only `t === null` left, a primitive place gets through, but none has an `at` of \"edge\" or \"corner\" (a string's `at` is a function, a number's or boolean's undefined), so the next test skips it all the same."
+  },
+  {
+    "file": "packages/core/src/kernel/kernel-client.ts",
+    "mutator": "ConditionalExpression",
+    "original": "typeof t !== \"object\"",
+    "replacement": "false",
+    "why": "thinOf: with only `t === null` left, a primitive place gets through, but none has an `at` of \"edge\" or \"gap\" (a string's `at` is a function, a number's or boolean's undefined), so the next test skips it all the same."
+  },
+  {
+    "file": "packages/core/src/kernel/kernel-client.ts",
+    "mutator": "BooleanLiteral",
+    "original": "false",
+    "replacement": "true",
+    "why": "The field's first value: the constructor's start() sets `started` false before anything reads it."
+  },
+  {
+    "file": "packages/core/src/kernel/kernel-client.ts",
+    "mutator": "BooleanLiteral",
+    "original": "false",
+    "replacement": "true",
+    "why": "The field's first value: sawHidden is read only in a watch's timer, and watchHead sets it false before it arms any watch."
+  },
+  {
+    "file": "packages/core/src/kernel/kernel-client.ts",
+    "mutator": "ConditionalExpression",
+    "original": "this.watch !== null",
+    "replacement": "true",
+    "why": "clearTimeout(null) does nothing, so clearing without the test is the same."
+  },
+  {
+    "file": "packages/core/src/kernel/kernel-client.ts",
+    "mutator": "ConditionalExpression",
+    "original": "typeof unitMs === \"number\"",
+    "replacement": "true",
+    "why": "The worker's unitMs: Number.isFinite is false for anything that isn't a number, so the typeof test changes nothing."
+  },
+  {
+    "file": "packages/core/src/kernel/kernel-client.ts",
+    "mutator": "LogicalOperator",
+    "original": "this.bodies.get(handle) === held && this.bodies.delete(handle) && this.sizes.delete(handle)",
+    "replacement": "this.bodies.get(handle) === held && this.bodies.delete(handle) || this.sizes.delete(handle)",
+    "why": "After a free is answered, (bodies.get === held && bodies.delete) || sizes.delete leaves the freed handle's size behind when its body was deleted. A size is read only to time a call on that handle, and every call on a handle no longer in `bodies` is refused before it is sent, so the stale size is never used."
+  },
+  {
+    "file": "packages/core/src/kernel/kernel-client.ts",
+    "mutator": "ConditionalExpression",
+    "original": "this.bodies.get(handle) === held",
+    "replacement": "true",
+    "why": "Handles are never reused, so when a free is answered bodies.get(handle) is either the same `held` or gone (a restart cleared it, sizes too); deleting a handle that is gone does nothing."
+  },
+  {
+    "file": "packages/core/src/kernel/kernel-client.ts",
+    "mutator": "ConditionalExpression",
+    "original": "size && this.bodies.get(handle) === held",
+    "replacement": "true",
+    "why": "A view's size update for a handle freed (or cleared by a restart) while the view was on its way writes a size for a handle no longer in `bodies`: every call on such a handle is refused before it is sent, so that size is never read."
+  },
+  {
+    "file": "packages/core/src/kernel/kernel-client.ts",
+    "mutator": "LogicalOperator",
+    "original": "size && this.bodies.get(handle) === held",
+    "replacement": "size || this.bodies.get(handle) === held",
+    "why": "A view's size update for a handle freed (or cleared by a restart) while the view was on its way writes a size for a handle no longer in `bodies`: every call on such a handle is refused before it is sent, so that size is never read."
+  },
+  {
+    "file": "packages/core/src/kernel/kernel-client.ts",
+    "mutator": "ConditionalExpression",
+    "original": "this.bodies.get(handle) === held",
+    "replacement": "true",
+    "why": "Handles are never reused: with a size there, the handle's body is still the same `held` (a free or restart deletes the size with the body), so the test is always true when `size` is."
+  },
+  {
+    "file": "packages/core/src/kernel/kernel-client.ts",
+    "mutator": "ConditionalExpression",
+    "original": "size",
+    "replacement": "true",
+    "why": "A moved body's size when its input had none: sizes.set(handle, undefined) and no entry both read back as undefined (every body has a size anyway)."
+  },
+  {
+    "file": "packages/core/src/kernel/kernel-client.ts",
+    "mutator": "UpdateOperator",
+    "original": "++latest",
+    "replacement": "--latest",
+    "why": "latestOnly's tickets counting down instead of up are still all different, and the newest still equals `latest`, so `current` is the same."
+  },
+  {
+    "file": "packages/core/src/kernel/time-limit.ts",
+    "mutator": "EqualityOperator",
+    "original": "at + 84 <= stl.byteLength",
+    "replacement": "at + 84 < stl.byteLength",
+    "why": "eachTriangle: when exactly a header is left (at + 84 equals the length), its count is either 0 (no triangles) or more than the bytes left (the next test stops), so reading it or not adds no triangle."
+  },
+  {
+    "file": "packages/core/src/kernel/time-limit.ts",
+    "mutator": "EqualityOperator",
+    "original": "layerHeight > 0",
+    "replacement": "layerHeight >= 0",
+    "why": "supportUnits at layer height 0: every face above the floor is an infinite number of layers up, so the units are Infinity and the last line returns 0, as the guard does (with no such face they are 0 anyway)."
+  },
+  {
+    "file": "packages/core/src/kernel/time-limit.ts",
+    "mutator": "ConditionalExpression",
+    "original": "!Number.isFinite(floor)",
+    "replacement": "false",
+    "why": "supportUnits with no finite floor: with no triangles nothing is counted; with a NaN floor every `low - floor > h` is false; with a corner at −Infinity every counted face is infinitely many layers up, so the units are Infinity and the last line returns 0. Each gives 0, as the guard does."
+  },
+  {
+    "file": "packages/core/src/kernel/time-limit.ts",
+    "mutator": "EqualityOperator",
+    "original": "at + 84 <= stl.byteLength",
+    "replacement": "at + 84 < stl.byteLength",
+    "why": "sliceUnits: when exactly a header is left (at + 84 equals the length), its count is either 0 (no triangles, nothing counted) or more than the bytes left (the next test stops), so reading it or not changes nothing."
+  },
+  {
+    "file": "packages/core/src/kernel/time-limit.ts",
+    "mutator": "EqualityOperator",
+    "original": "z < low",
+    "replacement": "z <= low",
+    "why": "sliceUnits: `z <= low` also assigns z when it equals low, which leaves low the same."
+  },
+  {
+    "file": "packages/core/src/kernel/time-limit.ts",
+    "mutator": "EqualityOperator",
+    "original": "z > high",
+    "replacement": "z >= high",
+    "why": "sliceUnits: `z >= high` also assigns z when it equals high, which leaves high the same."
+  },
+  {
+    "file": "packages/core/src/kernel/time-limit.ts",
+    "mutator": "EqualityOperator",
+    "original": "x < xLow",
+    "replacement": "x <= xLow",
+    "why": "sliceUnits: `x <= xLow` also assigns x when it equals xLow, which leaves xLow the same."
+  },
+  {
+    "file": "packages/core/src/kernel/time-limit.ts",
+    "mutator": "EqualityOperator",
+    "original": "x > xHigh",
+    "replacement": "x >= xHigh",
+    "why": "sliceUnits: `x >= xHigh` also assigns x when it equals xHigh, which leaves xHigh the same."
+  },
+  {
+    "file": "packages/core/src/kernel/time-limit.ts",
+    "mutator": "EqualityOperator",
+    "original": "y < yLow",
+    "replacement": "y <= yLow",
+    "why": "sliceUnits: `y <= yLow` also assigns y when it equals yLow, which leaves yLow the same."
+  },
+  {
+    "file": "packages/core/src/kernel/time-limit.ts",
+    "mutator": "EqualityOperator",
+    "original": "y > yHigh",
+    "replacement": "y >= yHigh",
+    "why": "sliceUnits: `y >= yHigh` also assigns y when it equals yHigh, which leaves yHigh the same."
+  },
+  {
+    "file": "packages/core/src/kernel/time-limit.ts",
+    "mutator": "EqualityOperator",
+    "original": "layers > 0",
+    "replacement": "layers >= 0",
+    "why": "sliceUnits with 0 layers (a flat file, or an infinite layer height): the triangles and the footprint both count 0 (times 0 layers; an infinite footprint is not counted), and supportUnits finds nothing more than a layer above the floor, so it returns 0 as the guard does."
+  },
+  {
+    "file": "packages/core/src/kernel/time-limit.ts",
+    "mutator": "ConditionalExpression",
+    "original": "units > 0",
+    "replacement": "true",
+    "why": "callUnits: no op's units are ever below 0 (every count, area, length and factor in them is 0 or more), so `units > 0` only tells 0 from more, and 0 is returned either way."
+  },
+  {
+    "file": "packages/core/src/kernel/time-limit.ts",
+    "mutator": "EqualityOperator",
+    "original": "units > 0",
+    "replacement": "units >= 0",
+    "why": "callUnits: at exactly 0 units both give 0."
+  },
+  {
+    "file": "packages/core/src/kernel/time-limit.ts",
+    "mutator": "ObjectLiteral",
+    "original": "{ width: 1, depth: 1, height: 1 }",
+    "replacement": "{}",
+    "why": "make_box's units: buildUnits reads only that the spec is a box, never its sizes."
+  },
+  {
+    "file": "packages/core/src/kernel/time-limit.ts",
+    "mutator": "ObjectLiteral",
+    "original": "{ radius: 1, height: 1 }",
+    "replacement": "{}",
+    "why": "make_cylinder's units: buildUnits reads only that the spec is a cylinder, never its sizes."
+  },
+  {
+    "file": "packages/core/src/kernel/time-limit.ts",
+    "mutator": "ObjectLiteral",
+    "original": "{ radius: 1 }",
+    "replacement": "{}",
+    "why": "make_sphere's units: buildUnits reads only that the spec is a sphere, never its radius."
+  },
+  {
+    "file": "packages/core/src/kernel/time-limit.ts",
+    "mutator": "OptionalChaining",
+    "original": "sizeOf(a[0] as BodyHandle)?.mesh",
+    "replacement": "sizeOf(a[0] as BodyHandle).mesh",
+    "why": "A body call on an unknown handle: reading .mesh of undefined throws, callUnits catches it and gives 0, as `?.mesh ?? 0` does."
+  },
+  {
+    "file": "packages/core/src/kernel/time-limit.ts",
+    "mutator": "LogicalOperator",
+    "original": "target && tools.every((t) => t)",
+    "replacement": "target || tools.every(t => t)",
+    "why": "body_boolean with an unknown target or tool: booleanUnits reads .faces of the missing size, throws, and callUnits catches it and gives 0, as the guard does."
+  },
+  {
+    "file": "packages/core/src/kernel/time-limit.ts",
+    "mutator": "ConditionalExpression",
+    "original": "target && tools.every((t) => t)",
+    "replacement": "true",
+    "why": "body_boolean with an unknown target or tool: booleanUnits reads .faces of the missing size, throws, and callUnits catches it and gives 0, as the guard does."
+  },
+  {
+    "file": "packages/core/src/kernel/time-limit.ts",
+    "mutator": "MethodExpression",
+    "original": "tools.every((t) => t)",
+    "replacement": "tools.some(t => t)",
+    "why": "body_boolean: with some tools unknown booleanUnits reads .faces of a missing size and throws (callUnits gives 0, as the guard does); with no tools, booleanUnits of no tools is 0 either way."
+  },
+  {
+    "file": "packages/core/src/kernel/time-limit.ts",
+    "mutator": "ConditionalExpression",
+    "original": "one && other",
+    "replacement": "true",
+    "why": "body_measure with an unknown pick: booleanUnits reads .faces of the missing size, throws, and callUnits catches it and gives 0, as the guard does."
+  },
+  {
+    "file": "packages/core/src/kernel/time-limit.ts",
+    "mutator": "LogicalOperator",
+    "original": "one && other",
+    "replacement": "one || other",
+    "why": "body_measure with one pick unknown: booleanUnits reads .faces of the missing size, throws, and callUnits catches it and gives 0, as the guard does."
+  },
+  {
+    "file": "packages/core/src/kernel/time-limit.ts",
+    "mutator": "ArrayDeclaration",
+    "original": "[]",
+    "replacement": "[\"Stryker was here\"]",
+    "why": "body_construct: a slot that isn't a pick would add the handle \"Stryker was here\", which no body has (handles are numbers), so its mesh counts 0."
+  },
+  {
+    "file": "packages/core/src/kernel/time-limit.ts",
+    "mutator": "ConditionalExpression",
+    "original": "typeof a[0] === \"string\"",
+    "replacement": "true",
+    "why": "solve_sketch with a sketch that isn't text: solveUnits calls .split on it, which throws, and callUnits catches it and gives 0, as the test does."
+  },
+  {
+    "file": "packages/core/src/kernel/time-limit.ts",
+    "mutator": "ConditionalExpression",
+    "original": "default: return 0;",
+    "replacement": "default:",
+    "why": "The default case is the switch's last, so without its return unitsOf falls off the end and returns undefined, which callUnits turns into 0."
+  },
+  {
+    "file": "packages/core/src/kernel/time-limit.ts",
+    "mutator": "LogicalOperator",
+    "original": "Number.isFinite(side) && side > 0",
+    "replacement": "Number.isFinite(side) || side > 0",
+    "why": "stressUnits: with `||` an infinite side gets through, but the cells then count Infinity and the result is capped at STRESS_MOST_UNITS, which is STRESS_WORST_UNITS, what the guard gives (a NaN side still fails both tests)."
+  },
+  {
+    "file": "packages/core/src/kernel/time-limit.ts",
+    "mutator": "ConditionalExpression",
+    "original": "side > 0",
+    "replacement": "true",
+    "why": "stressUnits: a side of 0 or less gets through, but then the thinnest side is 0 or less, so the mesh size is either not above 0 or above thinnest / STRESS_THIN_LAYERS, and the next test returns STRESS_MOST_UNITS, which is STRESS_WORST_UNITS, what the guard gives."
+  },
+  {
+    "file": "packages/core/src/kernel/time-limit.ts",
+    "mutator": "EqualityOperator",
+    "original": "side > 0",
+    "replacement": "side >= 0",
+    "why": "stressUnits: a side of exactly 0 gets through, but then the thinnest side is 0, so the mesh size is either not above 0 or above 0 / STRESS_THIN_LAYERS, and the next test returns STRESS_MOST_UNITS, which is STRESS_WORST_UNITS, what the guard gives."
+  },
+  {
+    "file": "packages/core/src/kernel/time-limit.ts",
+    "mutator": "EqualityOperator",
+    "original": "each > 0",
+    "replacement": "each >= 0",
+    "why": "stressUnits with a mesh size of exactly 0: it gets through, but every side over 0 cells is Infinity, so the result is capped at STRESS_MOST_UNITS, what the test returns."
+  },
+  {
     "file": "packages/ai/src/commands.ts",
     "mutator": "StringLiteral",
     "original": "\"\"",
