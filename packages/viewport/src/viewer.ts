@@ -3,8 +3,8 @@ import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
 import { LineMaterial } from "three/examples/jsm/lines/LineMaterial.js";
 import { LineSegments2 } from "three/examples/jsm/lines/LineSegments2.js";
 import { LineSegmentsGeometry } from "three/examples/jsm/lines/LineSegmentsGeometry.js";
-import { NO_HIGHLIGHT, worstSeverity, type AnalysisOverlay, type DisplayMesh, type ExtrudePointer, type ExtrudeShow, type Framing, type MoveHandle, type MoveHandlesShow, type MovePointer, type ImageRep, type OriginPlane, type OriginShown, type Plane, type SharedViewport, type SketchDrawing, type SketchPointer, type SketchXY, type ViewportHighlight, type ViewportPick } from "@fission/core";
-import { clientToNdc, CORNER_PICK_PX, edgeOfSegment, faceOfTriangle, HOLD_MS, isClick, ndcToClient, nearestWithin, planeOrFace, pointsNear, segmentsNear, SKETCH_GRAB_PX, unhidden } from "./picking.ts";
+import { NO_HIGHLIGHT, worstSeverity, type AnalysisOverlay, type DisplayMesh, type ExtrudePointer, type ExtrudeShow, type Framing, type MoveHandle, type MoveHandlesShow, type MovePointer, type ImageRep, type OriginPlane, type OriginShown, type PickWants, type Plane, type SharedViewport, type SketchDrawing, type SketchPointer, type SketchXY, type ViewportHighlight, type ViewportPick } from "@fission/core";
+import { beyondNeeded, clientToNdc, CORNER_PICK_PX, EDGE_PICK_PX, edgeOfSegment, edgeTakesPick, faceForTap, fanRays, faceOfTriangle, HOLD_MS, isClick, ndcToClient, nearestWithin, planeOrFace, pointsNear, segmentsNear, SKETCH_GRAB_PX, unhidden } from "./picking.ts";
 import { fitDistance, keepAngleBasis, orbitSafeOffset, planeViewBasis, refitScale, viewBasis, type ViewName } from "./views.ts";
 import { ViewCube } from "./viewcube.ts";
 import { releaseShared } from "./release.ts";
@@ -41,6 +41,8 @@ interface ViewHost {
   faceMesh(): THREE.Mesh | null;
   highlight(): ViewportHighlight;
   picking(): boolean;
+  /** What a click can pick now (SharedViewport.pickWants; "any" when unset). */
+  pickWants(): PickWants;
   pick(pick: ViewportPick): void;
   /** The view's menu on what is under the pointer (SharedViewport.onMenu); whether one opened. */
   menu(pick: ViewportPick, at: { x: number; y: number }): boolean;
@@ -210,8 +212,8 @@ export class ViewportView {
     };
     const menuAt = (x: number, y: number): boolean => {
       if (!this.host.picking() || this.extrudePicks() || this.host.sketchPlane() || this.host.offeredFaces()) return false;
-      const edge = this.edgeAt(x, y);
-      return this.host.menu({ face: edge === null ? this.faceAt(x, y) : null, edge, shift: false }, { x, y });
+      const { face, edge } = this.bodyTarget(x, y, this.pointerKind === "touch");
+      return this.host.menu({ face, edge, shift: false }, { x, y });
     };
     // A press anywhere else (a browser row, a button, the view cube) comes between two clicks: they are no double-click.
     document.addEventListener("pointerdown", (e) => {
@@ -310,10 +312,10 @@ export class ViewportView {
           this.host.setPlaneHover(target.plane);
           return this.host.setHover(target.face !== null && offered.has(target.face) ? target.face : null, null);
         }
-        const corner = this.cornerAt(pointer.x, pointer.y, this.pointerKind === "touch");
+        // What a click there would pick (a hover is a mouse's: a finger's fan is only for its tap).
+        const { face, edge, corner } = this.bodyTarget(pointer.x, pointer.y, false, this.pointerKind === "touch");
         if (corner !== null) return this.host.setHover(null, null, corner);
-        const edge = this.edgeAt(pointer.x, pointer.y);
-        this.host.setHover(edge === null ? this.faceAt(pointer.x, pointer.y) : null, edge);
+        this.host.setHover(face, edge);
       });
     });
     canvas.addEventListener("pointerleave", () => {
@@ -570,13 +572,12 @@ export class ViewportView {
   /** A click on the bodies (not in Extrude, a sketch or a plane prompt): the corner, edge or face under it, a double-click said. */
   private pickBody(e: PointerEvent) {
     const touch = e.pointerType === "touch";
-    const corner = this.cornerAt(e.clientX, e.clientY, touch);
-    const edge = corner === null ? this.edgeAt(e.clientX, e.clientY) : null;
+    const { face, edge, corner } = this.bodyTarget(e.clientX, e.clientY, touch);
     // The second of a double-click or double-tap (double-pick.ts) says so; the next click starts afresh.
     const click = { x: e.clientX, y: e.clientY, at: e.timeStamp, touch, shift: e.shiftKey, view: [...this.camera.position.toArray(), ...this.camera.quaternion.toArray()] };
     const double = isDoublePick(this.lastClick, click);
     this.lastClick = double ? null : click;
-    this.host.pick({ face: edge === null && corner === null ? this.faceAt(e.clientX, e.clientY) : null, edge, ...(corner !== null ? { vertex: corner } : {}), shift: e.shiftKey, ...(double ? { double: true as const } : {}) });
+    this.host.pick({ face, edge, ...(corner !== null ? { vertex: corner } : {}), shift: e.shiftKey, ...(double ? { double: true as const } : {}) });
   }
 
   /**
@@ -962,6 +963,41 @@ export class ViewportView {
     return hit ? (hit.object.userData.plane as string) : null;
   }
 
+  /**
+   * What a click (or tap) at a point on screen picks among the body's corners, edges and faces: at most one set. What
+   * the shown workspace can pick (SharedViewport.pickWants) comes first: only faces, and no corner or edge is asked,
+   * and a finger's tap fans out round itself (picking.ts faceForTap) so a face too thin to hit is still tapped. Else an offered corner, then an edge, then the face under the pointer, where a
+   * corner or edge takes the pick only in the outer quarter of that face across the pointer (edgeTakesPick), so a face
+   * a few pixels wide keeps its middle. `cornerTouch`: the corner's reach is a finger's (a hover after a tap).
+   */
+  private bodyTarget(clientX: number, clientY: number, touch: boolean, cornerTouch = touch): { face: number | null; edge: number | null; corner: number | null } {
+    const wants = this.host.pickWants();
+    if (wants === "faces") return { face: touch ? this.faceTapped(clientX, clientY) : this.faceAt(clientX, clientY), edge: null, corner: null };
+    const under = this.faceAt(clientX, clientY);
+    const corner = this.cornerAt(clientX, clientY, cornerTouch, under);
+    if (corner !== null) return { face: null, edge: null, corner };
+    const edge = this.edgeAt(clientX, clientY, under);
+    return { face: edge === null ? under : null, edge, corner: null };
+  }
+
+  /** The face a finger's tap at a point on screen picks while only faces can be: the fan of faceForTap round it. */
+  private faceTapped(clientX: number, clientY: number): number | null {
+    return faceForTap(fanRays((dx, dy) => this.faceAt(clientX + dx, clientY + dy)));
+  }
+
+  /**
+   * How far (px) face `face` runs on past a point on screen, going on away from `from` (where an edge or corner near it
+   * is on screen), sampled a pixel at a time out to `upTo` px: the first pixel off the face less a half; Infinity past
+   * `upTo` or with no face. Right on `from`, it goes along `along` (a unit direction) instead.
+   */
+  private faceBeyond(face: number | null, at: { x: number; y: number }, from: { x: number; y: number }, along: { x: number; y: number }, upTo: number): number {
+    if (face === null) return Infinity;
+    const d = Math.hypot(at.x - from.x, at.y - from.y);
+    const u = d > 0 ? { x: (at.x - from.x) / d, y: (at.y - from.y) / d } : along;
+    for (let k = 1; k <= upTo; k++) if (this.faceAt(at.x + k * u.x, at.y + k * u.y) !== face) return k - 0.5;
+    return Infinity;
+  }
+
   /** The kernel face index under a point on screen (client pixels), or null for empty space. */
   private faceAt(clientX: number, clientY: number): number | null {
     return this.faceHitAt(clientX, clientY)?.face ?? null;
@@ -996,19 +1032,25 @@ export class ViewportView {
    * screen (client pixels) within CORNER_PICK_PX and not hidden by a face,
    * by its place in the list; null when none is offered or near.
    */
-  private cornerAt(clientX: number, clientY: number, touch: boolean): number | null {
+  private cornerAt(clientX: number, clientY: number, touch: boolean, under: number | null = null): number | null {
     const corners = this.host.corners();
     const faceMesh = this.host.faceMesh();
     if (!corners || corners.length === 0 || !faceMesh || this.image) return null;
     const rect = this.renderer.domElement.getBoundingClientRect();
     const at = { x: clientX - rect.left, y: clientY - rect.top };
-    for (const i of pointsNear(this.screenPoints(corners), at, CORNER_PICK_PX[touch ? "touch" : "mouse"])) {
+    const reach = CORNER_PICK_PX[touch ? "touch" : "mouse"];
+    const screen = this.screenPoints(corners);
+    for (const i of pointsNear(screen, at, reach)) {
       const c = corners[i];
       const towards = new THREE.Vector3(c[0], c[1], c[2]).sub(this.camera.position);
       const distance = towards.length();
       this.raycaster.set(this.camera.position, towards.normalize());
       const hit = firstHit(faceMesh, this.raycaster);
-      if (unhidden(distance, hit ? hit.distance : null)) return i;
+      if (!unhidden(distance, hit ? hit.distance : null)) continue;
+      // Seen: it takes the pick unless the pointer is in the middle of a thin face under it (edgeTakesPick).
+      const p = screen[i]!;
+      const away = this.faceBeyond(under, { x: clientX, y: clientY }, { x: p.x + rect.left, y: p.y + rect.top }, { x: 1, y: 0 }, beyondNeeded(reach));
+      if (edgeTakesPick(Math.hypot(p.x - at.x, p.y - at.y), away, reach)) return i;
     }
     return null;
   }
@@ -1017,7 +1059,7 @@ export class ViewportView {
    * The kernel edge index whose line passes within a few pixels of a point
    * on screen (client pixels) and is not hidden by a face there, or null.
    */
-  private edgeAt(clientX: number, clientY: number): number | null {
+  private edgeAt(clientX: number, clientY: number, under: number | null = null): number | null {
     const mesh = this.host.mesh();
     const faceMesh = this.host.faceMesh();
     if (!mesh || !faceMesh || this.image) return null;
@@ -1033,7 +1075,15 @@ export class ViewportView {
       const distance = towards.length();
       this.raycaster.set(this.camera.position, towards.normalize());
       const hit = firstHit(faceMesh, this.raycaster);
-      if (unhidden(distance, hit ? hit.distance : null)) return edgeOfSegment(mesh.edge_line_edges, segment);
+      if (!unhidden(distance, hit ? hit.distance : null)) continue;
+      // Seen: it takes the pick unless the pointer is in the middle of a thin face under it (edgeTakesPick); right on
+      // its line, the face's run is looked for across the line.
+      const [ax, ay, bx, by] = [screen[4 * segment], screen[4 * segment + 1], screen[4 * segment + 2], screen[4 * segment + 3]];
+      const length = Math.hypot(bx - ax, by - ay);
+      const across = length > 0 ? { x: -(by - ay) / length, y: (bx - ax) / length } : { x: 1, y: 0 };
+      const nearest = { x: ax + t * (bx - ax), y: ay + t * (by - ay) };
+      const away = this.faceBeyond(under, { x: clientX, y: clientY }, nearest, across, beyondNeeded(EDGE_PICK_PX));
+      if (edgeTakesPick(Math.hypot(nearest.x - clientX, nearest.y - clientY), away, EDGE_PICK_PX)) return edgeOfSegment(mesh.edge_line_edges, segment);
     }
     return null;
   }
@@ -1389,6 +1439,7 @@ export class Viewer implements SharedViewport {
   /** TestLab's colour map on the body on show (linear, three a vertex), drawn in place of the face colours; null when none. */
   private colourMap: Float32Array | null = null;
   private picker: ((pick: ViewportPick) => void) | null = null;
+  private wanted: (() => PickWants) | null = null;
   private menuHandler: ((pick: ViewportPick, at: { x: number; y: number }) => boolean) | null = null;
   private highlight: ViewportHighlight = NO_HIGHLIGHT;
   /** The offered corner, edge or face under the pointer while picking is on (at most one is set). */
@@ -1483,6 +1534,7 @@ export class Viewer implements SharedViewport {
       highlight: () => this.highlight,
       picking: () => this.picker !== null,
       pick: (pick) => this.picker?.(pick),
+      pickWants: () => this.wanted?.() ?? "any",
       menu: (pick, at) => (this.picker ? (this.menuHandler?.(pick, at) ?? false) : false),
       setHover: (face, edge, corner) => this.setHover(face, edge, corner ?? null),
       corners: () => (this.picker ? this.cornerPoints : null),
@@ -1664,6 +1716,14 @@ export class Viewer implements SharedViewport {
 
   get onMenu() {
     return this.menuHandler;
+  }
+
+  get pickWants() {
+    return this.wanted;
+  }
+
+  set pickWants(wants: (() => PickWants) | null | undefined) {
+    this.wanted = wants ?? null;
   }
 
   set onMenu(handler: ((pick: ViewportPick, at: { x: number; y: number }) => boolean) | null | undefined) {

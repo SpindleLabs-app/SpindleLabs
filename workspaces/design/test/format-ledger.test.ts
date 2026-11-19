@@ -71,7 +71,10 @@ export function propertyNames(source: string, name: string): string[] {
 // `drawn`), a Duplicate may mirror across one, and the hidden list may name a construction or "folder-constructions".
 // Design data version 29 (step 59a3b): a circular Pattern's axis may be a construction axis ("construct:<id>"), with no
 // centre, depending on it after its bodies' items.
-const LEDGER_VERSION = 29;
+// Design data version 30 (SL #759 item 4): a body extruded from a sketch the rebuild places starts its own frame from
+// that sketch's, so a face sketch's `body` on it holds it; one drawn before is marked `unbased` as it is read, so it is
+// carried as before until a rebuild writes its frame by today's rule; a version 29 reader would carry a new one wrong.
+const LEDGER_VERSION = 30;
 const LEDGER: { file: string; type: string; names: string[] }[] = [
   { file: "workspaces/design/src/document.ts", type: "DesignDocument", names: ["version", "nextId", "profiles", "sketches", "timeline", "kept", "bodies", "nextBody", "hidden", "shownPlanes"] },
   { file: "workspaces/design/src/document.ts", type: "Sketch", names: ["id", "points", "curves", "constraints", "face", "drawn", "pins", "projected"] },
@@ -81,7 +84,7 @@ const LEDGER: { file: string; type: string; names: string[] }[] = [
   { file: "workspaces/design/src/document.ts", type: "SketchArcCurve", names: ["id", "kind", "start", "end", "centre", "construction"] },
   { file: "workspaces/design/src/document.ts", type: "SketchDistance", names: ["id", "kind", "a", "b", "value"] },
   { file: "workspaces/design/src/document.ts", type: "SketchDiameter", names: ["id", "kind", "circle", "value"] },
-  { file: "workspaces/design/src/face-sketch.ts", type: "SketchFace", names: ["frame", "side", "held", "body", "reversed", "first"] },
+  { file: "workspaces/design/src/face-sketch.ts", type: "SketchFace", names: ["frame", "side", "held", "body", "reversed", "first", "unbased"] },
   { file: "workspaces/design/src/regions.ts", type: "RegionRef", names: ["outer", "centroid"] },
   { file: "workspaces/design/src/regions.ts", type: "RegionPiece", names: ["curve", "reversed"] },
   { file: "workspaces/design/src/document.ts", type: "BodyRecord", names: ["id", "number", "faces"] },

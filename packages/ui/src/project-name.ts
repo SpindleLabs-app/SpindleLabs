@@ -1,14 +1,16 @@
 // The open project's name in the middle of the top bar (UI audit 2026-11-12, Ben's choice A): the bar's empty middle
 // shows which project is open, and a click there renames it in place (until now nothing on screen could rename the open
-// project). It reads as plain text until pointed at or focused. Enter or leaving the box commits the name, Escape puts the
-// old one back; an empty or unchanged name changes nothing. The shell makes a rename an undo step and stores it.
+// project). It reads as plain text until pointed at or focused. Every key typed renames the project at once, as typing
+// (SL #764 item 4: kept only on Enter or leaving the box, a reload dropped the name and Ctrl+S saved the old one), so the
+// shell folds the keys into one undo step as it does the size boxes'; Escape, or leaving the box emptied, puts back the
+// name it had when focused. An empty or unchanged name changes nothing. The shell makes a rename an undo step and stores it.
 // Styles: styles/project-name.css.
 
 export interface ProjectNameParts {
   /** The open project's name now. */
   name(): string;
-  /** Called with the new name (trimmed, not empty, not the old one, at most `maxLength`). */
-  rename(name: string): void;
+  /** Called with the new name (trimmed, not empty, not the old one, at most `maxLength`); `typing` while keys are typed in the box (one undo step for them all). */
+  rename(name: string, typing?: boolean): void;
   maxLength: number;
 }
 
@@ -38,11 +40,26 @@ export function projectNameBox(doc: Document, parts: ProjectNameParts): ProjectN
     input.value = parts.name();
     input.dataset.empty = String(input.value === "");
   };
+  /** The name when the box was focused: what Escape, or leaving it emptied, puts back. */
+  let before: string | null = null;
+  input.addEventListener("focus", () => (before = parts.name()));
+  const back = () => {
+    if (before !== null && parts.name() !== before) parts.rename(before, true);
+  };
   const commit = () => {
-    const name = nameToKeep(input.value, parts.name(), parts.maxLength);
-    if (name !== null) parts.rename(name);
+    if (input.value.trim() === "") back();
+    else {
+      const name = nameToKeep(input.value, parts.name(), parts.maxLength);
+      if (name !== null) parts.rename(name);
+    }
     show();
   };
+  input.addEventListener("input", () => {
+    before ??= parts.name();
+    const name = nameToKeep(input.value, parts.name(), parts.maxLength);
+    if (name !== null) parts.rename(name, true);
+  });
+  input.addEventListener("blur", () => (before = null));
   input.addEventListener("change", commit);
   input.addEventListener("keydown", (e) => {
     if (e.key === "Enter") {
@@ -52,6 +69,7 @@ export function projectNameBox(doc: Document, parts: ProjectNameParts): ProjectN
     } else if (e.key === "Escape") {
       e.preventDefault();
       e.stopPropagation(); // the name's own Escape, not the workspace's
+      back();
       show();
       input.blur();
     }
