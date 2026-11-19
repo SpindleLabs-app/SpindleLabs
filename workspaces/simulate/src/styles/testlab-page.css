@@ -31,3 +31,5 @@
 .testlab-page .testlab-page-status p { margin: 0; }
 .testlab-page .testlab-page-status .testlab-page-problems { display: block; list-style: disc; margin: var(--look-space-1) 0 0; padding-left: 1.2em; }
 .testlab-page .testlab-page-status .testlab-page-problems li { display: list-item; min-height: 0; padding: 0; margin: 2px 0; background: none; border: 0; }
+/* "joined" beside a Body row while its body is part of the joined test part (page.ts drawBodies, TestLab Join). */
+.testlab-page .testlab-join-tag { font-size: 12px; color: var(--text-dim); flex: none; }

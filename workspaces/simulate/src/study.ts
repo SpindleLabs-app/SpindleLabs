@@ -72,23 +72,39 @@ export interface Study {
   fixtures: Fixture[];
   loads: Load[];
   mesh: MeshSize;
+  /**
+   * Other bodies joined to `body` for this test only (version 3, Ben 2026-11-19): "all" for every body Design shows at
+   * the time of each look-up and Run (so a body made later joins too), or the chosen ones by stable reference with the
+   * name they were picked by. Never changes the design: the kernel joins them into one part each time the study is
+   * looked up or run (join.ts). Absent or null: `body` alone.
+   */
+  joined?: JoinedBodies | null;
 }
+
+/** A body joined for a test, as a study keeps it. */
+export interface JoinedBody {
+  ref: BodyReference;
+  label: string;
+}
+
+/** What a study joins to its body: every body shown, or the ones chosen (never empty, never its own body, each once). */
+export type JoinedBodies = "all" | JoinedBody[];
 
 /** What the project keeps for TestLab (project.workspaces.simulate). */
 export interface TestLabData {
-  version: 2;
+  version: 3;
   studies: Study[];
   /** The next number for an id (study-n, fixture-n, load-n), never reused. */
   nextId: number;
 }
 
-/** 1: T1 (no material); 2: T2, a study's material (version 1 reads as "not chosen"). */
-export const TESTLAB_VERSION = 2;
+/** 1: T1 (no material); 2: T2, a study's material (version 1 reads as "not chosen"); 3: bodies joined for a test (`Study.joined`; older versions read as none). */
+export const TESTLAB_VERSION = 3;
 
 /** The biggest amount a box takes: 1,000,000 N (about 100 tonnes hanging), 1,000,000 kg or 1,000,000 kPa (1 GPa). */
 export const MAX_AMOUNT = 1_000_000;
 
-export const emptyTestLab = (): TestLabData => ({ version: 2, studies: [], nextId: 1 });
+export const emptyTestLab = (): TestLabData => ({ version: 3, studies: [], nextId: 1 });
 
 const isObject = (x: unknown): x is Record<string, unknown> => typeof x === "object" && x !== null && !Array.isArray(x);
 const isRef = (x: unknown, kind: "face" | "body"): boolean => isObject(x) && x.kind === kind && typeof x.id === "string" && x.id !== "";
@@ -163,9 +179,26 @@ export function readTestLab(data: unknown): TestLabData {
       if (typeof s.material === "string" && materialLibrary().get(s.material)?.mechanical === undefined) throw new Error(`${where} is made of ${s.material}, which is not in this SpindleLabs's materials library`);
       material = s.material as string | null;
     }
-    return { id, name: s.name, kind: "static", body, material, fixtures, loads, mesh: s.mesh as MeshSize };
+    const joined = (data.version as number) >= 3 ? readJoined(s.joined, body, where) : null;
+    return { id, name: s.name, kind: "static", body, material, fixtures, loads, mesh: s.mesh as MeshSize, ...(joined !== null ? { joined } : {}) };
   });
-  return { version: 2, studies, nextId: data.nextId };
+  return { version: 3, studies, nextId: data.nextId };
+}
+
+/** A study's joined bodies as version 3 keeps them, checked: none (absent or null), "all", or a list of other bodies each once. */
+function readJoined(x: unknown, body: Study["body"], where: string): JoinedBodies | null {
+  if (x === undefined || x === null) return null;
+  if (body === null) throw new Error(`${where} joins bodies but tests no body`);
+  if (x === "all") return "all";
+  if (!Array.isArray(x) || x.length === 0) throw new Error(`${where}'s joined bodies are not "all" or a list of bodies`);
+  const seen = new Set<string>([body.ref.id]);
+  return x.map((b, i) => {
+    if (!isObject(b) || !isRef(b.ref, "body") || typeof b.label !== "string") throw new Error(`${where}'s joined body ${i + 1} is not a body reference with a name`);
+    const id = (b.ref as Record<string, unknown>).id as StableId;
+    if (seen.has(id)) throw new Error(`${where} joins ${b.label} twice, or to itself`);
+    seen.add(id);
+    return { ref: { kind: "body", id }, label: b.label };
+  });
 }
 
 /** Why an amount can't be a load's, in words; null when it can. Above 0 and at most MAX_AMOUNT; 0 pushes nothing. */
@@ -216,8 +249,37 @@ export function addStudy(data: TestLabData, body: Study["body"]): { data: TestLa
 /** The study on another body: its holds and loads are emptied, since their faces were the old body's. */
 export function chooseBody(data: TestLabData, studyId: string, body: { ref: BodyReference; label: string }): TestLabData {
   const s = studyOf(data, studyId);
-  if (s.body?.ref.id === body.ref.id) return s.body.label === body.label ? data : withStudy(data, { ...s, body });
-  return withStudy(data, { ...s, body, fixtures: s.fixtures.map((f) => ({ ...f, faces: [] })), loads: [] });
+  const { joined: _, ...alone } = s;
+  if (s.body?.ref.id === body.ref.id && !s.joined) return s.body.label === body.label ? data : withStudy(data, { ...alone, body });
+  return withStudy(data, { ...alone, body, fixtures: s.fixtures.map((f) => ({ ...f, faces: [] })), loads: [] });
+}
+
+/** The study with every face whose stable id is in `drop` taken off its holds and loads (faces on a body no longer tested). */
+function withoutFaces(s: Study, drop: ReadonlySet<string>): Study {
+  if (drop.size === 0) return s;
+  const keep = (faces: readonly HeldFace[]) => faces.filter((f) => !drop.has(f.ref.id));
+  return { ...s, fixtures: s.fixtures.map((f) => ({ ...f, faces: keep(f.faces) })), loads: s.loads.map((l) => ({ ...l, faces: keep(l.faces) })) };
+}
+
+/**
+ * Bodies joined for this test (never the design): `bodies` in order, the first becoming the study's body, the rest
+ * joined to it; `all` joins every body shown instead of the rest. Holds and loads on the faces in `drop` (on a body
+ * left out of the new group: the page knows which) are taken off; every other pick stays, since a face keeps its stable
+ * name on its own body. Throws (a page bug) for fewer than two bodies without `all`, or one body twice.
+ */
+export function joinBodies(data: TestLabData, studyId: string, bodies: readonly JoinedBody[], all: boolean, drop: ReadonlySet<string>): TestLabData {
+  const s = studyOf(data, studyId);
+  if (bodies.length === 0 || (!all && bodies.length < 2)) throw new Error("a join needs two bodies, or all of them");
+  if (new Set(bodies.map((b) => b.ref.id)).size !== bodies.length) throw new Error("a join takes each body once");
+  const [first, ...rest] = bodies;
+  return withStudy(data, { ...withoutFaces(s, drop), body: { ref: first.ref, label: first.label }, joined: all ? "all" : rest.map((b) => ({ ref: b.ref, label: b.label })) });
+}
+
+/** The join taken away: `body` tested alone again, holds and loads on the faces in `drop` (on the other bodies) taken off. */
+export function unjoin(data: TestLabData, studyId: string, body: JoinedBody, drop: ReadonlySet<string>): TestLabData {
+  const s = studyOf(data, studyId);
+  const { joined: _, ...alone } = withoutFaces(s, drop);
+  return withStudy(data, { ...alone, body: { ref: body.ref, label: body.label } });
 }
 
 /** The study with this id; throws for one that isn't there (a page bug, never the user's). */
