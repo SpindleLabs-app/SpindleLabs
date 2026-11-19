@@ -162,3 +162,98 @@ export function unhidden(pointDistance: number, firstHit: number | null): boolea
 export function planeOrFace(plane: boolean, face: boolean): "plane" | "face" | null {
   return face ? "face" : plane ? "plane" : null;
 }
+
+// Thin faces (Ben, 2026-11-19): a face only a few pixels wide on screen (a 1 mm plate's side, the end of a long bar)
+// lies wholly inside the reach of its own edges and corners, so they used to take every click on it and the face
+// could not be picked at all, least of all by a finger. Two rules give it back.
+
+/**
+ * Whether an edge or corner `distance` px from the pointer takes the pick from the face under the pointer, where that
+ * face runs on for `beyond` px past the pointer, away from the edge or corner (Infinity: further than anyone asks).
+ * Within `reach` it does, unless the pointer is in the face's middle half across: the face is `distance + beyond`
+ * wide there, so the edge's quarter is `distance < (distance + beyond) / 4`, that is `3 · distance < beyond`. A face
+ * at least four reaches wide (all but thin ones) loses nothing: there every point within reach of the edge is in
+ * the edge's quarter. Exactly on the quarter line the face keeps it.
+ */
+export function edgeTakesPick(distance: number, beyond: number, reach: number): boolean {
+  return distance < reach && 3 * distance < beyond;
+}
+
+/** How far past the pointer a face's run is ever measured (px): three reaches settle edgeTakesPick for any distance within reach. */
+export const beyondNeeded = (reach: number) => 3 * reach;
+
+/**
+ * While only faces can be picked (TestLab's holds and loads, Shell's open faces, the plane-or-face prompt), a tap
+ * this near a face narrower on screen than a fingertip (twice this across) picks it, ahead of a wider face under the
+ * finger; and a tap this near the part, off it, picks the nearest face. A finger covers about 10 mm, some 40 CSS px;
+ * this is a little more than its middle's slip and less than the gap between two thin faces worth telling apart.
+ */
+export const FACE_TAP_PX = 12;
+
+/** What one ray of a tap's fan met at one pixel out from the tap: the face it first hit there (null: none) and how far out, px. */
+export interface FanHit {
+  face: number | null;
+  at: number;
+}
+
+/** How far out (px) each ray of a tap's fan looks: past FACE_TAP_PX by enough to see a face starting there end again within 2·FACE_TAP_PX. */
+export const FAN_PX = 3 * FACE_TAP_PX;
+
+/**
+ * The face a tap picks while only faces can be. `rays` holds an even number of directions fanned out from the tap,
+ * the second half opposite the first in the same order (ray k + n/2 points the other way from ray k), each met every
+ * pixel out from 0 (the tap itself) to FAN_PX. A face is thin when some ray crosses the whole of it, from where it
+ * starts to where it ends, in fewer than 2·FACE_TAP_PX samples; for the tap's own face the crossing is along a ray and
+ * its opposite together. The nearest thin face starting within FACE_TAP_PX wins (the tap's own at 0, so a thin face
+ * tapped on keeps it); else the face under the tap; else, for a tap off the part, the nearest face met within
+ * FACE_TAP_PX; null when there is none.
+ */
+export function faceForTap(rays: readonly (readonly FanHit[])[]): number | null {
+  if (rays.length === 0 || rays.length % 2 !== 0) return null;
+  const half = rays.length / 2;
+  const under = rays[0][0]?.at === 0 ? rays[0][0].face : null;
+  // The last sample of the run of one face starting at sample i.
+  const runEnd = (ray: readonly FanHit[], i: number) => {
+    let end = i;
+    while (end + 1 < ray.length && ray[end + 1].face === ray[i].face) end++;
+    return end;
+  };
+  let thin: { face: number; at: number } | null = null;
+  let nearest: { face: number; at: number } | null = null;
+  rays.forEach((ray, k) => {
+    for (let i = 0; i < ray.length; i++) {
+      const { face, at } = ray[i];
+      if (face === null || at > FACE_TAP_PX || (i > 0 && ray[i - 1].face === face)) continue; // only where a face starts, within reach
+      if (nearest === null || at < nearest.at) nearest = { face, at };
+      const end = runEnd(ray, i);
+      let crossed = end + 1 < ray.length;
+      let across = ray[end].at - at + 1;
+      if (i === 0) {
+        // The tap's own face, across this way and back the other.
+        const back = rays[(k + half) % rays.length];
+        const backEnd = runEnd(back, 0);
+        crossed &&= backEnd + 1 < back.length && back[0].face === face;
+        across = ray[end].at + back[backEnd].at + 1;
+      }
+      if (crossed && across < 2 * FACE_TAP_PX && (thin === null || at < thin.at)) thin = { face, at };
+    }
+  });
+  const found = thin as { face: number } | null;
+  return found?.face ?? under ?? (nearest as { face: number } | null)?.face ?? null;
+}
+
+/** How many directions a tap's fan looks along: eight lines through the tap, both ways (faceForTap's opposites). */
+export const FAN_DIRECTIONS = 16;
+
+/**
+ * A tap's fan for faceForTap: `look(dx, dy)` is the face under the screen point (dx, dy) px from the tap (null: none),
+ * asked every pixel out to FAN_PX along each of `directions` (even) evenly turned directions, the first along +x.
+ */
+export function fanRays(look: (dx: number, dy: number) => number | null, directions = FAN_DIRECTIONS): FanHit[][] {
+  const under = look(0, 0);
+  return Array.from({ length: directions }, (_, k) => {
+    const turn = (2 * Math.PI * k) / directions;
+    const [ux, uy] = [Math.cos(turn), Math.sin(turn)];
+    return Array.from({ length: FAN_PX + 1 }, (_, at) => ({ face: at === 0 ? under : look(at * ux, at * uy), at }));
+  });
+}

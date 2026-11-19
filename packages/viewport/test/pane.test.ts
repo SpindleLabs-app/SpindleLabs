@@ -235,3 +235,23 @@ test("issue #219: the view's menu on a body goes to the pane that set it most re
   assert.equal(scene.onMenu, null, "none left: null");
   assert.equal(scene.onPick, null, "picking is separate");
 });
+
+test("what a click can pick (pickWants) is the pane's whose pick handler is used", () => {
+  const { scene } = fakeScene();
+  const pane = paneViewports(scene);
+  const a = pane(fakeView("a", []));
+  const b = pane(fakeView("b", []));
+  const faces = () => "faces" as const;
+  a.onPick = () => {};
+  a.pickWants = faces; // TestLab: only faces
+  assert.equal(scene.pickWants, faces);
+  b.onPick = () => {}; // Design picks now, saying nothing: anything
+  assert.equal(scene.pickWants ?? null, null);
+  assert.equal(a.pickWants, faces, "a still reads back its own");
+  b.onPick = null; // Design hides: TestLab's faces again
+  assert.equal(scene.pickWants, faces);
+  a.pickWants = null;
+  assert.equal(scene.pickWants ?? null, null);
+  a.onPick = null;
+  assert.equal(scene.pickWants ?? null, null);
+});
