@@ -23,7 +23,7 @@ import { ProjectGone, shellTabs, type ShellTabs } from "./design-tabs.ts";
 import { historyPanel, baseNameOf, startDesignDefaults, readGridSize, readGridSnap, bugReportDialog, bugReportEndpoint, changeNote, fileMenu, fileSections, shellCommands, type FileMenuParts, holdSkeleton, keepTypingVisible, PROJECT_KIND, repeatGuard, saveFile, type FileHandle, iconSvg, openElsewhere, shortcutList, parseWhatsNew, whatsNewList, whatsNewNote, defaultSplit, showPlaceholder, workspaceEta, SPLIT_MIN_WIDTH_PX, splitChoices, WarmPool, fillSettings, SETTINGS_KEY, SettingsStore, startTheme, startUnits, readUnitChoice, startMouse, readMouseChoice, startTooltips, readThemeChoice, applyCustom, readCustom, withIcon, workspaceSwitcher, homeScreen, projectNameBox, HOME_MOTION_KEY, motionChoiceOf, type MotionChoice } from "@fission/ui";
 import { paneViewports, Viewer, type ViewportView } from "@fission/viewport";
 import { communityPage } from "@fission/community";
-import { bringForward, forget, listWithHeld, openAsStored, MAX_PROJECT_NAME, rename as renameKept, keepStorage, keptEntry, localStore, OPENING_KEY, recoverUnsaved, reopenGuard, startAutosave, STORAGE_ANSWER_MS, storedCopy, type Autosave, type AutosaveStatus, type OpeningChannel } from "@fission/storage";
+import { bringForward, forget, listWithHeld, openAsStored, MAX_PROJECT_NAME, rename as renameKept, keepStorage, keptEntry, localStore, OPENING_KEY, recoverUnsaved, reopenGuard, startAutosave, STORAGE_ANSWER_MS, storedCopyOf, type Autosave, type ProjectSummary, type AutosaveStatus, type OpeningChannel } from "@fission/storage";
 import { listedProjects } from "./projects.ts";
 import { startPrintLog } from "./print-log.ts";
 import { versionList, versionTime, type VersionPlace } from "@fission/ui";
@@ -322,6 +322,7 @@ if (__TEST_HOOKS__ && new URLSearchParams(location.search).has("test-hooks"))
       // Whether the undo history holds work still to be recorded (a delete the kernel still plans, an OK it still checks):
       // the page shows the step before until it lands, so the monkey waits on it before reading the bar (issue #650).
       historyBusy: () => ctx.history.working(), // held work running by itself, not a question waiting on the person (SL #397)
+      waitingToRecord: () => ctx.history.waitingToRecord(), // an OK asked for and not recorded yet: leaving asks first (#749)
       // The home screen's turning picture shows these edges instead of the open project's (e2e/home-backdrop.mjs, STL=).
       homeStandIn: (lines: number[] | null, surface?: { positions: number[]; indices: number[] } | null) => home?.showStandIn(lines, surface),
       // The home picture reports its angle and frames, each frame counted `ms` slower (e2e/home-backdrop.mjs, run under a paused clock).
@@ -1040,11 +1041,12 @@ function openProject(file: string | Uint8Array, fileName = "") {
   // the opened file's first save was refused as another tab's); a store that can't answer means a new copy.
   // A file whose project took the file's name is also looked up under the name inside it: the project it was saved
   // from, still "Untitled" here, goes on under its id with the new name, not as a second copy beside it.
-  const nothing = { found: undefined, exact: false } as { found: Awaited<ReturnType<typeof storedCopy>>; exact: boolean };
+  const nothing = { found: undefined, exact: false } as { found: ProjectSummary | undefined; exact: boolean };
+  // Both in one look through the store, each kept project read once (nightly issue #749: two looks, one project at a
+  // time, kept an Open "Saving…" for 20-35 s among 60 kept projects).
   const lookUp = async () => {
-    const exact = await storedCopy(store, project);
-    if (exact !== undefined || project === read) return { found: exact, exact: exact !== undefined };
-    return { found: await storedCopy(store, read), exact: false };
+    const copy = await storedCopyOf(store, project === read ? [project] : [project, read]);
+    return { found: copy?.summary, exact: copy?.index === 0 };
   };
   const copy = canKeep ? lastWrites.then(lookUp).catch(() => nothing) : Promise.resolve(nothing);
   guard.finished(); // the last project, if it was still opening, didn't freeze the tab
