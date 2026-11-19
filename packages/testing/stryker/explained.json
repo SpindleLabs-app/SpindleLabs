@@ -1164,6 +1164,20 @@
   {
     "file": "packages/print/src/print-check.ts",
     "mutator": "ArithmeticOperator",
+    "original": "(this.tri[9 * t + a] + this.tri[9 * t + 3 + a] + this.tri[9 * t + 6 + a]) / 3",
+    "replacement": "(this.tri[9 * t + a] + this.tri[9 * t + 3 + a] + this.tri[9 * t + 6 + a]) * 3",
+    "why": "The centres only sort triangles when a node is split. Only shapes the ray tree (which triangles share a node, the order they are visited in); every node's box is worked from its own triangles' corners, so each ray still meets every triangle it can hit: the same answers, at a different speed."
+  },
+  {
+    "file": "packages/print/src/print-check.ts",
+    "mutator": "ArithmeticOperator",
+    "original": "this.tri[9 * t + a] + this.tri[9 * t + 3 + a] + this.tri[9 * t + 6 + a]",
+    "replacement": "this.tri[9 * t + a] + this.tri[9 * t + 3 + a] - this.tri[9 * t + 6 + a]",
+    "why": "The centres only sort triangles when a node is split. Only shapes the ray tree (which triangles share a node, the order they are visited in); every node's box is worked from its own triangles' corners, so each ray still meets every triangle it can hit: the same answers, at a different speed."
+  },
+  {
+    "file": "packages/print/src/print-check.ts",
+    "mutator": "ArithmeticOperator",
     "original": "this.tri[9 * t + a] + this.tri[9 * t + 3 + a]",
     "replacement": "this.tri[9 * t + a] - this.tri[9 * t + 3 + a]",
     "why": "The centres only sort triangles when a node is split. Only shapes the ray tree (which triangles share a node, the order they are visited in); every node's box is worked from its own triangles' corners, so each ray still meets every triangle it can hit: the same answers, at a different speed."
@@ -1198,6 +1212,34 @@
   },
   {
     "file": "packages/print/src/print-check.ts",
+    "mutator": "ArithmeticOperator",
+    "original": "9 * t",
+    "replacement": "9 / t",
+    "why": "The centres only sort triangles when a node is split. Only shapes the ray tree (which triangles share a node, the order they are visited in); every node's box is worked from its own triangles' corners, so each ray still meets every triangle it can hit: the same answers, at a different speed."
+  },
+  {
+    "file": "packages/print/src/print-check.ts",
+    "mutator": "ArithmeticOperator",
+    "original": "9 * t + 6 + a",
+    "replacement": "9 * t + 6 - a",
+    "why": "The centres only sort triangles when a node is split. Only shapes the ray tree (which triangles share a node, the order they are visited in); every node's box is worked from its own triangles' corners, so each ray still meets every triangle it can hit: the same answers, at a different speed."
+  },
+  {
+    "file": "packages/print/src/print-check.ts",
+    "mutator": "ArithmeticOperator",
+    "original": "9 * t + 6",
+    "replacement": "9 * t - 6",
+    "why": "The centres only sort triangles when a node is split. Only shapes the ray tree (which triangles share a node, the order they are visited in); every node's box is worked from its own triangles' corners, so each ray still meets every triangle it can hit: the same answers, at a different speed."
+  },
+  {
+    "file": "packages/print/src/print-check.ts",
+    "mutator": "ArithmeticOperator",
+    "original": "9 * t",
+    "replacement": "9 / t",
+    "why": "The centres only sort triangles when a node is split. Only shapes the ray tree (which triangles share a node, the order they are visited in); every node's box is worked from its own triangles' corners, so each ray still meets every triangle it can hit: the same answers, at a different speed."
+  },
+  {
+    "file": "packages/print/src/print-check.ts",
     "mutator": "ConditionalExpression",
     "original": "n === 0",
     "replacement": "false",
@@ -1226,17 +1268,45 @@
   },
   {
     "file": "packages/print/src/print-check.ts",
-    "mutator": "EqualityOperator",
-    "original": "v < lo[a]",
-    "replacement": "v <= lo[a]",
-    "why": "Ties: a corner equal to the box's low end leaves it the same."
+    "mutator": "UnaryOperator",
+    "original": "-Infinity",
+    "replacement": "+Infinity",
+    "why": "Starts a node box's high end at +∞ on that axis, so the box can only be bigger than its triangles' (it reaches to infinity). Only makes the slab test cull fewer nodes (a later entry time t0 can only shrink, an exit time t1 only grow): the box tree is a speed-up, and visiting a node the ray misses finds no hit there, because hit() tests each triangle exactly."
+  },
+  {
+    "file": "packages/print/src/print-check.ts",
+    "mutator": "UnaryOperator",
+    "original": "-Infinity",
+    "replacement": "+Infinity",
+    "why": "Starts a node box's high end at +∞ on that axis, so the box can only be bigger than its triangles' (it reaches to infinity). Only makes the slab test cull fewer nodes (a later entry time t0 can only shrink, an exit time t1 only grow): the box tree is a speed-up, and visiting a node the ray misses finds no hit there, because hit() tests each triangle exactly."
   },
   {
     "file": "packages/print/src/print-check.ts",
     "mutator": "EqualityOperator",
-    "original": "v > hi[a]",
-    "replacement": "v >= hi[a]",
-    "why": "Ties: a corner equal to the box's high end leaves it the same."
+    "original": "i < e",
+    "replacement": "i <= e",
+    "why": "Also folds order[e] (a triangle of the next node, or past the end: undefined, whose corners compare false) into the node's box, which can only make it bigger. Only makes the slab test cull fewer nodes (a later entry time t0 can only shrink, an exit time t1 only grow): the box tree is a speed-up, and visiting a node the ray misses finds no hit there, because hit() tests each triangle exactly."
+  },
+  {
+    "file": "packages/print/src/print-check.ts",
+    "mutator": "EqualityOperator",
+    "original": "k < 3",
+    "replacement": "k <= 3",
+    "why": "Also folds a fourth corner (the next triangle's first, or past the end: undefined) into the node's box, which can only make it bigger. Only makes the slab test cull fewer nodes (a later entry time t0 can only shrink, an exit time t1 only grow): the box tree is a speed-up, and visiting a node the ray misses finds no hit there, because hit() tests each triangle exactly."
+  },
+  {
+    "file": "packages/print/src/print-check.ts",
+    "mutator": "EqualityOperator",
+    "original": "a < 3",
+    "replacement": "a <= 3",
+    "why": "The fourth coordinate is compared with lo[3] and hi[3], which are undefined, so the comparisons are false and the box is unchanged."
+  },
+  {
+    "file": "packages/print/src/print-check.ts",
+    "mutator": "EqualityOperator",
+    "original": "v < lo[a]",
+    "replacement": "v <= lo[a]",
+    "why": "Ties: a corner equal to the box's low end leaves it the same."
   },
   {
     "file": "packages/print/src/print-check.ts",
@@ -1247,10 +1317,31 @@
   },
   {
     "file": "packages/print/src/print-check.ts",
+    "mutator": "EqualityOperator",
+    "original": "v > hi[a]",
+    "replacement": "v >= hi[a]",
+    "why": "Ties: a corner equal to the box's high end leaves it the same."
+  },
+  {
+    "file": "packages/print/src/print-check.ts",
+    "mutator": "EqualityOperator",
+    "original": "e - s <= 4",
+    "replacement": "e - s < 4",
+    "why": "Never splits a node: one leaf with every triangle. Only shapes the ray tree (which triangles share a node, the order they are visited in); every node's box is worked from its own triangles' corners, so each ray still meets every triangle it can hit: the same answers, at a different speed."
+  },
+  {
+    "file": "packages/print/src/print-check.ts",
     "mutator": "ConditionalExpression",
     "original": "a < 3",
     "replacement": "false",
     "why": "Changes the axis a node is split along. Only shapes the ray tree (which triangles share a node, the order they are visited in); every node's box is worked from its own triangles' corners, so each ray still meets every triangle it can hit: the same answers, at a different speed."
+  },
+  {
+    "file": "packages/print/src/print-check.ts",
+    "mutator": "EqualityOperator",
+    "original": "a < 3",
+    "replacement": "a <= 3",
+    "why": "At a = 3 it reads hi[3] and lo[3], which are undefined, so the comparison is false and the axis stays the same."
   },
   {
     "file": "packages/print/src/print-check.ts",
@@ -1277,6 +1368,13 @@
     "file": "packages/print/src/print-check.ts",
     "mutator": "EqualityOperator",
     "original": "hi[a] - lo[a] > hi[axis] - lo[axis]",
+    "replacement": "hi[a] - lo[a] >= hi[axis] - lo[axis]",
+    "why": "Changes the axis a node is split along. Only shapes the ray tree (which triangles share a node, the order they are visited in); every node's box is worked from its own triangles' corners, so each ray still meets every triangle it can hit: the same answers, at a different speed."
+  },
+  {
+    "file": "packages/print/src/print-check.ts",
+    "mutator": "EqualityOperator",
+    "original": "hi[a] - lo[a] > hi[axis] - lo[axis]",
     "replacement": "hi[a] - lo[a] <= hi[axis] - lo[axis]",
     "why": "Changes the axis a node is split along. Only shapes the ray tree (which triangles share a node, the order they are visited in); every node's box is worked from its own triangles' corners, so each ray still meets every triangle it can hit: the same answers, at a different speed."
   },
@@ -1296,9 +1394,16 @@
   },
   {
     "file": "packages/print/src/print-check.ts",
+    "mutator": "MethodExpression",
+    "original": "Array.from(this.order.subarray(s, e)).sort((p, q) => centre[3 * p + axis] - centre[3 * q + axis])",
+    "replacement": "Array.from(this.order.subarray(s, e))",
+    "why": "Changes how a node's triangles are sorted before the split. Only shapes the ray tree (which triangles share a node, the order they are visited in); every node's box is worked from its own triangles' corners, so each ray still meets every triangle it can hit: the same answers, at a different speed."
+  },
+  {
+    "file": "packages/print/src/print-check.ts",
     "mutator": "ArrowFunction",
-    "original": "(p, q) => centre[3 * p + axis] - centre[3 * q + axis] => ()",
-    "replacement": "undefined",
+    "original": "(p, q) => centre[3 * p + axis] - centre[3 * q + axis]",
+    "replacement": "() => undefined",
     "why": "Changes how a node's triangles are sorted before the split. Only shapes the ray tree (which triangles share a node, the order they are visited in); every node's box is worked from its own triangles' corners, so each ray still meets every triangle it can hit: the same answers, at a different speed."
   },
   {
@@ -1352,16 +1457,16 @@
   },
   {
     "file": "packages/print/src/print-check.ts",
-    "mutator": "BlockStatement",
-    "original": "{ if (ox < lo[b] - 1e-9 || ox > hi[b] + 1e-9) continue; }",
-    "replacement": "{}",
+    "mutator": "LogicalOperator",
+    "original": "Number.isNaN(ta) || Number.isNaN(tb)",
+    "replacement": "Number.isNaN(ta) && Number.isNaN(tb)",
     "why": "The slab test's NaN branch is reached only when the ray runs along this axis (direction 0, so 1/d is infinite) and its origin lies exactly on the box widened by 1e-9 (0·∞). Every triangle in the box is 1e-9 mm inside that bound on this axis, and the ray's coordinate never changes along it, so the ray meets none of them: skipping the node or visiting it gives the same hits."
   },
   {
     "file": "packages/print/src/print-check.ts",
-    "mutator": "LogicalOperator",
-    "original": "Number.isNaN(ta) || Number.isNaN(tb)",
-    "replacement": "Number.isNaN(ta) && Number.isNaN(tb)",
+    "mutator": "BlockStatement",
+    "original": "{ if (ox < lo[b] - 1e-9 || ox > hi[b] + 1e-9) continue; }",
+    "replacement": "{}",
     "why": "The slab test's NaN branch is reached only when the ray runs along this axis (direction 0, so 1/d is infinite) and its origin lies exactly on the box widened by 1e-9 (0·∞). Every triangle in the box is 1e-9 mm inside that bound on this axis, and the ray's coordinate never changes along it, so the ray meets none of them: skipping the node or visiting it gives the same hits."
   },
   {
@@ -1373,16 +1478,16 @@
   },
   {
     "file": "packages/print/src/print-check.ts",
-    "mutator": "LogicalOperator",
+    "mutator": "ConditionalExpression",
     "original": "ox < lo[b] - 1e-9 || ox > hi[b] + 1e-9",
-    "replacement": "ox < lo[b] - 1e-9 && ox > hi[b] + 1e-9",
+    "replacement": "false",
     "why": "The slab test's NaN branch is reached only when the ray runs along this axis (direction 0, so 1/d is infinite) and its origin lies exactly on the box widened by 1e-9 (0·∞). Every triangle in the box is 1e-9 mm inside that bound on this axis, and the ray's coordinate never changes along it, so the ray meets none of them: skipping the node or visiting it gives the same hits."
   },
   {
     "file": "packages/print/src/print-check.ts",
-    "mutator": "ConditionalExpression",
+    "mutator": "LogicalOperator",
     "original": "ox < lo[b] - 1e-9 || ox > hi[b] + 1e-9",
-    "replacement": "false",
+    "replacement": "ox < lo[b] - 1e-9 && ox > hi[b] + 1e-9",
     "why": "The slab test's NaN branch is reached only when the ray runs along this axis (direction 0, so 1/d is infinite) and its origin lies exactly on the box widened by 1e-9 (0·∞). Every triangle in the box is 1e-9 mm inside that bound on this axis, and the ray's coordinate never changes along it, so the ray meets none of them: skipping the node or visiting it gives the same hits."
   },
   {
@@ -1436,17 +1541,17 @@
   },
   {
     "file": "packages/print/src/print-check.ts",
-    "mutator": "BlockStatement",
-    "original": "{ t0 = Math.max(t0, Math.min(ta, tb)); t1 = Math.min(t1, Math.max(ta, tb)); }",
-    "replacement": "{}",
-    "why": "Only makes the slab test cull fewer nodes (a later entry time t0 can only shrink, an exit time t1 only grow): the box tree is a speed-up, and visiting a node the ray misses finds no hit there, because hit() tests each triangle exactly."
-  },
-  {
-    "file": "packages/print/src/print-check.ts",
     "mutator": "ArithmeticOperator",
     "original": "hi[b] + 1e-9",
     "replacement": "hi[b] - 1e-9",
     "why": "The slab test's NaN branch is reached only when the ray runs along this axis (direction 0, so 1/d is infinite) and its origin lies exactly on the box widened by 1e-9 (0·∞). Every triangle in the box is 1e-9 mm inside that bound on this axis, and the ray's coordinate never changes along it, so the ray meets none of them: skipping the node or visiting it gives the same hits."
+  },
+  {
+    "file": "packages/print/src/print-check.ts",
+    "mutator": "BlockStatement",
+    "original": "{ t0 = Math.max(t0, Math.min(ta, tb)); t1 = Math.min(t1, Math.max(ta, tb)); }",
+    "replacement": "{}",
+    "why": "Only makes the slab test cull fewer nodes (a later entry time t0 can only shrink, an exit time t1 only grow): the box tree is a speed-up, and visiting a node the ray misses finds no hit there, because hit() tests each triangle exactly."
   },
   {
     "file": "packages/print/src/print-check.ts",
@@ -1611,16 +1716,16 @@
   },
   {
     "file": "packages/print/src/print-check.ts",
-    "mutator": "ConditionalExpression",
-    "original": "oz < lo[b + 2] - 1e-9 || oz > hi[b + 2] + 1e-9",
-    "replacement": "true",
+    "mutator": "BlockStatement",
+    "original": "{ if (oz < lo[b + 2] - 1e-9 || oz > hi[b + 2] + 1e-9) continue; }",
+    "replacement": "{}",
     "why": "The slab test's NaN branch is reached only when the ray runs along this axis (direction 0, so 1/d is infinite) and its origin lies exactly on the box widened by 1e-9 (0·∞). Every triangle in the box is 1e-9 mm inside that bound on this axis, and the ray's coordinate never changes along it, so the ray meets none of them: skipping the node or visiting it gives the same hits."
   },
   {
     "file": "packages/print/src/print-check.ts",
-    "mutator": "BlockStatement",
-    "original": "{ if (oz < lo[b + 2] - 1e-9 || oz > hi[b + 2] + 1e-9) continue; }",
-    "replacement": "{}",
+    "mutator": "ConditionalExpression",
+    "original": "oz < lo[b + 2] - 1e-9 || oz > hi[b + 2] + 1e-9",
+    "replacement": "true",
     "why": "The slab test's NaN branch is reached only when the ray runs along this axis (direction 0, so 1/d is infinite) and its origin lies exactly on the box widened by 1e-9 (0·∞). Every triangle in the box is 1e-9 mm inside that bound on this axis, and the ray's coordinate never changes along it, so the ray meets none of them: skipping the node or visiting it gives the same hits."
   },
   {
@@ -1653,16 +1758,16 @@
   },
   {
     "file": "packages/print/src/print-check.ts",
-    "mutator": "ArithmeticOperator",
-    "original": "lo[b + 2] - 1e-9",
-    "replacement": "lo[b + 2] + 1e-9",
+    "mutator": "EqualityOperator",
+    "original": "oz < lo[b + 2] - 1e-9",
+    "replacement": "oz >= lo[b + 2] - 1e-9",
     "why": "The slab test's NaN branch is reached only when the ray runs along this axis (direction 0, so 1/d is infinite) and its origin lies exactly on the box widened by 1e-9 (0·∞). Every triangle in the box is 1e-9 mm inside that bound on this axis, and the ray's coordinate never changes along it, so the ray meets none of them: skipping the node or visiting it gives the same hits."
   },
   {
     "file": "packages/print/src/print-check.ts",
-    "mutator": "EqualityOperator",
-    "original": "oz < lo[b + 2] - 1e-9",
-    "replacement": "oz >= lo[b + 2] - 1e-9",
+    "mutator": "ArithmeticOperator",
+    "original": "lo[b + 2] - 1e-9",
+    "replacement": "lo[b + 2] + 1e-9",
     "why": "The slab test's NaN branch is reached only when the ray runs along this axis (direction 0, so 1/d is infinite) and its origin lies exactly on the box widened by 1e-9 (0·∞). Every triangle in the box is 1e-9 mm inside that bound on this axis, and the ray's coordinate never changes along it, so the ray meets none of them: skipping the node or visiting it gives the same hits."
   },
   {
@@ -1674,16 +1779,16 @@
   },
   {
     "file": "packages/print/src/print-check.ts",
-    "mutator": "EqualityOperator",
+    "mutator": "ConditionalExpression",
     "original": "oz > hi[b + 2] + 1e-9",
-    "replacement": "oz >= hi[b + 2] + 1e-9",
+    "replacement": "false",
     "why": "The slab test's NaN branch is reached only when the ray runs along this axis (direction 0, so 1/d is infinite) and its origin lies exactly on the box widened by 1e-9 (0·∞). Every triangle in the box is 1e-9 mm inside that bound on this axis, and the ray's coordinate never changes along it, so the ray meets none of them: skipping the node or visiting it gives the same hits."
   },
   {
     "file": "packages/print/src/print-check.ts",
-    "mutator": "ConditionalExpression",
+    "mutator": "EqualityOperator",
     "original": "oz > hi[b + 2] + 1e-9",
-    "replacement": "false",
+    "replacement": "oz >= hi[b + 2] + 1e-9",
     "why": "The slab test's NaN branch is reached only when the ray runs along this axis (direction 0, so 1/d is infinite) and its origin lies exactly on the box widened by 1e-9 (0·∞). Every triangle in the box is 1e-9 mm inside that bound on this axis, and the ray's coordinate never changes along it, so the ray meets none of them: skipping the node or visiting it gives the same hits."
   },
   {
@@ -1723,9 +1828,23 @@
   },
   {
     "file": "packages/print/src/print-check.ts",
+    "mutator": "MethodExpression",
+    "original": "Math.min(t1, Math.max(ta, tb))",
+    "replacement": "Math.max(t1, Math.max(ta, tb))",
+    "why": "Only makes the slab test cull fewer nodes (a later entry time t0 can only shrink, an exit time t1 only grow): the box tree is a speed-up, and visiting a node the ray misses finds no hit there, because hit() tests each triangle exactly."
+  },
+  {
+    "file": "packages/print/src/print-check.ts",
     "mutator": "ConditionalExpression",
     "original": "t0 > t1",
     "replacement": "false",
+    "why": "Culls a node only where the ray's entry and exit times are equal, or never: equal times mean the ray only touches the box widened by 1e-9 at one point (or starts on it heading out), where it meets none of the triangles 1e-9 inside it; not culling only visits more triangles, each tested exactly by hit()."
+  },
+  {
+    "file": "packages/print/src/print-check.ts",
+    "mutator": "EqualityOperator",
+    "original": "t0 > t1",
+    "replacement": "t0 >= t1",
     "why": "Culls a node only where the ray's entry and exit times are equal, or never: equal times mean the ray only touches the box widened by 1e-9 at one point (or starts on it heading out), where it meets none of the triangles 1e-9 inside it; not culling only visits more triangles, each tested exactly by hit()."
   },
   {
@@ -1738,16 +1857,23 @@
   {
     "file": "packages/print/src/print-check.ts",
     "mutator": "EqualityOperator",
-    "original": "t0 > t1",
-    "replacement": "t0 >= t1",
-    "why": "Culls a node only where the ray's entry and exit times are equal, or never: equal times mean the ray only touches the box widened by 1e-9 at one point (or starts on it heading out), where it meets none of the triangles 1e-9 inside it; not culling only visits more triangles, each tested exactly by hit()."
+    "original": "left[node] < 0",
+    "replacement": "left[node] <= 0",
+    "why": "Treats a node with children as a leaf and visits its whole range [start, end) in `order`, which is exactly its children's triangles; `left[node] <= 0` changes nothing because node 0 (the root) is never anyone's child."
   },
   {
     "file": "packages/print/src/print-check.ts",
     "mutator": "EqualityOperator",
-    "original": "left[node] < 0",
-    "replacement": "left[node] <= 0",
-    "why": "Treats a node with children as a leaf and visits its whole range [start, end) in `order`, which is exactly its children's triangles; `left[node] <= 0` changes nothing because node 0 (the root) is never anyone's child."
+    "original": "Math.abs(det) >= 1e-18",
+    "replacement": "Math.abs(det) > 1e-18",
+    "why": "Differs only for a determinant of exactly 1e-18 to the bit: a ray within about 1e-18 of the triangle's plane, where whether it meets the triangle is below rounding either way."
+  },
+  {
+    "file": "packages/print/src/print-check.ts",
+    "mutator": "ConditionalExpression",
+    "original": "u > 1",
+    "replacement": "false",
+    "why": "A point past u = 1 is still refused on the next line: there v < 0 or u + v > 1."
   },
   {
     "file": "packages/print/src/print-check.ts",
@@ -1767,6 +1893,13 @@
     "file": "packages/print/src/print-check.ts",
     "mutator": "ConditionalExpression",
     "original": "this.count === 0",
+    "replacement": "false",
+    "why": "Points above the box: the ray goes up in x, y and z (ODD has every part positive), away from every triangle, so it crosses nothing and the point is outside either way; at exactly the high end it meets nothing at t > 0 either. With no triangles (count 0) the box is [0, 0, 0] and the walk returns at once, so there are no crossings either. (Points below the box are checked by test.)"
+  },
+  {
+    "file": "packages/print/src/print-check.ts",
+    "mutator": "ConditionalExpression",
+    "original": "o[0] > b.hi[0]",
     "replacement": "false",
     "why": "Points above the box: the ray goes up in x, y and z (ODD has every part positive), away from every triangle, so it crosses nothing and the point is outside either way; at exactly the high end it meets nothing at t > 0 either. With no triangles (count 0) the box is [0, 0, 0] and the walk returns at once, so there are no crossings either. (Points below the box are checked by test.)"
   },
@@ -2129,6 +2262,13 @@
   },
   {
     "file": "packages/print/src/print-check.ts",
+    "mutator": "LogicalOperator",
+    "original": "j !== i && inBox(whole[j], outside)",
+    "replacement": "j !== i || inBox(whole[j], outside)",
+    "why": "Also tests the point against its own body: `outside` is 1e-6 mm outside the body's own boundary, so its own body never holds it, and the line's other test (inside()) is exact, so dropping the box check only casts more rays."
+  },
+  {
+    "file": "packages/print/src/print-check.ts",
     "mutator": "ConditionalExpression",
     "original": "j !== i",
     "replacement": "true",
@@ -2144,15 +2284,15 @@
   {
     "file": "packages/print/src/print-check.ts",
     "mutator": "ArithmeticOperator",
-    "original": "q[1] - p[1]",
-    "replacement": "q[1] + p[1]",
+    "original": "q[0] - p[0]",
+    "replacement": "q[0] + p[0]",
     "why": "The pad stays at least 1e-6 mm (each term it adds is ≥ 0); crossAt's cuts lie on both segments up to rounding far below 1e-6, so the boxes still never skip a pair that cuts."
   },
   {
     "file": "packages/print/src/print-check.ts",
     "mutator": "ArithmeticOperator",
-    "original": "q[0] - p[0]",
-    "replacement": "q[0] + p[0]",
+    "original": "q[1] - p[1]",
+    "replacement": "q[1] + p[1]",
     "why": "The pad stays at least 1e-6 mm (each term it adds is ≥ 0); crossAt's cuts lie on both segments up to rounding far below 1e-6, so the boxes still never skip a pair that cuts."
   },
   {
@@ -2220,16 +2360,16 @@
   },
   {
     "file": "packages/print/src/print-check.ts",
-    "mutator": "ConditionalExpression",
-    "original": "o[1] >= b[1]",
-    "replacement": "true",
+    "mutator": "EqualityOperator",
+    "original": "o[0] <= b[2]",
+    "replacement": "o[0] < b[2]",
     "why": "inBox only saves casting a ray: when it says yes, inside() decides exactly, so a looser test changes nothing. A point exactly on the box's edge is at least 1e-6 mm (the pad) beyond the body's section, so it is not inside the body either."
   },
   {
     "file": "packages/print/src/print-check.ts",
-    "mutator": "EqualityOperator",
-    "original": "o[0] <= b[2]",
-    "replacement": "o[0] < b[2]",
+    "mutator": "ConditionalExpression",
+    "original": "o[1] >= b[1]",
+    "replacement": "true",
     "why": "inBox only saves casting a ray: when it says yes, inside() decides exactly, so a looser test changes nothing. A point exactly on the box's edge is at least 1e-6 mm (the pad) beyond the body's section, so it is not inside the body either."
   },
   {
@@ -2311,16 +2451,16 @@
   },
   {
     "file": "packages/print/src/print-check.ts",
-    "mutator": "ConditionalExpression",
+    "mutator": "EqualityOperator",
     "original": "Math.abs(w[0] * d[1] - w[1] * d[0]) > 1e-9 * Math.sqrt(dd)",
-    "replacement": "false",
+    "replacement": "Math.abs(w[0] * d[1] - w[1] * d[0]) >= 1e-9 * Math.sqrt(dd)",
     "why": "Changes only which nearly parallel segments (within about 1e-9 mm of one line) the parallel branch splits pq at. Its cuts are where the other outline's corners fall on pq; each such corner is also where that outline's next segment leaves the line, which the crossing branch finds (it takes g = 0 and g = 1), and extra cuts only split a piece into parts judged the same way."
   },
   {
     "file": "packages/print/src/print-check.ts",
-    "mutator": "EqualityOperator",
+    "mutator": "ConditionalExpression",
     "original": "Math.abs(w[0] * d[1] - w[1] * d[0]) > 1e-9 * Math.sqrt(dd)",
-    "replacement": "Math.abs(w[0] * d[1] - w[1] * d[0]) >= 1e-9 * Math.sqrt(dd)",
+    "replacement": "false",
     "why": "Changes only which nearly parallel segments (within about 1e-9 mm of one line) the parallel branch splits pq at. Its cuts are where the other outline's corners fall on pq; each such corner is also where that outline's next segment leaves the line, which the crossing branch finds (it takes g = 0 and g = 1), and extra cuts only split a piece into parts judged the same way."
   },
   {
@@ -2332,16 +2472,16 @@
   },
   {
     "file": "packages/print/src/print-check.ts",
-    "mutator": "ConditionalExpression",
+    "mutator": "EqualityOperator",
     "original": "g >= 0",
-    "replacement": "true",
+    "replacement": "g > 0",
     "why": "A crossing at the other segment's very end (g = 0 or 1) is also found from the segment that shares that end (g = 1 or 0), as each section is closed; letting g go past [0, 1] adds cuts where pq meets the other line beyond its segment, which only split a piece into parts judged the same way."
   },
   {
     "file": "packages/print/src/print-check.ts",
-    "mutator": "EqualityOperator",
+    "mutator": "ConditionalExpression",
     "original": "g >= 0",
-    "replacement": "g > 0",
+    "replacement": "true",
     "why": "A crossing at the other segment's very end (g = 0 or 1) is also found from the segment that shares that end (g = 1 or 0), as each section is closed; letting g go past [0, 1] adds cuts where pq meets the other line beyond its segment, which only split a piece into parts judged the same way."
   },
   {
@@ -2360,16 +2500,16 @@
   },
   {
     "file": "packages/print/src/print-check.ts",
-    "mutator": "ConditionalExpression",
+    "mutator": "EqualityOperator",
     "original": "s.count > 0",
-    "replacement": "true",
+    "replacement": "s.count >= 0",
     "why": "A body with no triangles has the box [0, 0, 0]–[0, 0, 0] (or +∞): its top can only raise `top`, which adds layers above the part whose sections are empty (area 0: never a neck, and no bigger area above), and the 5000-layer cap counts from the floor, so the part's own layers are the same."
   },
   {
     "file": "packages/print/src/print-check.ts",
-    "mutator": "EqualityOperator",
+    "mutator": "ConditionalExpression",
     "original": "s.count > 0",
-    "replacement": "s.count >= 0",
+    "replacement": "true",
     "why": "A body with no triangles has the box [0, 0, 0]–[0, 0, 0] (or +∞): its top can only raise `top`, which adds layers above the part whose sections are empty (area 0: never a neck, and no bigger area above), and the 5000-layer cap counts from the floor, so the part's own layers are the same."
   },
   {
@@ -2388,16 +2528,16 @@
   },
   {
     "file": "packages/print/src/print-check.ts",
-    "mutator": "ConditionalExpression",
+    "mutator": "EqualityOperator",
     "original": "top > floor",
-    "replacement": "true",
+    "replacement": "top >= floor",
     "why": "When top ≤ floor (a flat or empty part) count is 0 or less, so there are no layers and no neck either way."
   },
   {
     "file": "packages/print/src/print-check.ts",
-    "mutator": "EqualityOperator",
+    "mutator": "ConditionalExpression",
     "original": "top > floor",
-    "replacement": "top >= floor",
+    "replacement": "true",
     "why": "When top ≤ floor (a flat or empty part) count is 0 or less, so there are no layers and no neck either way."
   },
   {
@@ -2416,6 +2556,13 @@
   },
   {
     "file": "packages/print/src/print-check.ts",
+    "mutator": "MethodExpression",
+    "original": "Math.max(0, Math.ceil((Math.min(...zs) - floor) / rules.layerHeight - 0.5))",
+    "replacement": "Math.min(0, Math.ceil((Math.min(...zs) - floor) / rules.layerHeight - 0.5))",
+    "why": "No corner is under the floor, so the rounded-up value is never below 0 (ceil of at least −0.5) and Math.min(0, ·) is 0: every triangle is listed from layer 0 up, under layers it does not cross, which get no segment from it."
+  },
+  {
+    "file": "packages/print/src/print-check.ts",
     "mutator": "ArithmeticOperator",
     "original": "(Math.min(...zs) - floor) / rules.layerHeight",
     "replacement": "(Math.min(...zs) - floor) * rules.layerHeight",
@@ -2431,8 +2578,8 @@
   {
     "file": "packages/print/src/print-check.ts",
     "mutator": "ArrowFunction",
-    "original": "(b) => b[k] => ()",
-    "replacement": "undefined",
+    "original": "(b) => b[k]",
+    "replacement": "() => undefined",
     "why": "Passing no lists makes each layer cut every triangle instead of those listed under it: the triangles left out never cross that layer's height, so the sections are the same."
   },
   {

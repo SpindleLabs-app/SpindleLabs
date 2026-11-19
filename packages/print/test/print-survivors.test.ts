@@ -677,3 +677,60 @@ test("print check bridges: the walk keeps to the 5° slope exactly, so walls 0.0
   const r = printCheck([wall(-5, 0), wall(29, 34), slabMesh(0, -5, 10, 34, plane, (x, y) => plane(x, y) + 1)]);
   assert.deepEqual([r.supports, r.sag], [[], [24, 25]]);
 });
+
+test("print check thin walls: exactly the line width or the layer height prints, a tenth under is lost", () => {
+  // With a 0.5 mm line and 0.25 mm layers (both exact in binary): a wall standing 0.5 mm thick (its sides face along y,
+  // n_xy = 1) is exactly one line, and a plate lying 0.25 mm thick (top and bottom face along z) exactly one layer: a
+  // wall is too thin only when thinner than that, so neither is marked. At 0.9× (0.45 and 0.225) both are.
+  const rules: PrintRules = { ...RULES_OK, lineWidth: 0.5, layerHeight: 0.25 };
+  const at = (k: number) => printCheck([boxMesh(0, 0, 0, 10, 0.5 * k, 10), boxMesh(20, 0, 0, 30, 10, 0.25 * k)], rules);
+  assert.deepEqual(at(1).thin, []);
+  // The wall's two big sides (its triangles 4, 5 and 6, 7: y low and high) and the plate's bottom and top (12 + 0, 1, 2, 3).
+  assert.deepEqual(at(0.9).thin, [4, 5, 6, 7, 12, 13, 14, 15]);
+});
+
+test("print check thin walls: the thinnest is the least of them, whatever order they come in", () => {
+  // Two walls standing apart, 0.125 mm and then 0.25 mm thick (both under the 0.42 mm line): the thinnest is 0.125.
+  const r = printCheck([boxMesh(0, 0, 0, 10, 0.125, 10), boxMesh(0, 5, 0, 10, 5.25, 10)], RULES_OK);
+  assert.equal(r.thinnest, 0.125);
+});
+
+test("print check supports: a face leaning out exactly 45° prints without, one at 60° needs them", () => {
+  // A 10 × 1 slab 1 mm thick hanging over nothing (a box on the plate beside it sets the floor), its underside rising 1
+  // in 1 along y from z = 5: the underside's normal is (0, 1, −1)/√2, so −n_z = sin 45° exactly, the angle the supports
+  // allow. Rising 1 in √3 (30° from flat, leaning 60° out from upright) it hangs further, and its two underside
+  // triangles are marked.
+  const slab = (rise: number) => slabMesh(0, 0, 10, 1, (_x, y) => 5 + rise * y, (_x, y) => 6 + rise * y);
+  const plate = boxMesh(20, 0, 0, 21, 1, 1);
+  assert.equal(-new Solid(slab(1)).normal(0).n[2], Math.sin((45 * Math.PI) / 180));
+  assert.deepEqual(printCheck([slab(1), plate], RULES_OK).supports, []);
+  assert.deepEqual(printCheck([slab(1 / Math.sqrt(3)), plate], RULES_OK).supports, [0, 1]);
+});
+
+test("print check supports: a face whose highest corner is within 0.01 mm of the lowest point rests on the plate", () => {
+  // A face looking down, its corners at heights 0, 0.01 and 0.01: its top is exactly 0.01 above the floor (0 here),
+  // so it lies on the plate. Lifted with the floor to 5 (corners 5, 5.005, 5.005) it still does: 0.005 above the floor.
+  // Its corners 0.02 up instead, it is off the plate and nothing is under it.
+  const face = (z0: number, up: number) => ({ positions: [0, 0, z0, 0, 10, z0 + up, 10, 0, z0 + up], indices: [0, 1, 2] });
+  assert.ok(new Solid(face(0, 0.01)).normal(0).n[2] < -0.99);
+  assert.deepEqual(printCheck([face(0, 0.01)], RULES_OK).supports, []);
+  assert.deepEqual(printCheck([face(5, 0.005)], RULES_OK).supports, []);
+  assert.deepEqual(printCheck([face(0, 0.02)], RULES_OK).supports, [0]);
+});
+
+test("print check supports: a face leaning past 5° is judged at its middle only", () => {
+  // A plate whose underside rises 20° (tan 20° along y), on two 0.1 mm pins under its underside triangles' middles: a
+  // face this steep is not a bridge, and its middles rest on the pins, so nothing needs supports (its corner samples,
+  // which rest on nothing, are only for faces within 5° of flat).
+  const s = Math.tan((20 * Math.PI) / 180);
+  const plane = (_x: number, y: number) => 10 + s * y;
+  const plate = slabMesh(0, 0, 10, 10, plane, (x, y) => plane(x, y) + 1);
+  const solid = new Solid(plate);
+  const middles: P[] = [];
+  for (let t = 0; t < solid.count; t++)
+    if (-solid.normal(t).n[2] > 0.9) middles.push([0, 1, 2].map((a) => (solid.corner(t, 0)[a] + solid.corner(t, 1)[a] + solid.corner(t, 2)[a]) / 3) as P);
+  assert.equal(middles.length, 2);
+  const pins = middles.map(([x, y]) => boxMesh(x - 0.05, y - 0.05, 0, x + 0.05, y + 0.05, plane(x, y)));
+  const r = printCheck([...pins, plate]);
+  assert.deepEqual([r.supports, r.sag], [[], []]);
+});
