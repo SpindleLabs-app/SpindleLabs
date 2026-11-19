@@ -50,7 +50,7 @@ import { circuitWorkspace } from "@fission/circuit";
 import { vectorWorkspace } from "@fission/vector";
 import { imageWorkspace } from "@fission/image";
 import { layoutWorkspace } from "@fission/layout";
-import { keptSteps } from "./kept-steps.ts";
+import { keptSteps, type Opened } from "./kept-steps.ts";
 import { showNo3d, webglWorks } from "./no-3d.ts";
 import "./styles/no-3d.css";
 
@@ -798,14 +798,15 @@ function finishAutosave(): string | null {
   lastWrites = Promise.race([done.settled(), new Promise<void>((settle) => setTimeout(settle, STORAGE_ANSWER_MS))]);
   return apart;
 }
-function keep(id: string, stored = false, storedAt: Date | null = null, fromKept = false) {
+/** `opened`: the project was opened (a file, or one kept here), so with no undo steps kept its opening step is kept (#764 S-4). */
+function keep(id: string, stored = false, storedAt: Date | null = null, fromKept = false, opened?: Opened) {
   keepOnChange = null;
   finishAutosave();
   if (!canKeep) return;
   // Following the undo history: an amend (a face sketch settled, a pinned point followed once the kernel answers) is a
   // change no one records, and it can come after the edit was stored (hunt 26h). One that changes nothing (the history
   // started afresh on a reopened project) is not.
-  steps.follow(id, leftWithChange.delete(id)); // its kept steps put back once read, if they end at the project as it is (after the reset that follows)
+  steps.follow(id, leftWithChange.delete(id), opened); // its kept steps put back once read, if they end at the project as it is (after the reset that follows)
   autosave = startAutosave(store, id, () => ctx.project, (s) => (s.state === "saved" && (steps.saved(), openedFile || ctx.history.canUndo()) && askToKeepStorage(), saveStatus(s)), { journal: local, follows: ctx.history, stored, storedAt, fromKept });
   document.body.dataset.projectId = id; // read by the e2e test
   tabs?.sync();
@@ -1030,10 +1031,10 @@ function openProject(file: string | Uint8Array, fileName = "") {
         exact = true;
       }
       if (found === undefined || !exact || ctx.history.canUndo()) {
-        keep(found?.id ?? newId(), false, found?.modified ?? null);
+        keep(found?.id ?? newId(), false, found?.modified ?? null, false, "storing");
         return autosave?.changed(); // store the opened file, with anything changed while it opened
       }
-      keep(found.id, true, found.modified);
+      keep(found.id, true, found.modified, false, "stored");
       const waiting: AutosaveStatus = { state: "saving" };
       storingAgain.add(waiting); // kept already as it is: nothing of the person's is waiting (tabs hunt A5)
       saveStatus(waiting);
@@ -1076,7 +1077,7 @@ async function openStored(id: string, modified: Date | null) {
   // Kept under its id at once, as start() keeps the last project: its autosave must take the project as the store
   // holds it. Started once it had shown, it took a size typed meanwhile for the stored state, said "Saved" and never
   // stored it (#627 item 2). Only bringing it forward waits for the build, so one that freezes the tab is not reopened.
-  keep(id, kept === null, kept === null ? modified : null, kept !== null);
+  keep(id, kept === null, kept === null ? modified : null, kept !== null, kept === null ? "stored" : "storing");
   statusBeforeOpening ??= before;
   const opening: AutosaveStatus = { state: "saving" };
   if (kept === null) storingAgain.add(opening); // it is in the store as it shows (one from the journal is not)
@@ -1974,7 +1975,7 @@ async function start() {
       // last saw, so it is what opens and what Save writes (real-use hunt B1). Its autosave stores it once it can.
       const kept = keptEntry(local, newest);
       ctx.project = kept === null ? await answered(store.open(newest)) : projectFromJson(kept, workspaces);
-      keep(newest, kept === null, newestAt, kept !== null);
+      keep(newest, kept === null, newestAt, kept !== null, kept === null ? "stored" : "storing");
       saveStatus(kept === null ? { state: "saved" } : { state: "error", message: "this browser's storage had no room for your latest changes. They're kept until it has, and Save keeps them as a file." });
       opened = newest;
       // A first visit's empty design is kept from its first change, as every new one is: kept at once, a New project

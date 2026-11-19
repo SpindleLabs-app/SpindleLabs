@@ -8,6 +8,8 @@
 // one change short of the project because that change came back from the unsaved-changes journal (`follow`'s `left`).
 // A tab whose saves are refused because another tab stored the project since writes none (save/load hunt C6: a stale
 // tab's steps, written over the good tab's, left that tab with nothing to undo after its reload).
+// A project opened with no steps kept keeps its opening step (`follow`'s `opened`; issue #764 S-4): a reload in the
+// moment after its first change then puts that change back on it from the journal instead of leaving nothing to undo.
 
 import type { History } from "@fission/core";
 import { alignSteps, extendSteps, type StepsStore } from "@fission/storage";
@@ -17,8 +19,12 @@ export interface KeptSteps {
    * From now on the history is project `id`'s: its kept steps are read and put back if they fit, then kept as it changes.
    * `left`: the project opens with a change the last visit left with before its save landed, put back from the journal,
    * so steps that end before it get it as one more step (LEFT_LABEL) instead of being dropped.
+   * `opened`: the project was opened (a file, or one kept in this browser), not started fresh. With no steps kept its
+   * opening step is kept too, so a reload in the moment after its first change still has that change to undo (issue
+   * #764 S-4): "stored", already in the store as it opens, writes it once read; "storing", stored by its first save,
+   * writes it when that save lands. A fresh start (no `opened`) still writes nothing until something is recorded.
    */
-  follow(id: string, left?: boolean): void;
+  follow(id: string, left?: boolean, opened?: Opened): void;
   /** The project's save landed: the steps changed since are written. */
   saved(): void;
   /** Writes the steps changed since the last write now (the page hidden or going), unless this tab's saves are refused. */
@@ -42,6 +48,9 @@ export interface KeptStepsOptions {
    */
   upgrade?(snapshot: string): string;
 }
+
+/** How a followed project was opened: already in the store as it is, or stored by its first save (`KeptSteps.follow`). */
+export type Opened = "stored" | "storing";
 
 /** The History's name for a change put back from the unsaved-changes journal, whose own name went with the page. */
 export const LEFT_LABEL = "Change before leaving";
@@ -69,7 +78,7 @@ export function keptSteps(history: History, steps: StepsStore, capture: () => st
   });
 
   const api: KeptSteps = {
-    follow(next, left = false) {
+    follow(next, left = false, opened) {
       if (id === next) return;
       api.stop();
       id = next;
@@ -107,7 +116,10 @@ export function keptSteps(history: History, steps: StepsStore, capture: () => st
         }
         ready = true;
         // Steps that couldn't go back are replaced by this history at the next save; ones put back are already kept.
-        dirty = loaded ? changed : saved !== null || history.steps().length > 1;
+        // An opened project with none kept keeps its opening step (S-4): written now when the store already holds it.
+        const opening = saved === null && opened !== undefined;
+        dirty = loaded ? changed : saved !== null || history.steps().length > 1 || opening;
+        if (opening && opened === "stored" && !left) write(); // with a change from the journal on it, not until it is stored
       });
     },
     saved: write,

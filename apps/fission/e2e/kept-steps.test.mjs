@@ -256,3 +256,69 @@ test("steps that don't end at the project, and no change came back from the jour
   await s.kept.settled();
   assert.equal(s.history.canUndo(), false);
 });
+
+// Issue #764 S-4 (the part of #627 item 7 still there): a file opened, its first change, then a reload in the second
+// before that change's save landed: the change came back from the journal but Undo was off, since nothing was kept yet
+// to put it on. A project opened (a file, or one already in this browser's store) now keeps its opening step at once,
+// so the reload gets "Change before leaving" on top of it. A truly fresh start (nothing opened, nothing kept) still
+// writes nothing: the first test above.
+test("S-4: a file opened with nothing kept keeps its opening step when its first save lands; a reload a moment after the first change carries Undo on", async () => {
+  const kv = memoryKeyValue();
+  const first = setup(kv);
+  first.kept.follow("p", false, "storing"); // an opened file, not in the store until its first save lands
+  await first.kept.settled();
+  await tick();
+  assert.equal(await first.stored("p"), null, "not before the file's save lands");
+  first.kept.saved(); // the opened file stored
+  await tick();
+  assert.deepEqual(await first.stored("p"), [""], "its opening step kept with it");
+  first.edit(20); // the first change: in the journal, its save not landed when the page goes (its flush lost with it)
+  const again = setup(kv, { now: () => 5 });
+  again.app.project = "w=20"; // the journal's change put back over the stored w=10
+  again.history.reset();
+  again.kept.follow("p", true, "stored");
+  await again.kept.settled();
+  // By hand: the stored opening step (w=10), then the change put back from the journal.
+  assert.deepEqual(again.history.steps().map((e) => e.label), ["", LEFT_LABEL]);
+  assert.equal(again.history.undo(), LEFT_LABEL);
+  assert.equal(again.app.project, "w=10", "Undo takes back the change made before the reload");
+});
+
+test("S-4: a project opened from the store with nothing kept writes its opening step once read; its steps kept are never replaced", async () => {
+  const kv = memoryKeyValue();
+  const s = setup(kv);
+  s.kept.follow("p", false, "stored");
+  await s.kept.settled();
+  await tick();
+  assert.deepEqual(await s.stored("p"), [""], "written at once: the store already holds this state");
+  s.kept.saved();
+  await tick();
+  assert.deepEqual(await s.stored("p"), [""], "nothing changed since, nothing written again");
+  // Steps already kept that fit are put back and not written again, opened or not.
+  const kv2 = memoryKeyValue();
+  await stepsStore(kv2).write("q", two, 1);
+  const t = setup(kv2, { now: () => 9 });
+  t.app.project = "w=20";
+  t.history.reset();
+  t.kept.follow("q", false, "stored");
+  await t.kept.settled();
+  await tick();
+  assert.deepEqual((await t.steps.read("q")).kept.map((e) => e.at), [0, 1], "the kept steps as they were");
+  assert.equal(t.history.undo(), "Width 20");
+});
+
+test("S-4 control: without the opening step a reload a moment after the first change has nothing to undo", async () => {
+  const kv = memoryKeyValue();
+  const first = setup(kv);
+  first.kept.follow("p"); // followed as a fresh start: nothing written
+  await first.kept.settled();
+  first.kept.saved();
+  first.edit(20);
+  await tick();
+  const again = setup(kv);
+  again.app.project = "w=20";
+  again.history.reset();
+  again.kept.follow("p", true);
+  await again.kept.settled();
+  assert.equal(again.history.canUndo(), false, "the case S-4 was");
+});

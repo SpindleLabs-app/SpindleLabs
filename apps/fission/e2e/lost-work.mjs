@@ -4,7 +4,8 @@
 //   - browser storage failing at the start, then a change and the tab closed (item 4);
 //   - the store's text differing from today's only in layout, as an older SpindleLabs' text differs in its data
 //     version: the kept History must still go back (item 6; the reader brings both to the same text);
-//   - a change, then a reload 200 ms later (item 7).
+//   - a change, then a reload 200 ms later (item 7);
+//   - a file opened, its first change, then a reload 200 ms later: Undo still takes that change back (issue #764 S-4).
 // Run from apps/fission after `npm run build`: node e2e/lost-work.mjs
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
@@ -244,6 +245,44 @@ await check("a change, then a reload 200 ms later: the change is kept, and so ar
   await volume(page, "30,000 mm³"); // exactly the change made before leaving
   await page.click("#undo");
   await volume(page, "24,000 mm³"); // and the width before it: 40 × 30 × 20
+});
+
+/** A page whose undo steps' write never lands once it is going (the browser may drop it with the page). */
+const dropStepsWhenLeaving = (page) =>
+  page.addInitScript(() => {
+    const put = IDBObjectStore.prototype.put;
+    IDBObjectStore.prototype.put = function (value, key) {
+      if (window.__leaving && typeof key === "string" && /^steps/.test(key)) return put.call(this, value, "dropped/" + key);
+      return put.call(this, value, key);
+    };
+    window.addEventListener("beforeunload", () => (window.__leaving = true), true);
+    window.addEventListener("pagehide", () => (window.__leaving = true), true);
+  });
+
+await check("a file opened, its first change, then a reload 200 ms later: the change is kept and Undo takes it back (#764 S-4)", async (context) => {
+  const page = await context.newPage();
+  await dropStepsWhenLeaving(page);
+  await page.goto(url);
+  await page.locator("#start-hint").waitFor();
+  // A 40 × 30 × 20 box saved as a file: 24,000 mm³.
+  const file = { formatVersion: 2, links: [], materials: [], name: "Opened box", units: { length: "mm" }, workspaces: { design: { nextId: 2, profiles: [], sketches: [], version: 4, timeline: { features: [{ dependsOn: [], id: "feature-1", intent: { parameters: { width: 40, depth: 30, height: 20 }, summary: "Box: 40 × 30 × 20 mm", type: "box" }, provenance: { from: [], self: { id: "feature-1", label: "Box 1", workspace: "design" } }, suppressed: false }] } } } };
+  await page.setInputFiles("#open-file", { name: "opened-box.spindle", mimeType: "application/json", buffer: Buffer.from(JSON.stringify(file)) });
+  await volume(page, "24,000 mm³");
+  await saved(page); // the opened file is kept
+  await page.waitForTimeout(800);
+  await sheetsClearFor(page, CLEAR);
+  await pinProperties(page);
+  await page.fill("#height", "33");
+  await page.keyboard.press("Tab");
+  await page.waitForTimeout(200);
+  assert.equal(await page.$eval("#save-status", (s) => s.dataset.state), "saving", "left while the mark still says Saving…");
+  await page.reload();
+  await volume(page, "39,600 mm³"); // 40 × 30 × 33: the change is kept
+  await sheetsClearFor(page, CLEAR);
+  await page.waitForTimeout(800);
+  assert.equal(await page.isDisabled("#undo"), false, "Undo is on after the reload");
+  await page.click("#undo");
+  await volume(page, "24,000 mm³"); // the box as opened
 });
 
 try {
