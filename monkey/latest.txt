@@ -1,4 +1,4 @@
-tested commit 6e1f1d5 on main, 2026-11-18 19:26 UTC (https://github.com/SpindleLabs-app/SpindleLabs/actions/runs/44330642286)
-Monkey, seeds 202611180-202611181: 2 session(s) of 2000 actions in Chromium; 11 Combines made of 45 tried; every check passed after every action
-seed 202611180: pass (2000 actions)
-seed 202611181: pass (2000 actions)
+tested commit 024a60e on main, 2026-11-19 19:46 UTC (https://github.com/SpindleLabs-app/SpindleLabs/actions/runs/44549889221)
+Monkey, seeds 202611190-202611191: 2 session(s) of 2000 actions in Chromium; 3 Combines made of 32 tried; 1 FAILED
+seed 202611190: pass (2000 actions)
+seed 202611191: FAIL: open shows the file or keeps the project: opening a file edited by "suppress" left neither: /workspaces/design/bodies/16/faces: undefined became ["face:feature-24/back","face:feature-24/bottom","face:feature-24/front","face:feature-24/left","face:feature-24/right",

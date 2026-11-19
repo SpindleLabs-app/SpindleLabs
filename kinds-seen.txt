@@ -1,6 +1,8 @@
 check TypeScript mutants: explained.json lists mutants that no longer survive in packages/ai/src/hosted.ts
 check TypeScript mutants: explained.json lists mutants that no longer survive in packages/core/src/model/files.ts
 check TypeScript mutants: explained.json lists mutants that no longer survive in packages/core/src/model/history.ts
+check TypeScript mutants: explained.json lists mutants that no longer survive in packages/print/src/overhang.ts
+check TypeScript mutants: explained.json lists mutants that no longer survive in packages/print/src/print-check.ts
 check TypeScript mutants: explained.json lists mutants that no longer survive in packages/storage/src/autosave.ts
 check TypeScript mutants: explained.json lists mutants that no longer survive in packages/testing/src/boolean-naming-model.ts
 check TypeScript mutants: explained.json lists mutants that no longer survive in packages/viewport/src/picking.ts
@@ -49,6 +51,7 @@ monkey no kernel body leaks: the kernel holds # bodies, the Bodies group lists #
 monkey no result: the session never finished (job out of time, or the tester crashed)
 monkey no session finished in the run's time limit (each was cut off or never started), so the run tested too little
 monkey open shows the file or keeps the project: opening a file edited by "add-solid" left neither: /workspaces/design/bodies/#/faces: undefined became ["fac
+monkey open shows the file or keeps the project: opening a file edited by "suppress" left neither: /workspaces/design/bodies/#/faces: undefined became ["face
 monkey save: Save gave no file
 monkey selection agrees: clicking hidden Body # (Sphere: ⌀# mm) selected "body:feature#"
 monkey selection agrees: with Body # (Box: # × # × # mm) selected the Feature panel says "Box: # × # × # in" (in in)
