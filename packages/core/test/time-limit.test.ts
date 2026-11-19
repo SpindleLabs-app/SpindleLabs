@@ -3,7 +3,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import type { BodySpec } from "../src/kernel/kernel-types.ts";
-import { booleanUnits, calibrate, CALIBRATION_TARGET, CALIBRATION_TOOL, sliceUnits, stressUnits, STRESS_WORST_UNITS, supportUnits, buildFaces, buildUnits, callUnits, facesSize, HEADROOM, LIMIT_FLOOR_MS, limitMs, MAX_MEETING_POINTS, MOST_PAIRS, regionsUnits, sketchUnits, solveUnits, UNITS_PER_ARC_CUBED, UNITS_PER_CHECKED_TRIANGLE, UNITS_PER_CORNER, UNITS_PER_MEETING, UNITS_PER_PAIR } from "../src/kernel/time-limit.ts";
+import { booleanUnits, calibrate, CALIBRATION_TARGET, CALIBRATION_TOOL, sliceUnits, stressUnits, STRESS_MOST_UNITS, STRESS_THIN_LAYERS, STRESS_WORST_UNITS, supportUnits, buildFaces, buildUnits, callUnits, facesSize, HEADROOM, LIMIT_FLOOR_MS, limitMs, MAX_MEETING_POINTS, MOST_PAIRS, regionsUnits, sketchUnits, solveUnits, UNITS_PER_ARC_CUBED, UNITS_PER_CHECKED_TRIANGLE, UNITS_PER_CORNER, UNITS_PER_MEETING, UNITS_PER_PAIR } from "../src/kernel/time-limit.ts";
 
 /** An L in plan, 6 corners, with a round hole: 2 caps + 6 sides + 1 round side = 9 faces. */
 const lWithHole = {
@@ -318,46 +318,75 @@ test("Export STL's solid check is priced by its triangles, so its limit follows 
   assert.equal(callUnits("check_solid", [new Uint8Array(83)], () => undefined), 0);
 });
 
-test("stress test units: above every timed run (TestLab T5c1, the kernel's faster solver)", () => {
-  // Each run timed on the local WebAssembly build of the kernel's main (Node, 2026-11-19), in warm calibration
-  // units (3.9 to 4.2 ms): box sides, named size (none: the default), units. The last seven the kernel refused (a wall thinner than the size).
+test("stress test units: above every timed run (TestLab T5c1b, kernel 0.33.81's thin-plate meshing)", () => {
+  // Each run timed on the WebAssembly build of kernel 0.33.81 in Node (2026-11-19), in milliseconds, then
+  // counted in the smallest warm calibration unit seen on that machine (3.71 ms; 4.3 to 4.6 on most runs), so the
+  // units are the most a device could need: box sides, named size (none: the default), milliseconds. The kernel
+  // refused fourteen of them (marked), early, once its exact count of the mesh's points passed the solver's limit.
+  const UNIT_MS = 3.71;
   const timed: [[number, number, number], number | undefined, number][] = [
-    [[100, 10, 10], undefined, 426], [[100, 100, 100], undefined, 9.4], [[100, 100, 8], undefined, 2752], [[100, 100, 4], undefined, 8499],
-    [[100, 100, 100 * Math.sqrt(2 / 899)], undefined, 10685], [[100, 100, 3.5], undefined, 7637], [[100, 100, 3], undefined, 10750],
-    [[100, 10, 10], 2, 2001], [[100, 10, 10], 1.5, 4446], [[100, 100, 100], 10, 804], [[100, 100, 100], 7, 3096], [[100, 100, 100], 5.5, 6353],
-    [[100, 100, 4], 1.8, 18578], [[100, 100, 4], 1.55, 30346], [[50, 50, 1.5], undefined, 10305],
-    [[100, 100, 2.8], undefined, 6242], [[100, 100, 2.65], undefined, 5422], [[100, 100, 2.5], undefined, 10802], [[100, 100, 2], undefined, 24268],
-    [[100, 100, 1.5], undefined, 82494], [[100, 100, 1], undefined, 43976], [[100, 100, 0.5], undefined, 15862],
+    [[100, 10, 10], undefined, 1530], [[100, 100, 100], undefined, 31], [[100, 100, 8], undefined, 10721],
+    [[100, 100, 100 * Math.sqrt(2 / 899)], undefined, 43162], [[100, 100, 4], undefined, 33358], [[100, 100, 3], undefined, 45668],
+    [[100, 10, 10], 2, 7515], [[100, 10, 10], 1.5, 16718], [[100, 100, 100], 10, 3153], [[100, 100, 100], 7, 11982],
+    [[100, 100, 100], 5.5, 23900], [[100, 100, 4], 1.8, 71915], [[100, 100, 4], 3, 16199], [[100, 10, 10], 12, 49],
+    // Thin plates, 2.5 mm and under, at the kernel's default size (the thickness over 1.5 here).
+    [[100, 100, 2.5], undefined, 70233], [[100, 100, 2.2], undefined, 102715], [[100, 100, 2], undefined, 109909],
+    [[100, 100, 1.9], undefined, 128822], [[50, 50, 1.5], undefined, 42848], [[50, 50, 1], undefined, 118776],
+    [[100, 20, 1], undefined, 103732], [[20, 20, 0.5], undefined, 67801],
+    // Refused: 1.8 mm and thinner on 100 mm, 0.5 mm on 50 mm (the surface alone over the limit: at once).
+    [[100, 100, 1.8], undefined, 1271], [[100, 100, 1.7], undefined, 1524], [[100, 100, 1.5], undefined, 2010],
+    [[100, 100, 1], undefined, 6316], [[100, 100, 0.5], undefined, 1], [[50, 50, 0.5], undefined, 6043],
+    // A named size coarser than the thickness over 1.5: the mesher refines through the thickness on its own, slowly
+    // near the thickness itself (the last two finished, 30 x 30 x 1 mm at 146,140 points), or refuses.
+    [[100, 100, 2], 3, 10018], [[100, 100, 2], 5, 10779], [[50, 50, 1], 2, 9123], [[20, 20, 0.5], 1, 15682],
+    [[10, 10, 0.2], 0.5, 13521], [[100, 100, 1], 1.2, 2550], [[100, 100, 3], 3.5, 11833],
+    [[100, 100, 4], 4.4, 83428], [[30, 30, 1], 1.1, 166663],
   ];
-  for (const [sides, size, units] of timed) assert.ok(stressUnits(sides, size) > 1.15 * units, `${sides} @${size}: ${stressUnits(sides, size)} against ${units}`);
-  // By hand. The bar: size max(10/2, √10200/60 = 1.68) = 5; cells 20 · 2 · 2 = 80; 3.5 · 80 + 300 = 580.
-  assert.ok(Math.abs(stressUnits([100, 10, 10]) - 580) < 1e-9);
-  // A 100 mm cube at 50 mm: two cells each way, 8; 3.5 · 8 + 300 = 328.
-  assert.ok(Math.abs(stressUnits([100, 100, 100]) - 328) < 1e-9);
-  // The 4 mm plate: s = √20016/60 = 2.35794 (over 4/2); cells (100/s)² · 2 (4/s = 1.70, under 2) = 3,597.5; 12,891.
+  for (const [sides, size, ms] of timed) {
+    assert.ok(stressUnits(sides, size) > 1.15 * (ms / UNIT_MS), `${sides} @${size}: ${stressUnits(sides, size)} against ${ms / UNIT_MS}`);
+  }
+  // By hand. The bar: size max(10/2, √10200/60 = 1.68) = 5, under 10/1.5; cells 20 · 2 · 2 = 80; 4 · 80 + 300 = 620.
+  assert.ok(Math.abs(stressUnits([100, 10, 10]) - 620) < 1e-9);
+  // A 100 mm cube at 50 mm: two cells each way, 8; 4 · 8 + 300 = 332.
+  assert.ok(Math.abs(stressUnits([100, 100, 100]) - 332) < 1e-9);
+  // The 4 mm plate: s = √20016/60 = 2.35794 (over 4/2, under 4/1.5 = 2.667); cells (100/s)² · 2 (4/s = 1.70, under 2)
+  // = 3,597.1; 4 · 3,597.1 + 300 = 14,688.
   const s = Math.sqrt(20016) / 60;
-  assert.ok(Math.abs(stressUnits([100, 100, 4]) - (3.5 * (100 / s) ** 2 * 2 + 300)) < 1e-6);
-  // The 2 mm plate is thinner than s: the same cells, times (s / 2)^5 = 1.1790^5 = 2.277 (the size of 20,002 is used).
-  const s2 = Math.sqrt(20004) / 60;
-  assert.ok(Math.abs(stressUnits([100, 100, 2]) - (3.5 * (100 / s2) ** 2 * 2 + 300) * (s2 / 2) ** 5) < 1e-6);
-  // The thin factor's edges: at t = s exactly 1, and capped at 8 from s/t = 8^(1/5) = 1.5157.
-  const base = (t: number) => 3.5 * (10 / 1) ** 2 * Math.max(2, t / 1) + 300;
-  assert.ok(Math.abs(stressUnits([10, 10, 1], 1) - base(1)) < 1e-9, "t = s: no thin factor");
-  assert.ok(Math.abs(stressUnits([10, 10, 0.9], 1) - base(0.9) * (1 / 0.9) ** 5) < 1e-9, "0.9 s: (1/0.9)^5 = 1.694");
-  assert.ok(Math.abs(stressUnits([10, 10, 1.1], 1) - base(1.1)) < 1e-9, "1.1 s: none");
-  const cap = 8 ** (1 / 5); // 1.5157
-  assert.ok(Math.abs(stressUnits([10, 10, 1 / (0.9 * cap)], 1) - base(0) * (0.9 * cap) ** 5) < 1e-6, "0.9 of the cap's s/t: 0.9^5 · 8 = 4.72");
-  assert.ok(Math.abs(stressUnits([10, 10, 1 / (1.1 * cap)], 1) - base(0) * 8) < 1e-9, "1.1 of it: capped at 8");
-  // A named size wins: 100 mm cube at 10 mm, 1000 cells; 3,800.
-  assert.ok(Math.abs(stressUnits([100, 100, 100], 10) - 3800) < 1e-9);
-  // Sides unknown (no view yet) or nonsense: the most the default size can give, (3.5 · 3,600 + 300) · 8.
-  assert.equal(STRESS_WORST_UNITS, 103200);
+  assert.ok(Math.abs(stressUnits([100, 100, 4]) - (4 * (100 / s) ** 2 * 2 + 300)) < 1e-6);
+  assert.ok(Math.abs(stressUnits([100, 100, 4]) - 14688.4) < 0.1);
+  // The 2 mm plate: √20004/60 = 2.357 is over 2/1.5, so the kernel meshes at 2/1.5 = 1.3333 mm: cells 75² · 2
+  // = 11,250 (2/1.3333 = 1.5, under 2); 4 · 11,250 + 300 = 45,300.
+  assert.ok(Math.abs(stressUnits([100, 100, 2]) - 45300) < 1e-6);
+  // The most any run can take, 60,000: a plate whose cells would cost more (1 mm: 150² · 2 · 4 + 300 = 180,300).
+  assert.equal(STRESS_MOST_UNITS, 60000);
+  assert.equal(stressUnits([100, 100, 1]), STRESS_MOST_UNITS);
+  // The cap's edges: a 100 x b x 1 mm strip at 0.6667 mm costs 4 · 1.5b · 150 · 2 + 300 = 1,800 b + 300, which
+  // meets 60,000 at b = 33.17 mm.
+  const meets = (60000 - 300) / 1800;
+  assert.ok(Math.abs(stressUnits([100, 0.9 * meets, 1]) - (1800 * 0.9 * meets + 300)) < 1e-6, "0.9 of it: its cells' cost");
+  assert.equal(stressUnits([100, 1.1 * meets, 1]), STRESS_MOST_UNITS, "1.1 of it: capped");
+  // A named size over the thickness / STRESS_THIN_LAYERS (1.5, the kernel's THIN_LAYERS): the mesher refines through
+  // the thickness on its own, to a size of its choosing, so the most. On a 10 x 10 x 1 mm square the edge is 0.6667 mm:
+  // at 0.9 of it (0.6 mm) its own cells, (10/0.6)² · 2 = 555.6, so 4 · 555.6 + 300 = 2,522; at 1.1 of it, the most.
+  assert.equal(STRESS_THIN_LAYERS, 1.5);
+  const edge = 1 / STRESS_THIN_LAYERS;
+  const cells = (each: number) => (10 / each) ** 2 * Math.max(2, 1 / each);
+  assert.ok(Math.abs(stressUnits([10, 10, 1], 0.9 * edge) - (4 * cells(0.9 * edge) + 300)) < 1e-6, "0.9 of the edge: its cells");
+  assert.ok(Math.abs(stressUnits([10, 10, 1], 0.6) - 2522.2) < 0.1, "0.6 mm by hand");
+  assert.equal(stressUnits([10, 10, 1], 1.1 * edge), STRESS_MOST_UNITS, "1.1 of it: the most");
+  assert.equal(stressUnits([10, 10, 1], edge), 4 * cells(edge) + 300, "at the edge: the kernel's own default, its cells");
+  // A named size wins: 100 mm cube at 10 mm, 1000 cells; 4,300.
+  assert.ok(Math.abs(stressUnits([100, 100, 100], 10) - 4300) < 1e-9);
+  // Sides unknown (no view yet) or nonsense: the most.
+  assert.equal(STRESS_WORST_UNITS, STRESS_MOST_UNITS);
   assert.equal(stressUnits(undefined), STRESS_WORST_UNITS);
   assert.equal(stressUnits([0, 10, 10]), STRESS_WORST_UNITS);
   assert.equal(stressUnits([Number.NaN, 10, 10]), STRESS_WORST_UNITS);
-  // No body the default size meets goes over it: thick and thin square plates, oblong ones, cubes and bars.
+  // No body goes over it: thick and thin square plates, oblong ones, cubes and bars, default and named sizes.
   for (const t of [0.001, 0.1, 1, 2, 3, 4, 100 * Math.sqrt(2 / 899), 5, 10, 50, 100]) {
-    for (const b of [100, 50, 10]) assert.ok(stressUnits([100, b, t]) < STRESS_WORST_UNITS, `100 x ${b} x ${t}`);
+    for (const b of [100, 50, 10]) {
+      for (const size of [undefined, 0.01, 0.5, 2, 20]) assert.ok(stressUnits([100, b, t], size) <= STRESS_WORST_UNITS, `100 x ${b} x ${t} @${size}`);
+    }
   }
   // Through callUnits, from the handle's size.
   assert.equal(callUnits("stress_test", [1, { youngsModulus: 1, poissonsRatio: 0.3, strength: 1, held: [0], loads: [] }], () => ({ faces: 6, mesh: 1, sides: [100, 10, 10] })), stressUnits([100, 10, 10]));
