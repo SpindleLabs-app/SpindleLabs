@@ -136,8 +136,18 @@ for (const seed of [1, 2, 3, 4, 5]) {
       const id = ["p", "q", "r"][Math.floor(r() * 3)];
       const w = r() < 0.2 ? 1 : Math.floor(r() * 50); // width 1 often: a save of the same state
       const project = r() < 0.05 ? part(w, "y".repeat(Math.floor(one * 10 * r()))) : part(w);
+      const versionsBefore = [...now.entries].filter(([k]) => k.startsWith(`version/${id}/`));
       const results = await Promise.allSettled([a.store.save(id, project), b.store.save(id, project)]);
       assert.equal(results[0].status, results[1].status, `save ${i}: ${JSON.stringify(results)}`);
+      if (results[0].status === "rejected") {
+        // The one intended difference (issue #510 item 5): a save still refused after its project's versions gave way
+        // puts them back, where the code before left them deleted. Everything else is exactly as before; the code
+        // before is then given them too, so the two go on in step.
+        const expected = new Map(before.entries);
+        for (const [k, v] of versionsBefore) expected.set(k, v);
+        assert.deepEqual([...now.entries].sort(), [...expected].sort(), `save ${i}: refused, every version put back and nothing else changed`);
+        for (const [k, v] of versionsBefore) before.entries.set(k, v);
+      }
     }
     assert.deepEqual([...now.entries].sort(), [...before.entries].sort());
     assert.ok(now.reads.project < before.reads.project, `fewer reads (${now.reads.project} against ${before.reads.project})`);

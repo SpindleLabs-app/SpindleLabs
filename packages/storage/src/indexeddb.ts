@@ -12,6 +12,8 @@ const STORE = "kv";
  */
 function failure(e: DOMException | null, doing: string): Error {
   if (e?.name === "QuotaExceededError") return new Error(`browser storage is full: can't ${doing} (use Save to keep your work as a file)`);
+  // The database is a higher version than this build asks for: made by a newer SpindleLabs (#643 item 6, raw words).
+  if (e?.name === "VersionError") return new Error("this browser's projects were kept by a newer SpindleLabs, which this one can't read: reload the page to get the newer one");
   return new Error(`browser storage failed: can't ${doing}${e ? ` (${e.name}: ${e.message})` : ""}`);
 }
 

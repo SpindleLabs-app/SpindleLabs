@@ -239,6 +239,9 @@ try {
         store.put(String(last + 1), "order");
         await new Promise((ok) => (tx.oncomplete = ok));
         db.close();
+        // The newest project is what a reload opens for a tab with no project of its own: this tab's own (its empty
+        // design) would reopen in its place (issue #627 item 10), so the tab is left as a fresh one.
+        sessionStorage.removeItem("spindlelabs.tab-project");
       }, JSON.stringify({ ...saved, formatVersion: 3, name: "My bracket" }));
       const kept = await keptProjects(page);
       assert.ok(kept.includes("project/newer"), JSON.stringify(kept));

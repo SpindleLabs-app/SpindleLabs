@@ -131,6 +131,12 @@ export interface Autosave {
   /** True once a save was refused because another tab stored the project since: this tab's state is no longer the project's (step 89 keeps no undo steps for it). */
   refused(): boolean;
   /**
+   * The save times of this tab's own states of the project: the one it last read or wrote, and its saves started
+   * since (one may land at any moment). The store holding any other is another tab's work (`StepsStore.write`'s
+   * `own`, #642 item 4).
+   */
+  ownTimes(): Date[];
+  /**
    * Call when the tab is shown again: reads the stored project's save time, and when another tab stored (or deleted)
    * the project since this one last read or wrote it, says so at once (an error status) and counts as refused, before
    * anything is edited, saved to a file or exported from the older state (export hunt 2026-11-12, #642 item 3: the
@@ -210,6 +216,13 @@ export function startAutosave(
   let writtenAt: Date | null = null;
   /** When the state of the last save started was read: an entry is never stamped before it, so a save of an older state that lands unheard is older than the entry (own-save.test.ts). */
   let startedAt: Date | null = null;
+  /** The save times of the last few saves this tab started (`ownTimes`): any of them may be the one the store holds. */
+  const started: Date[] = [];
+  const starting = (at: Date) => {
+    startedAt = at;
+    started.push(at);
+    if (started.length > 8) started.shift();
+  };
   /** The text last written, so an unchanged project is not written again. */
   let written: string | null = (() => {
     try {
@@ -407,7 +420,7 @@ export function startAutosave(
       report({ state: "error", message: STORAGE_NOT_ANSWERING });
     }, STORAGE_ANSWER_MS);
     try {
-      startedAt = at;
+      starting(at);
       const saving = store.save(id, JSON.parse(text) as Project, at, base, false, writer); // exactly the state checked above
       flight = saving.then(
         () => {},
@@ -548,7 +561,7 @@ export function startAutosave(
       const last = text;
       flight = flight.then(async () => {
         try {
-          startedAt = at;
+          starting(at);
           await store.save(id, JSON.parse(last) as Project, at, base, false, writer);
           written = last;
           writtenAt = at;
@@ -586,6 +599,7 @@ export function startAutosave(
       return null;
     },
     refused: () => conflicted,
+    ownTimes: () => [...(base === undefined ? [] : [base]), ...(writtenAt === null ? [] : [writtenAt]), ...started],
     async check() {
       if (stopped || conflicted || base === undefined || timer !== null || inFlight) return;
       const knew = base;

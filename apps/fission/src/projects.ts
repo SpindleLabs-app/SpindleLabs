@@ -4,14 +4,15 @@
 // replaces the open project.
 
 import { projectList, type ProjectList } from "@fission/ui";
-import { forget, type JournalStorage, type ProjectStore } from "@fission/storage";
+import { forget, listWithHeld, type JournalStorage, type ProjectStore } from "@fission/storage";
 
 export interface ListedProjectsParts {
   store: ProjectStore;
   journal: JournalStorage | null;
   /** The project open now, when it is kept (null while a new one waits for its first change, or a file opens). */
   openId(): string | null;
-  open(id: string, modified: Date | null): Promise<void>;
+  /** Opens kept project `id` (main.ts `openStored`, which reads its save time with it, #627 item 9). */
+  open(id: string): Promise<void>;
   /** Called once project `id` is deleted (the design tabs close its tab, tabs hunt B3). */
   removed?(id: string): void;
 }
@@ -19,7 +20,7 @@ export interface ListedProjectsParts {
 /** The dialog, in `doc`. The open project is never deleted, even if the list was read before it opened. */
 export function listedProjects(doc: Document, parts: ListedProjectsParts): ProjectList {
   return projectList(doc, {
-    list: () => parts.store.list(),
+    list: () => listWithHeld(parts.store, parts.journal), // a project only the journal holds is listed too (storage full, #643 item 3)
     openId: parts.openId,
     open: parts.open,
     remove: async (id) => {
