@@ -343,7 +343,7 @@ export const PLANTS: Record<ModelFault, Plant> = {
   },
   "warning-dropped": {
     what: "an extrude built from its kept shape carries no warning",
-    edits: [{ file: REBUILD, find: "curves: idsOf(kept), warning };", replace: "curves: idsOf(kept) };" }],
+    edits: [{ file: REBUILD, find: "curves: idsOf(kept), warning, ...baseOf(kept.placement) };", replace: "curves: idsOf(kept), ...baseOf(kept.placement) };" }],
     run: ["timeline"],
     caught: "the rebuild differs from the model",
   },
@@ -428,6 +428,12 @@ export const PLANTS: Record<ModelFault, Plant> = {
     run: ["timeline"],
     caught: "the rebuild differs from the model",
   },
+  "extrude-base-dropped": {
+    what: "an extrude of a face sketch starts its frame from the world's, not from its sketch's, so a sketch on it stays behind when a Move edit carries the sketch it was made from (SL #759 item 4 undone)",
+    edits: [{ file: REBUILD, find: "curves: spec.curves, ...(asked.base && { base: asked.base }) }", replace: "curves: spec.curves, ...(Number(\"0\") && asked.base && { base: asked.base }) }" }],
+    run: ["timeline"],
+    caught: "the rebuild differs from the model",
+  },
   "move-bodies-kept": {
     what: "an edited Move keeps its old bodies whatever was picked (35e2i undone)",
     edits: [{ file: MOVE, find: "const kept = sameBodies ? null : items!;", replace: "const kept = Number(\"1\") ? null : items!;" }],
@@ -449,7 +455,7 @@ export const PLANTS: Record<ModelFault, Plant> = {
   },
   "duplicate-no-body": {
     what: "a Duplicate builds but makes no copy (35e2)",
-    edits: [{ file: REBUILD, find: "  bodies[id] = { feature: f.id, handle: spec === b.spec ? b.handle : await cache.body(spec), spec, ...(b.curves ? { curves: b.curves } : {}) };\n  return { status: \"built\", bodies: [id] };", replace: "  return { status: \"built\" };" }],
+    edits: [{ file: REBUILD, find: "  bodies[id] = { feature: f.id, handle: spec === b.spec ? b.handle : await cache.body(spec), spec, ...(b.curves ? { curves: b.curves } : {}), ...(b.base && { base: b.base }) };\n  return { status: \"built\", bodies: [id] };", replace: "  return { status: \"built\" };" }],
     run: ["timeline"],
     caught: "the rebuild differs from the model",
   },

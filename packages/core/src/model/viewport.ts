@@ -57,6 +57,12 @@ export interface ViewportPick {
 export type SketchXY = readonly [number, number];
 
 /**
+ * What a click on the body can pick now (SharedViewport.pickWants): anything (a corner offered, an edge, a face), or
+ * only faces (no corner or edge can take the click, and a finger's tap reaches a face too thin to hit).
+ */
+export type PickWants = "any" | "faces";
+
+/**
  * A sketch as the viewport draws it (step 21c): its lines in its plane's
  * frame (x along `xAxis`, y along normal × xAxis), drawn over the body.
  * The sketch being edited also has its grid (spacing in mm), its points
@@ -368,6 +374,12 @@ export interface SharedViewport {
    * puts back null on hide; absent, a right-click does nothing of the app's.
    */
   onMenu?: ((pick: ViewportPick, at: { x: number; y: number }) => boolean) | null;
+  /**
+   * What the shown workspace's clicks can pick now, asked at each click and hover (thin faces, 2026-11-19): TestLab
+   * picking holds and loads, and Shell, say "faces". Absent or null: "any". The shown workspace sets
+   * it with onPick and puts back null on hide.
+   */
+  pickWants?: (() => PickWants) | null;
   /** Draws these sketches (replacing the ones drawn before); an empty list draws none. While one is being edited the ground grid gives way to its own. */
   showSketches(drawings: readonly SketchDrawing[]): void;
   /**

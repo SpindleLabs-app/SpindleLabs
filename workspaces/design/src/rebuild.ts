@@ -41,7 +41,7 @@ import { CONSTRUCT_KINDS, constructPlaneItem, isConstructPlane, readConstructRef
 import { bodyIdOf, bodyItem, bodyNumbers, buildingItems, chamferOf, constructOf, isChamferItem, isConstructItem, insideWallName, isShellItem, shellOf, isPatternItem, isPiece, numberPieces, combineBodies, duplicatedBody, extrudeOperation, isCombineItem, isDuplicateItem, isOperationExtrude, isMoveItem, isSketchExtrude, isSketchItem, keptOf, ownShape, profileSizeRefused, sketchInputs, specOf, type CombineOperation, type DesignDocument, type KeptShape, type Sketch, type SketchPlane } from "./document.ts";
 import { centredSpec, isSymmetricParams } from "./extrude-symmetric.ts";
 import { isThroughParams, throughDistance, throughWords, withDistance } from "./extrude-through.ts";
-import { carried, faceFeature, faceReference, frameNow, frameOf, isFaceSketch, movedFrame, planeWords, sketchMiddle, squared, type PlaneWarning, type SketchPlacement } from "./face-sketch.ts";
+import { carried, faceFeature, faceReference, frameNow, frameOf, isFaceSketch, movedFrame, offBase, onBase, planeWords, sketchMiddle, squared, type BodyFrame, type PlaneWarning, type SketchPlacement } from "./face-sketch.ts";
 import { pinNow, pointWords, vertexNames, type PinNow, type PointWarning } from "./face-edges.ts";
 import type { BodyNames } from "./naming.ts";
 import { combineNames, designNames, resolveFaceName, shownFaces, type DesignNames, type FaceNames, type NamedBody } from "./boolean-names.ts";
@@ -108,6 +108,8 @@ export type FeatureResult =
       constraints?: { message: string };
       /** A face sketch marked as drawn before version 22 (`SketchFace.first`) on which the mark changes nothing now (SL #759 item 2): `followedDoc` takes it off. */
       unmark?: true;
+      /** A face sketch marked as drawn before version 30 (`SketchFace.unbased`): its body frame as today's rule records it, which carries it as before (SL #759 item 4); `followedDoc` writes it and takes the mark off. */
+      rebased?: BodyFrame;
       /** A Move's (35e2): the bodies it moved, as they were before it, kept so the next rebuild needn't build them again. */
       holds?: BodyHandle[];
       /** A construction's (step 59a1): where it is now, made again from its names, or held at its last answer (`held`). */
@@ -239,6 +241,13 @@ export interface BuiltBody {
    * copies; left out when none is. A face sketch records it when drawn (`SketchFace.reversed`).
    */
   reversed?: readonly boolean[];
+  /**
+   * SL #759 item 4 (Design data version 30): an extrude of a sketch placed by the rebuild (on a face or a construction
+   * plane, or a lost one's kept placement), the frame it lies in, which the body's own frame starts from (built-body.ts
+   * `frameOfBody`, face-sketch.ts `BodyFrame.base`) so a sketch on its faces follows whatever moves its sketch: a Move
+   * of the body the sketch is on, before a Join with it or not. Left out on XY (the world's) and on origin planes.
+   */
+  base?: Plane;
 }
 
 
@@ -1238,6 +1247,9 @@ async function placeSketch(f: Feature, done: Record<string, FeatureResult>, bodi
   const plane = f.intent.parameters.plane as string;
   const p = content.face!;
   let cause: PlaneWarning["cause"] = "plane-lost";
+  // SL #759 item 4: a sketch drawn before version 30 recorded its body frame without the base its face's body frame
+  // starts from now, so it is carried by that frame without it, exactly as before (`offBase`).
+  const carriedBy = (now: BodyFrame | null): BodyFrame | null => (now !== null && p.unbased === true ? offBase(now) : now);
   const held = (): FeatureResult => ({ status: "built", placement: { plane: squared(p.held ?? p.frame)!, side: p.side }, plane: { cause, face: plane, message: planeWords(cause, f.provenance.self.label) } });
   const place = async (on: BuiltBody, view: BodyView, face: number, split: boolean, whole = false, name?: string): Promise<FeatureResult> => {
     // 35e2h: carried first by what the Moves before it did to the body since the sketch was drawn (not known before 35e2h: not carried);
@@ -1252,7 +1264,8 @@ async function placeSketch(f: Feature, done: Record<string, FeatureResult>, bodi
     // SL #707: carried by the input face its name names (on a face merged from level faces, that input's own frame, as it
     // was drawn with); one drawn before version 22 (`first`) recorded the merged face's first input's, and is carried by it.
     const now = name === undefined || p.first === true ? frameOfFace(on, face) : namedFrame(on, face, name);
-    const carry = p.body === undefined ? null : carried(p.body, now ?? undefined, sketchMiddle(squared(p.frame)!, ownPoints(content)));
+    const anchor = sketchMiddle(squared(p.frame)!, ownPoints(content));
+    const carry = p.body === undefined ? null : carried(p.body, carriedBy(now) ?? undefined, anchor);
     const outward = view.face_normals[face]!;
     const placement = { plane: frameNow(squared(p.frame)!, outward, view.face_centroids[face], carry), side: p.side };
     const warn = split ? { plane: { cause: "plane-split" as const, face: plane, message: planeWords("plane-split", f.provenance.self.label, whole) } } : {};
@@ -1261,7 +1274,12 @@ async function placeSketch(f: Feature, done: Record<string, FeatureResult>, bodi
     // the part it was drawn on, as one drawn today. The version 21 upgrade marks every face sketch; most were never on a
     // merged face.
     const unmark = p.first === true && (name === undefined || !Object.values(bodies).some((b) => b.named?.faces.some((x) => (x.origins?.findIndex((o) => o.names.includes(name)) ?? -1) > 0)));
-    return { status: "built", placement, ...warn, ...(unmark && { unmark: true as const }), ...(await follow(f, index, done, bodies, cache, placement.plane, featureId, kernel)) };
+    // SL #759 item 4: the mark from before version 30 goes once its body frame can be written as today's rule records it
+    // (`onBase`), carrying it the same way: always, but for a change of size the sketch's anchor doesn't take (no points
+    // of its own, or drawn before SL #539), which today's rule would take about the base's origin; then it keeps the mark.
+    const base = now?.base;
+    const rebased = p.unbased !== true || p.body === undefined ? undefined : base === undefined ? p.body : (anchor !== undefined && p.body.size !== undefined) || (now?.size ?? 1) === (p.body.size ?? 1) ? onBase(p.body, base) : undefined;
+    return { status: "built", placement, ...warn, ...(unmark && { unmark: true as const }), ...(rebased && { rebased }), ...(await follow(f, index, done, bodies, cache, placement.plane, featureId, kernel)) };
   };
   // SL #430: a reference made on a piece (it holds a tag) is read by rule 3 even when no Combine is built now (the one
   // that split its face suppressed, or no longer touching): found on the face whole again, with a warning when that face
@@ -1282,7 +1300,7 @@ async function placeSketch(f: Feature, done: Record<string, FeatureResult>, bodi
     const middle = sketchMiddle(squared(p.frame)!, ownPoints(content)) ?? p.frame.origin;
     const originOn = (b: number, i: number): readonly number[] => {
       const built = bodies[ids[b]];
-      const move = p.body === undefined ? null : carried(p.body, (p.first === true ? frameOfFace(built, i) : namedFrame(built, i, name)) ?? undefined);
+      const move = p.body === undefined ? null : carried(p.body, carriedBy(p.first === true ? frameOfFace(built, i) : namedFrame(built, i, name)) ?? undefined);
       return move === null ? middle : move(middle, false);
     };
     const found = resolveFaceName(list, designNames(list), capNow !== null ? { name: capNow, origin: p.frame.origin, originOn } : { name, ...(r.tag && { tag: r.tag }), origin: p.frame.origin, originOn });
@@ -1316,6 +1334,10 @@ export function followedSketch(content: Sketch, r: FeatureResult | undefined): S
   if (r.unmark && content.face?.first === true) {
     const { first: _, ...face } = content.face;
     content = { ...content, face };
+  }
+  if (r.rebased && content.face?.unbased === true) {
+    const { unbased: _, ...face } = content.face;
+    content = { ...content, face: { ...face, body: r.rebased } };
   }
   if (!r.pinned && !r.projected) return content;
   return movedTo(content, [...(r.pinned ?? []), ...(r.projected ?? []).flatMap((q) => q.points), ...(r.solved ?? [])], (r.projected ?? []).flatMap((q) => (q.radius === undefined ? [] : [{ projection: q.id, radius: q.radius }])));
@@ -1634,7 +1656,7 @@ async function buildFeature(doc: DesignDocument, f: Feature, done: Record<string
       const lost = input?.status === "built" && input.plane?.cause !== "plane-split" ? input.plane : undefined;
       const source = lost && { ...lost, sketch: sketchId, message: `${f.provenance.self.label}'s source is lost: ${item!.provenance.self.label}'s plane is ${lost.cause === "plane-lost" ? "lost" : "ambiguous"}, so it stays where it was` };
       const rest = { ...(spec.warning ? { warning: spec.warning } : {}), ...(source ? { source } : {}) };
-      parts.push({ self: { handle: await cache.body(spec.spec), spec: spec.spec, curves: spec.curves }, rest });
+      parts.push({ self: { handle: await cache.body(spec.spec), spec: spec.spec, curves: spec.curves, ...(asked.base && { base: asked.base }) }, rest });
     }
     // The first warning and lost source of any profile is the item's (one each per item).
     const rest = Object.assign({}, ...parts.map((p) => p.rest).reverse()) as Partial<Extract<FeatureResult, { status: "built" }>>;
@@ -1806,7 +1828,7 @@ async function copyBody(f: Feature, done: Record<string, FeatureResult>, bodies:
     return { status: "built", bodies: [id] };
   }
   const spec = plane === undefined ? b.spec : movedSpec(b.spec, [mirrorMotion(plane, answer)]);
-  bodies[id] = { feature: f.id, handle: spec === b.spec ? b.handle : await cache.body(spec), spec, ...(b.curves ? { curves: b.curves } : {}) };
+  bodies[id] = { feature: f.id, handle: spec === b.spec ? b.handle : await cache.body(spec), spec, ...(b.curves ? { curves: b.curves } : {}), ...(b.base && { base: b.base }) };
   return { status: "built", bodies: [id] };
 }
 
@@ -1876,7 +1898,7 @@ async function patternRun(doc: DesignDocument, f: Feature, done: Record<string, 
     for (const motion of motions) {
       if (b.spec !== null) {
         const spec = movedSpec(b.spec, [motion]);
-        copies.push({ handle: await cache.body(spec), spec, ...(b.curves ? { curves: b.curves } : {}), ...(b.profile !== undefined ? { profile: b.profile } : {}) });
+        copies.push({ handle: await cache.body(spec), spec, ...(b.curves ? { curves: b.curves } : {}), ...(b.profile !== undefined ? { profile: b.profile } : {}), ...(b.base && { base: b.base }) });
         continue;
       }
       // A body only the kernel holds (a Combine's result, a Chamfer's): moved by the kernel, each face keeping its place,
@@ -2651,8 +2673,8 @@ async function joinedRegions(prisms: readonly Omit<BuiltBody, "feature">[], cach
       const profile = mergedOutline(same.map((i) => (prisms[i].spec as Extract<BodySpec, { extrude: unknown }>).extrude.profile));
       if (profile === null) continue;
       const spec: BodySpec = { extrude: { ...first.extrude, profile } };
-      const { curves, profile: k } = prisms[same[0]];
-      out[same[0]] = { handle: await cache.body(spec), spec, ...(curves ? { curves } : {}), ...(k !== undefined ? { profile: k } : {}) };
+      const { curves, profile: k, base } = prisms[same[0]];
+      out[same[0]] = { handle: await cache.body(spec), spec, ...(curves ? { curves } : {}), ...(k !== undefined ? { profile: k } : {}), ...(base && { base }) };
       for (const i of same.slice(1)) out[i] = null;
     }
   }
@@ -2690,6 +2712,8 @@ export interface ExtrudeSpec {
   spec: BodySpec;
   curves: CurveIds;
   warning?: KeptWarning;
+  /** The frame its sketch lies in when the rebuild placed it (BuiltBody `base`, SL #759 item 4). */
+  base?: Plane;
 }
 
 /**
@@ -2726,7 +2750,7 @@ export async function extrudeSpec(
   if (!("outline" in out)) return await lost(out.lost, said(out), out.curves);
   // Where the sketch lies: given by the rebuild, an origin plane's, or (asked from outside a rebuild) its face's as the timeline builds it.
   const at = placed !== undefined ? placed : isPlacedSketch(item) ? await placementOf(kernel, doc, sketchId) : originPlacement(item);
-  return { spec: placedSpec(out.outline, distance, at, flip, both), curves: idsOf(content) };
+  return { spec: placedSpec(out.outline, distance, at, flip, both), curves: idsOf(content), ...baseOf(placed) };
 }
 
 /**
@@ -2765,5 +2789,16 @@ async function keptSpec(kept: KeptShape | undefined, distance: number, flip: boo
   const out = await outlineOf(kernel, kept, region);
   // A kept shape made an outline when it was kept; one that doesn't (a hand-edited file) fails the extrude with the kernel's words.
   if (!("outline" in out)) return { status: "failed", cause: "error", message: `the kept shape makes no outline: ${out.message}` };
-  return { spec: placedSpec(out.outline, distance, kept.placement ?? null, flip, symmetric), curves: idsOf(kept), warning };
+  return { spec: placedSpec(out.outline, distance, kept.placement ?? null, flip, symmetric), curves: idsOf(kept), warning, ...baseOf(kept.placement) };
+}
+
+/**
+ * SL #759 item 4: the base frame (BuiltBody `base`) of an extrude of a sketch placed by the rebuild (`placed`, or a lost
+ * sketch's kept placement): the frame it lies in, squared; none for an origin plane's (asked for outside a rebuild) or
+ * the world's.
+ */
+function baseOf(placed: SketchPlacement | null | undefined): { base?: Plane } {
+  const plane = placed == null ? null : squared(placed.plane);
+  if (plane === null || carried(plane, undefined) === null) return {};
+  return { base: plane };
 }

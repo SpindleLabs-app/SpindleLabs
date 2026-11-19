@@ -8,7 +8,8 @@
 
 import { materialLibrary, projectFromJson, RepresentationRegistry, type KernelCalls, type StressTest, type StressTestResult } from "@fission/core";
 import { designWorkspace, registerDesign } from "@fission/design";
-import { answerProblem, fileFaces, GEOMETRY_OWNER, readTestFile, readTestLab, simulateWorkspace, stressTestOf, studyFaces, studyOn, type TestFile } from "@fission/simulate";
+import { answerProblem, BODIES_LISTER, fileFaces, GEOMETRY_OWNER, joinGroup, readTestFile, readTestLab, simulateWorkspace, stressTestOf, studyFaces, studyOn, withJoined, type StudyNow, type TestFile } from "@fission/simulate";
+import type { LentBody } from "@fission/core";
 
 /** One check of a re-run: its name, whether it passed, and what was found in words. */
 export interface RerunCheck {
@@ -110,7 +111,11 @@ export async function rerunTestFile(text: string, kernel: KernelCalls): Promise<
   registerDesign(registry, kernel);
   let answer: StressTestResult | null = null;
   try {
-    await registry.withBody(GEOMETRY_OWNER, project, study.body!.ref, studyFaces(study).map((f) => f.ref), async (lent) => {
+    // A study joining bodies for the test (TestLab Join) is run on the bodies joined as the page joins them, so the
+    // part, its faces and the test are the joined part's, as the file recorded them.
+    const group = joinGroup(study, registry.objectsOf(BODIES_LISTER, project));
+    if (group.missing.length > 0) throw new Error(group.missing.join(" "));
+    const run = async (lent: LentBody, on: StudyNow) => {
       // The part: its exact boundary and its faces, as the file has them.
       let step: string | null = null;
       let stepRefused: string | null = null;
@@ -123,11 +128,16 @@ export async function rerunTestFile(text: string, kernel: KernelCalls): Promise<
       const faces = fileFaces(lent.faces);
       check("same faces", sameJson(faces, file.part.faces), sameJson(faces, file.part.faces) ? `${faces.length} faces, each with the file's name, area and normal` : `the rebuilt part's faces differ from the file's (${faces.length} now, ${file.part.faces.length} in the file)`);
       // The set-up: the study turned into the kernel's test by TestLab's own code, against the test the file says was sent.
-      const sent = stressTestOf(study, studyOn(study, lent.faces), mechanical);
+      const sent = stressTestOf(study, on, mechanical);
       check("same test sent", !("refused" in sent) && sameJson(sent, file.sent), "refused" in sent ? `TestLab refuses the study now: ${sent.refused}` : sameJson(sent, file.sent) ? `${file.sent.held.length} held faces and ${file.sent.loads.length} loads, as the file` : "the study turns into a different test from the one the file says was sent");
       // The test the file says was sent, run again.
       answer = await kernel.call("stress_test", lent.handle, file.sent);
-    });
+    };
+    const out =
+      group.bodies.length > 1
+        ? await withJoined(registry, kernel, project, study, group.bodies, run)
+        : await registry.withBody(GEOMETRY_OWNER, project, study.body!.ref, studyFaces(study).map((f) => f.ref), (lent) => run(lent, studyOn(study, lent.faces)));
+    if (out !== undefined && "refused" in out) throw new Error(out.refused);
   } catch (e) {
     check("rebuilt and run", false, `couldn't rebuild the part or run its test: ${e instanceof Error ? e.message : String(e)}`);
   }

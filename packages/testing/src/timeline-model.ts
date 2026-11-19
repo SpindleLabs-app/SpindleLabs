@@ -366,6 +366,7 @@ export type ModelFault =
   | "move-not-held"
   | "move-all-or-none"
   | "sketch-not-carried"
+  | "extrude-base-dropped"
   | "move-bodies-kept"
   /** SL #506 item 1: reordering ignores the Moves and Combines that shaped an item's bodies. */
   | "reorder-past-shaper"
@@ -420,6 +421,7 @@ export const MODEL_FAULTS: readonly ModelFault[] = [
   "move-not-held",
   "move-all-or-none",
   "sketch-not-carried",
+  "extrude-base-dropped",
   "move-bodies-kept",
   "reorder-past-shaper",
   "reorder-past-reader",
@@ -768,7 +770,7 @@ function build(item: ModelItem, byId: Map<string, ModelItem>, seen: ReadonlySet<
   if (problem !== null) return { ...lost(item, problem, faults), ...source };
   // Planted bug: the kept shape is used even once the sketch makes an outline again.
   if (faults.has("kept-not-forgotten") && item.kept) return { ...lost(item, "open-outline", faults), ...source };
-  return { status: "built", body: lifted(extruded(item.id, sketch.shape, sketch.curves as string[], item.distance, faults), input.lift, input.turn), ...source };
+  return { status: "built", body: lifted(extruded(item.id, sketch.shape, sketch.curves as string[], item.distance, faults), input.lift, input.turn, faults), ...source };
 }
 
 /** An extrude's body, curved when its outline has an arc (35f1d2: a Combine with it is refused); else flat. */
@@ -780,7 +782,7 @@ const extruded = (id: string, s: ModelShape, curves: readonly string[], d: numbe
 /** An extrude whose sketch is lost: its kept shape (where it lay) with a warning, or failed with the cause when it has none. */
 function lost(item: Extract<ModelItem, { kind: "extrude" }>, cause: LostCause, faults: ReadonlySet<ModelFault>): ItemResult {
   if (item.kept === undefined) return { status: "failed", cause, input: item.sketch };
-  const body = lifted(extruded(item.id, item.kept.shape, item.kept.curves, item.distance, faults), item.kept.lift, item.kept.turn);
+  const body = lifted(extruded(item.id, item.kept.shape, item.kept.curves, item.distance, faults), item.kept.lift, item.kept.turn, faults);
   // Planted bug: the kept shape is built, but nothing says so.
   return faults.has("warning-dropped") ? { status: "built", body } : { status: "built", body, warning: { cause, input: item.sketch } };
 }
@@ -1009,12 +1011,16 @@ const motionsOf = (m: MoveItem): unknown[] => [
  * says (35e2h), then up by `z`. Every face's and edge's centroid moves;
  * volumes, areas and lengths stay.
  */
-function lifted(body: ModelBody, z: number | undefined, turn?: Turn): ModelBody {
+function lifted(body: ModelBody, z: number | undefined, turn?: Turn, faults: ReadonlySet<ModelFault> = new Set()): ModelBody {
   if (z === undefined) return body;
+  // SL #759 item 4 (Design's BuiltBody `base`): an extrude of a face sketch carried along its face starts its own motion
+  // from the sketch's, so a sketch on its end cap follows whatever carries the sketch it was made from. Planted bug
+  // ("extrude-base-dropped"): the extrude starts unmoved, so a sketch on it stays behind.
+  const motion: Motion2 | undefined = turn === undefined || faults.has("extrude-base-dropped") ? undefined : { a: Math.atan2(turn.x[1], turn.x[0]), t: [turn.at[0], turn.at[1]] };
   const [c, s] = turn?.x ?? [1, 0];
   const [ox, oy] = turn?.at ?? [0, 0];
   const up = (p: Vec3): Vec3 => (turn ? [ox + c * p[0] - s * p[1], oy + s * p[0] + c * p[1], p[2] + z] : [p[0], p[1], p[2] + z]);
-  return sameKind(body, { volume: body.volume, faces: body.faces.map((f) => ({ ...f, centroid: up(f.centroid) })), edges: body.edges.map((e) => ({ ...e, centroid: up(e.centroid) })) });
+  return sameKind(body, { volume: body.volume, faces: body.faces.map((f) => ({ ...f, centroid: up(f.centroid) })), edges: body.edges.map((e) => ({ ...e, centroid: up(e.centroid) })), ...(motion && { motion }) });
 }
 
 /**

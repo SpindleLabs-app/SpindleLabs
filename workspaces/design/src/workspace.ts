@@ -2,7 +2,7 @@
 // Until the sketcher (steps 21–33) it builds primitives and ready-made
 // outlines; every other workspace will refer to its bodies, faces and edges.
 
-import { KernelError, chordLabel, parseChord, summaryInUnit, wordsInUnit, latestOnly, NO_HIGHLIGHT, playback, ORIGIN_AT_FIRST, type AnalysisOverlay, type OriginPlane, type BodyHandle, type BodySpec, type ChamferSize, type MoveKind, type BodyView, type ExtrudeArrow, type OfferedProfile, type SketchPointer, type SketchXY, type Command, type Feature, type Framing, type Plane, type GeometryReference, type MountedWorkspace, type Selected, type SharedViewport, type WorkspaceContext, type WorkspaceId, type WorkspacePlugin, type HistoryStep, withWorkspaceDocument, type DisplayMesh } from "@fission/core";
+import { KernelError, chordLabel, parseChord, summaryInUnit, wordsInUnit, latestOnly, NO_HIGHLIGHT, playback, ORIGIN_AT_FIRST, type AnalysisOverlay, type OriginPlane, type BodyHandle, type BodySpec, type ChamferSize, type MoveKind, type BodyView, type ExtrudeArrow, type OfferedProfile, type PickWants, type SketchPointer, type SketchXY, type Command, type Feature, type Framing, type Plane, type GeometryReference, type MountedWorkspace, type Selected, type SharedViewport, type WorkspaceContext, type WorkspaceId, type WorkspacePlugin, type HistoryStep, withWorkspaceDocument, type DisplayMesh } from "@fission/core";
 import { needsRefit, printView, snapDistance } from "@fission/viewport";
 import type { ShapeKind } from "./profiles.ts";
 import { bodyHidden, constructOf, isConstructItem, bodyIdOf, bodyItem, bodyNumbers, combineBodies, EYE_FOLDERS, CHAMFER_MAX, isChamferItem, isShellItem, shellOf, isCombineItem, extrudeOperation, insertAt, isHidden, isMoveItem, isOperationExtrude, isPiece, isSketchExtrude, numberPieces, isSketchItem, ORIGIN_AXES, ORIGIN_PLANES as EYE_PLANES, builds, ownShape, originDrawn, partFeature, partOf, readDesignDocument, shapeOf, withPartAt, SKETCH_PLANES, type ChamferSizing, type DesignDocument, type MoveParam, type PartKind, isPatternItem } from "./document.ts";
@@ -695,12 +695,12 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
   let printExtras: FirstLayerExtras | null = null;
   /** Draws the build area again (set once the build area's own state exists below; the dialog may tick before then). */
   let refreshArea = () => {};
-  /** File ▾ > Slice for printing (and DESIGN ▾'s Slice): the dialog, unless a tool is still open (#639), which it says. */
+  /** File ▾ > Slice for printing (and DESIGN ▾'s Slice with the page off): the Slice page, unless a tool is still open (#639), which it says (SP5b2c). */
   async function sliceAsked() {
-    if (await exportReady("Slice for printing")) printing.ask();
+    if (await exportReady("Slice for printing")) ctx.openWorkspace("slice");
   }
   // File ▾ > Slice for printing (H2a, W6c): every body shown, as Export STL takes them, sliced and saved as the P1S's print file (.gcode.3mf) or plain G-code.
-  const printing = slicePrint(ctx.toolbar, {
+  void slicePrint(ctx.toolbar, {
     async slice(choices, file, alive) {
       const waits = openToolRefusal(toolOpen(), "Slice for printing"); // the dialog is modal, but a key may still have opened one (#639)
       if (waits !== null) throw new Error(waits);
@@ -978,7 +978,8 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
     else panel.showNoBody(); // a body that did not build, or a design with no body (24f4)
     // Verbs, not apps: whatever the registry offers for this selection, from any workspace.
     const verbs = ctx.actions.actionsFor(targetsOf(items, doc, failedNow));
-    panel.showActions(verbs, (id) => runAction(id, ctx.selection.items));
+    // A verb pressed while an OK is checked runs on the selection as the OK leaves it, as when pressed slowly (SL #764 item 6).
+    panel.showActions(verbs, (id) => afterOk(() => void runAction(id, ctx.selection.items)));
   }
 
   /** The tool open now that changes the bodies (#639), or null: an export waits for it, as the file would not be what the view shows. */
@@ -1032,6 +1033,9 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
    * now, waited for when a rebuild is under way; otherwise it says why and saves nothing.
    */
   async function exportReady(verb: string): Promise<boolean> {
+    // An OK the kernel still checks first lands (SL #764 item 6): refused at once, the words went into the tool's own
+    // error line, which shut with the panel as the OK landed, so the export saved nothing and nothing said why.
+    while (okChecks.size > 0) await Promise.allSettled([...okChecks]);
     if (exportWaits(verb)) return false;
     if (await builtNow()) return !exportWaits(verb); // a tool opened while it waited
     if (shown) panel.showActionNote(stillRebuilding(verb), true, true);
@@ -1051,6 +1055,12 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
     if (outcome.solid && shown) {
       solidCard.show(outcome.solid, (outcome as DesignOutcome).notes);
       solidFor = ctx.project.workspaces.design as DesignDocument | undefined;
+    } else if (verb !== undefined && shown && solidFor !== undefined) {
+      // An export whose check could not run (or that saved nothing): the last export's card is not about this file, so
+      // it must not go on saying "Checked solid" under the note that the check could not run (SL #764 item 3).
+      solidCard.hide();
+      ctx.viewport.clearOverlay(SOLID_OVERLAY);
+      solidFor = undefined;
     }
     if (shown) panel.showActionNote([outcome.message, note].filter(Boolean).join(" "), outcome.bad, !outcome.bad);
   }
@@ -5919,6 +5929,8 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
     }
     applyChange(ctx.selection, pickChange(pick, lastScene)); // a double-click picks the whole body (picking.ts)
   };
+  // Shell opens faces: no edge or corner takes a click on a thin one (Ben, 2026-11-19); every other click can pick anything.
+  const pickWants = (): PickWants => (shellBox.shown ? "faces" : "any");
   let stopWatching = () => {};
   // The phone turned or the window resized (a keyboard, a panel): the line's point moved on screen, so the typed
   // boxes and the hint go beside it again rather than staying where they were, maybe past the view's edge (hunt D2).
@@ -5932,6 +5944,7 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
   /** Listens to picks and the selection: from mount, and again on each wake. Keys come from the shell (X7b), only while shown. */
   function listen() {
     viewport.onPick = onPick;
+    viewport.pickWants = pickWants;
     viewport.onMenu = openViewMenu;
     viewport.onSketchPointer = onSketchPointer;
     viewport.onExtrudePointer = onExtrudePointer;
@@ -5975,6 +5988,7 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
     ctx.properties.ownerDocument.removeEventListener(UNIT_EVENT, onUnitChange);
     showBuildAreaWords();
     viewport.onPick = null;
+    viewport.pickWants = null;
     viewport.onMenu = null;
     viewport.onSketchPointer = null;
     viewport.onExtrudePointer = null;

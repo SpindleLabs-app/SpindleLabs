@@ -3,7 +3,7 @@
 // are unit-tested; workspace.ts applies them on every selection change.
 
 import type { Feature, GeometryReference, ViewportHighlight } from "@fission/core";
-import { bodyIdOf, bodyItem, builds, ownShape, partFeature, type DesignDocument } from "./document.ts";
+import { bodyIdOf, bodyItem, builds, combineBodies, extrudeOperation, isCombineItem, ownShape, partFeature, type DesignDocument } from "./document.ts";
 import { readDesignReference, readProfileReference } from "./references.ts";
 import { bodyOf, findInScene, resolveInScene, sceneHit, type Scene, type ShownBody } from "./scene.ts";
 import { outlineSourceOf } from "./sketch.ts";
@@ -123,13 +123,56 @@ export interface PanelFocus {
  * What the Feature and Body sections describe: the feature of the newest
  * selected item that names one in `doc` (a body, or a face or edge of it),
  * with its body when shown; else the part the Parameters edit
- * (`partFeature`), with its body when shown; null with no part. A selected
+ * (`partFeature`), with its body when shown, or when a Combine or Extrude
+ * Join took the part's body in, the body holding it now (`holderOf`, SL #764
+ * item 1); null with no part. A selected
  * body that did not build is described as having none, never by another
  * body's numbers (bug hunt 2026-10-19, finding 5). Items that name no
  * feature of `doc` (a profile, a deleted feature) are passed over.
  */
 export function panelFocus(items: readonly GeometryReference[], scene: Scene | null, doc: DesignDocument): PanelFocus | null {
-  const focus = (feature: Feature): PanelFocus => ({ feature, body: scene?.bodies.find((b) => b.feature === feature.id) ?? null });
+  const picked = selectedFocus(items, scene, doc);
+  if (picked !== undefined) return picked;
+  const part = partFeature(doc);
+  if (part === null) return null;
+  const own = scene?.bodies.find((b) => b.feature === part.id) ?? null;
+  if (own !== null || scene === null) return { feature: part, body: own };
+  // The part's body is not shown: a Combine or an Extrude Join after it took it in (SL #764 item 1). Describe the body
+  // that holds it now, as a click on that body's row does, never dashes for a design that has a good body.
+  const holder = holderOf(doc, scene, bodyIdOf(part.id), part.id);
+  const feature = holder && doc.timeline.features.find((f) => f.id === holder.feature);
+  return holder && feature ? { feature, body: holder } : { feature: part, body: null };
+}
+
+/**
+ * The body shown in `scene` that now holds `body` (made by `after` or before
+ * it), followed through the items after `after` in timeline order: a
+ * Combine using it as a tool not kept hands it to its target, a Combine on
+ * it as target keeps its id, an Extrude Join hands it to the joined body
+ * (one of those it picked that is shown); null when none is shown (a Cut
+ * that left only pieces of another id, a hidden body, a failed item).
+ */
+function holderOf(doc: DesignDocument, scene: Scene, body: string, after: string): ShownBody | null {
+  const { features } = doc.timeline;
+  let id = body;
+  for (let i = features.findIndex((f) => f.id === after) + 1; i < features.length; i++) {
+    const shown = scene.bodies.find((b) => b.body === id);
+    if (shown) return shown;
+    const f = features[i];
+    const op = extrudeOperation(f);
+    if (op !== null) {
+      if (op.operation === "join" && op.bodies.includes(id)) id = op.bodies.find((b) => scene.bodies.some((x) => x.body === b)) ?? op.bodies[0];
+      continue;
+    }
+    if (!isCombineItem(f)) continue;
+    const { target, tools, keepTools } = combineBodies(f);
+    if (!keepTools && tools.includes(id)) id = target;
+  }
+  return scene.bodies.find((b) => b.body === id) ?? null;
+}
+
+/** The selection's focus as `panelFocus` reads it, or undefined when no selected item names a feature of `doc`. */
+function selectedFocus(items: readonly GeometryReference[], scene: Scene | null, doc: DesignDocument): PanelFocus | undefined {
   for (let i = items.length - 1; i >= 0; i--) {
     const r = readDesignReference(items[i]);
     const feature = r && doc.timeline.features.find((f) => f.id === r.featureId);
@@ -144,8 +187,7 @@ export function panelFocus(items: readonly GeometryReference[], scene: Scene | n
     const hit = found?.status === "found" ? sceneHit(scene!, r!.kind as "face" | "edge", found.index) : null;
     return { feature, body: hit === null ? null : scene!.bodies[hit.body] };
   }
-  const part = partFeature(doc);
-  return part === null ? null : focus(part);
+  return undefined;
 }
 
 /**
@@ -157,7 +199,9 @@ export function panelFocus(items: readonly GeometryReference[], scene: Scene | n
  * body of its own, so the boxes stay on the part.
  */
 export function panelPart(items: readonly GeometryReference[], scene: Scene | null, doc: DesignDocument): Feature | null {
-  const f = panelFocus(items, scene, doc)?.feature ?? null;
+  // With nothing selected the boxes edit the part itself, even when the Feature section describes the body a Combine
+  // put it into (SL #764 item 1): the boxes are the part's sizes.
+  const f = selectedFocus(items, scene, doc)?.feature ?? null;
   return f !== null && ownShape(f) && builds(doc, f) ? f : partFeature(doc);
 }
 

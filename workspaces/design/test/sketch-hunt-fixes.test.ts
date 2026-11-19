@@ -265,8 +265,10 @@ function boxSession(texts: string[]) {
   return { doc, length, angle, type, enter, drew: () => drew, points: () => design.sketches[0].points.map((p) => [p.x, p.y]) };
 }
 
-test("hunt-typed-5: Enter with 12,5, 1.. or 0.0005 in the Length box draws nothing and puts the keys in that box", () => {
-  for (const text of ["12,5", "1..", "0.0005"]) {
+// "12,5" was this test's comma case until SL #764 item 8 made the sketch's boxes read a decimal comma as the Extrude box
+// does (test/typed-length-forms.test.ts); "1,000", a comma that could mean thousands, is still refused, so it takes its place.
+test("hunt-typed-5: Enter with 1,000, 1.. or 0.0005 in the Length box draws nothing and puts the keys in that box", () => {
+  for (const text of ["1,000", "1..", "0.0005"]) {
     const s = boxSession([text]);
     assert.equal(s.length.getAttribute("aria-invalid"), "true", `the box shows ${text} is refused`);
     s.enter(s.length);
