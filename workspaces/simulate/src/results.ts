@@ -18,6 +18,7 @@ import { weakerWay } from "@fission/core";
 import { mpaWords } from "./materials.ts";
 import { bends, bentMesh, boxDiagonal, drawnScale, ESTIMATE, figure, safetyBand, safetyWords, scaleColour, vertexColours, type SafetyBand } from "./run.ts";
 import { DIRECTION_WORDS, newtons, newtonWords, type HeldFace, type Load, type Study } from "./study.ts";
+import { downloadTestFile, testFileOf, type RunRecord } from "./test-file.ts";
 
 /** What the view's colours show. */
 export type ColourBy = "stress" | "bend";
@@ -34,6 +35,8 @@ export interface Result {
   material: { name: string; mechanical: Mechanical };
   /** The set-up as it was when Run was pressed, so the card says what was tested even once the study changes. */
   setUp: RunSetUp;
+  /** What Run gathered for the test file (test-file.ts), or null where none was (a result made in a test). */
+  record: RunRecord | null;
 }
 
 /** What was tested: the body's name, the held faces (by stable reference and name) and the loads, copied at Run. */
@@ -58,10 +61,10 @@ export const RESULT_OVERLAY = "testlab-result";
 export const BEND_OVERLAY = "testlab-result-bend";
 
 /** A checked answer ready to draw. */
-export function resultOf(answer: StressTestResult, material: Result["material"], setUp: RunSetUp): Result {
+export function resultOf(answer: StressTestResult, material: Result["material"], setUp: RunSetUp, record: RunRecord | null = null): Result {
   const scale = drawnScale(answer.maxDisplacement, boxDiagonal(answer.points));
   const { mesh, vertexPoint } = bentMesh(answer, scale);
-  return { answer, scale, mesh, vertexPoint, bend: bends(answer), material, setUp };
+  return { answer, scale, mesh, vertexPoint, bend: bends(answer), material, setUp, record };
 }
 
 /** The view's colours for the result by stress (0 to the largest) or by bend (0 to the largest). */
@@ -301,7 +304,26 @@ export function resultSection(doc: Document, r: Result, by: ColourBy, stale: boo
     if (!clip) return failed();
     clip.writeText(summaryText(r)).then(() => void (copied.textContent = "Copied."), failed);
   });
-  foot.append(el("span", "testlab-results-estimate", "An estimate, not a promise."), copy, copied);
+  foot.append(el("span", "testlab-results-estimate", "An estimate, not a promise."), copy);
+  // Export test file (Ben, 19 Nov): the whole run in one file to send for checking: the design, the set-up, the test as
+  // sent and the kernel's whole answer (test-file.ts).
+  const record = r.record;
+  if (record !== null) {
+    const save = el("button", undefined, "Export test file");
+    save.type = "button";
+    save.dataset.testlab = "export-file";
+    save.title = "Save this run as one file: the part, what holds and pushes it, the material and the full result, so it can be run again and checked.";
+    save.addEventListener("click", () => {
+      try {
+        downloadTestFile(doc, testFileOf(record, r.answer, summaryText(r), new Date()), r.setUp.body);
+        copied.textContent = "Test file saved.";
+      } catch (e) {
+        copied.textContent = `Couldn't save the test file: ${e instanceof Error ? e.message : String(e)}`;
+      }
+    });
+    foot.append(save);
+  }
+  foot.append(copied);
   card.append(foot);
   box.append(card);
   // The colour scale: what the colours mean, from 0 to the largest.

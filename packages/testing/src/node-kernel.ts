@@ -11,12 +11,16 @@ import { entry } from "../../core/src/kernel/entry-points.ts";
 import * as wasm from "../../core/src/kernel/wasm/fission_kernel.js";
 
 let loaded: ReturnType<typeof wasm.initSync> | null = null;
+/** The release's version (kernel.json), which kernel_version answers with, as the app's worker does. */
+let releaseVersion = "";
 
 /** Loads and starts the kernel once (with the app's key, kernel-key.ts); its WebAssembly exports, for memory readings. */
 export function loadKernel(): ReturnType<typeof wasm.initSync> {
   if (!loaded) {
     const exports = wasm.initSync({ module: readFileSync(new URL("../../core/src/kernel/wasm/fission_kernel_bg.wasm", import.meta.url)) });
-    startKernel(entry.begin, JSON.parse(readFileSync(new URL("../../core/src/kernel/wasm/kernel.json", import.meta.url), "utf8")));
+    const release = JSON.parse(readFileSync(new URL("../../core/src/kernel/wasm/kernel.json", import.meta.url), "utf8"));
+    startKernel(entry.begin, release);
+    releaseVersion = release.version;
     loaded = exports;
   }
   return loaded;
@@ -26,7 +30,7 @@ export function nodeKernel(): KernelCalls {
   loadKernel();
   const testListeners = new Set<(stage: StressStage) => void>();
   const ops: { [K in keyof KernelOps]: (...a: KernelOps[K]["args"]) => KernelOps[K]["result"] } = {
-    kernel_version: () => entry.kernel_version(),
+    kernel_version: () => (entry.kernel_version(), releaseVersion), // the release's version, as the app's worker answers (a TestLab test file keeps it)
     make_box: (w, d, h) => entry.make_box(w, d, h),
     make_cylinder: (r, h) => entry.make_cylinder(r, h),
     make_sphere: (r) => entry.make_sphere(r),
