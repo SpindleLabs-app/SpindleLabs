@@ -318,10 +318,9 @@ test("Export STL's solid check is priced by its triangles, so its limit follows 
   assert.equal(callUnits("check_solid", [new Uint8Array(83)], () => undefined), 0);
 });
 
-test("stress test units: above every timed run (TestLab T5c1, the kernel's multigrid solver)", () => {
-  // Each run timed on the local WebAssembly build of kernel main aea9b37 (Node, 2026-11-19), in warm calibration
-  // units (3.9 to 4.2 ms): box sides, named size (none: the default), units. The last five the kernel refused after
-  // meshing (too many points for a wall thinner than the size).
+test("stress test units: above every timed run (TestLab T5c1, the kernel's faster solver)", () => {
+  // Each run timed on the local WebAssembly build of the kernel's main (Node, 2026-11-19), in warm calibration
+  // units (3.9 to 4.2 ms): box sides, named size (none: the default), units. The last seven the kernel refused (a wall thinner than the size).
   const timed: [[number, number, number], number | undefined, number][] = [
     [[100, 10, 10], undefined, 426], [[100, 100, 100], undefined, 9.4], [[100, 100, 8], undefined, 2752], [[100, 100, 4], undefined, 8499],
     [[100, 100, 100 * Math.sqrt(2 / 899)], undefined, 10685], [[100, 100, 3.5], undefined, 7637], [[100, 100, 3], undefined, 10750],

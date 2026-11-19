@@ -323,19 +323,18 @@ export interface BodySize {
 }
 
 /**
- * The stress test (TestLab T5b, re-timed at T5c1 for the kernel's multigrid
+ * The stress test (TestLab T5b, re-timed at T5c1 for the kernel's faster
  * solver). Its cost follows how many elements the mesh has. From the box
  * sides and the mesh size s (named, or the kernel's default: half the
  * thinnest side, no finer than a sixtieth of the diagonal) the cells are
- * each side over s, at least 2 (the mesher puts two layers through any
- * side), multiplied: a cost of STRESS_UNITS_PER_CELL a cell plus
+ * each side over s, at least 2 a side, multiplied: a cost of STRESS_UNITS_PER_CELL a cell plus
  * STRESS_BASE_UNITS. A part thinner than s needs elements about as small as
  * it is thick, so far more of them (or the kernel refuses it, but only after
- * meshing until it runs out of points): the cost is multiplied by
+ * a long time): the cost is multiplied by
  * (s / t)^STRESS_THIN_POWER for a thinnest side t under s, at most
  * STRESS_THIN_MOST times.
  *
- * Timed on the local WebAssembly build of kernel main aea9b37 in Node
+ * Timed on the local WebAssembly build of the kernel's 2026-11-19 main in Node
  * (2026-11-19, the warm calibration unit 3.9 to 4.2 ms, the smallest seen,
  * so the units are the most a device could need), each run against this
  * model: a 100 x 10 x 10 bar at the default 5 mm 426 units (model 580); a
@@ -344,10 +343,10 @@ export interface BodySize {
  * named sizes: the bar at 2 and 1.5 mm 2,001 and 4,446 (4,675, 10,670), the
  * cube at 10, 7 and 5.5 mm 804, 3,096 and 6,353 (3,800, 10,500, 21,340), the
  * 4 mm plate at 1.8 and 1.55 mm 18,578 and 30,346 (24,300, 37,880; 128,779
- * points, near the solver's 150,000). Thin plates the kernel refuses after
- * meshing: 2.5 mm 10,700 (12,890), 2 mm 24,300 (29,520), 1.5 mm 82,500
+ * points, near the solver's 150,000). Thin plates the kernel refuses (after
+ * a long time): 2.5 mm 10,700 (12,890), 2 mm 24,300 (29,520), 1.5 mm 82,500
  * (103,200), 1 mm 44,000 and 0.5 mm 15,900 (103,200). The model is above
- * every one, by 1.2 times at the least. (The kernel before multigrid took
+ * every one, by 1.2 times at the least. (The kernel before the faster solver took
  * 47,214 units for the 4 mm plate: 215 s against 33 s now, the same answer.)
  * A wall much thinner than the box's thinnest side (a thin rib on a block)
  * is not seen here; the kernel should refuse those early (TestLab's notes).
