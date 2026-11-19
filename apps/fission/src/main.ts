@@ -35,12 +35,12 @@ import { startPhoneFloat } from "./phone-float.ts";
 import { sheetDrag } from "./sheet-drag.ts";
 import { liftOverSheets } from "./undo-lift.ts";
 import { appLoaded } from "./loading.ts";
-import { ALL_WORKSPACES_SWITCH, listedWorkspaces } from "./listed-workspaces.ts";
+import { ALL_WORKSPACES_SWITCH, greyedInMenu, listedWorkspaces } from "./listed-workspaces.ts";
 import { designWorkspace } from "@fission/design";
 import { renderWorkspace } from "@fission/render";
-import { simulateWorkspace } from "@fission/simulate";
+import { simulateWorkspace, testlabShown } from "@fission/simulate";
 import { manufactureWorkspace } from "@fission/manufacture";
-import { laserWorkspace } from "@fission/laser";
+import { laserShown, laserWorkspace } from "@fission/laser";
 import { sliceWorkspace, slicePageWorkspace } from "@fission/slice";
 /** The Slice page (slice-page.config.mjs): off in the shipped build until it does everything Slice for printing does. */
 declare const __SLICE_PAGE__: boolean;
@@ -392,10 +392,12 @@ const pool = new WarmPool<WorkspaceId, PaneId, { slots: Slots; view: MountedWork
 // app, all ten with ?all-workspaces), in place of the tabs. An unlisted
 // workspace opened by its link is still named on the button. Slice opens
 // Slice for printing on the design (its own screen is not built yet).
+// A placeholder whose page its switch turns on (?testlab, ?laser, both in ?all) is listed as working.
+const pageOn = (id: string) => (id === "simulate" ? testlabShown() : id === "laser" ? laserShown() : false);
 const SLICE_SUMMARY = "Slice for printing: slice the design and save the printer's file";
 const markTab = workspaceSwitcher(
   $("workspaces"),
-  listed.map((w) => (w.id === "slice" ? { id: w.id, title: w.title, summary: SLICE_SUMMARY, placeholder: false } : { id: w.id, title: w.title, summary: w.summary, placeholder: w.status === "placeholder" })),
+  listed.map((w) => (w.id === "slice" ? { id: w.id, title: w.title, summary: SLICE_SUMMARY, placeholder: false } : { id: w.id, title: w.title, summary: w.summary, placeholder: greyedInMenu(w, pageOn) })),
   (id) => (id === "slice" && !SLICE_PAGE ? sliceForPrinting() : show(id as WorkspaceId)),
   { community: "Community", ...Object.fromEntries(workspaces.map((w) => [w.id, w.title])) },
 );
