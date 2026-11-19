@@ -891,7 +891,9 @@ async function save(asNew = false) {
     let naming = null as string | null;
     const bytes = (fileName: string) => {
       const name = nameFromFile(fileName);
-      naming = neverNamed(before.name) && name !== "" ? name : null;
+      // The default name again ("Untitled.spindle" for an Untitled project) is no new name: nothing changes, so nothing is
+      // left to store (a change here made leaving journal it over a stale tab's kept change: projects.mjs A3).
+      naming = neverNamed(before.name) && name !== "" && name !== (before.name || "Untitled") ? name : null;
       return projectToJson(naming === null ? before : { ...before, name: naming });
     };
     const result = await saveFile(document, { suggestedName: projectFile || ctx.project.name || "Untitled", kind: PROJECT_KIND, bytes, handle: asNew ? null : savedTo });
