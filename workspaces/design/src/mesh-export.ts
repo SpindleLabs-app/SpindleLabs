@@ -8,6 +8,7 @@
 
 import type { Action, ActionOutcome, ActionRegistry, Feature, SolidProblem, SolidReport } from "@fission/core";
 import { saveFile, type SaveKind } from "@fission/ui";
+import { nameLead, printLead } from "@fission/print";
 import { checkWords, exportNotes, failedItemsNote, joinStl, shownBodyFeature, type DesignOutcome, type SaveFile } from "./actions.ts";
 import { designBodies } from "./browser.ts";
 import { bodyNumbers, isDuplicateItem, makesPieces, shapeOf, type DesignDocument } from "./document.ts";
@@ -127,7 +128,9 @@ function meshAction(format: Format, save: SaveFile): Action {
         const files = await endStls(ctx.kernel, doc, picked.map((p) => ({ ...p, name: kindOf(p.feature) })));
         const one = picked.length === 1;
         const name = one ? kindOf(picked[0].feature) : `${picked.length} bodies`;
-        const file = `spindlelabs-${one ? name : `${picked.length}-bodies`}${format.kind.extension}`;
+        // Named after the design as Download STL is (SL #764 item 7): its name, else its file's, else the old shape name.
+        const lead = nameLead(printLead(ctx.project.name, ctx.fileName?.()));
+        const file = `${lead !== "spindlelabs" ? lead : `spindlelabs-${one ? name : `${picked.length}-bodies`}`}${format.kind.extension}`;
         const all = files.map((f, i) => ({ mesh: meshOfStl(f.bytes, place(picked[i].body)), file: f, body: picked[i].body }));
         // Each object checked on its own, on its own triangles: never blocks the save, never says solid when it can't run.
         let unchecked = "";

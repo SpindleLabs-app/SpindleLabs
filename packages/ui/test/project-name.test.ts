@@ -72,3 +72,64 @@ test("refresh shows a name changed elsewhere (an undo, another project opened), 
   assert.equal(box.element.value, "Half typ");
   box.element.blur();
 });
+
+// SL #764 item 4 (S-3, app-wide hunt 2026-11-14): a name typed was kept only on Enter or on leaving the box, so a reload
+// dropped it and Ctrl+S saved the old name. It is now kept on every key, as the size boxes are (one undo step: `typing`).
+function typing(start = "Untitled") {
+  const window = new Window();
+  const doc = window.document as unknown as Document;
+  let name = start;
+  const renamed: [string, boolean][] = [];
+  const box = projectNameBox(doc, { name: () => name, rename: (n, t) => { name = n; renamed.push([n, t === true]); }, maxLength: 100 });
+  doc.body.append(box.element);
+  const type = (value: string) => {
+    box.element.value = value;
+    box.element.dispatchEvent(new window.Event("input", { bubbles: true }) as unknown as Event);
+  };
+  const key = (k: string) => box.element.dispatchEvent(new window.KeyboardEvent("keydown", { key: k, bubbles: true }) as unknown as Event);
+  const change = () => box.element.dispatchEvent(new window.Event("change", { bubbles: true }) as unknown as Event);
+  box.element.focus();
+  return { box, renamed, type, key, change, name: () => name };
+}
+
+test("hand-worked: every key typed renames the project at once, as typing (one merged undo step)", () => {
+  const t = typing("Untitled");
+  t.type("H");
+  t.type("Hi");
+  t.type("Hin");
+  // Three keys, three renames, each marked as typing so the shell folds them into one step "Rename project".
+  assert.deepEqual(t.renamed, [["H", true], ["Hi", true], ["Hin", true]]);
+  // A reload or Ctrl+S now, with the caret still in the box, finds the name on screen.
+  assert.equal(t.name(), "Hin");
+  assert.equal(t.box.element.value, "Hin", "the box is left alone while typed in");
+});
+
+test("typing spaces or emptying the box keeps the last name; leaving an emptied box puts back the name it had on focus", () => {
+  const t = typing("Bracket");
+  t.type("B ");
+  t.type("");
+  // "B " is the name "B"; the empty box renames nothing while typed.
+  assert.deepEqual(t.renamed, [["B", true]]);
+  t.change();
+  // Left empty: the name it had when the box was focused comes back, as typing (folded into the same step, which then goes).
+  assert.deepEqual(t.renamed, [["B", true], ["Bracket", true]]);
+  assert.equal(t.box.element.value, "Bracket");
+});
+
+test("Escape after typing puts back the name the box had on focus", () => {
+  const t = typing("Bracket");
+  t.type("Ty");
+  t.type("Typo");
+  t.key("Escape");
+  assert.equal(t.name(), "Bracket");
+  assert.equal(t.box.element.value, "Bracket");
+  assert.deepEqual(t.renamed.at(-1), ["Bracket", true]);
+});
+
+test("control: Enter after typing renames nothing more (the name is already kept)", () => {
+  const t = typing("Bracket");
+  t.type("Hinge");
+  t.key("Enter");
+  assert.deepEqual(t.renamed, [["Hinge", true]]);
+  assert.equal(t.name(), "Hinge");
+});

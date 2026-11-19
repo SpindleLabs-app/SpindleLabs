@@ -142,9 +142,11 @@ for (const [width, tap] of [[1280, false], [375, true]]) {
         assert.equal(readBack(file, kind), "8 12 24000.000");
         await page.waitForFunction(() => document.getElementById("solid-badge")?.hidden === false);
         const missing = `Extrude 1 failed, so it is not in the ${name}: the part is saved without it. Fix it in the timeline (red) to include it.`;
-        await page.waitForFunction((k) => document.getElementById("action-note")?.textContent?.startsWith(`Exported spindlelabs-box.${k}.`), kind);
+        // Named after the design, "Holed box", as its STL is (SL #764 item 7; e2e/export-failed.mjs).
+        assert.equal(download.suggestedFilename(), `Holed box.${kind}`);
+        await page.waitForFunction((k) => document.getElementById("action-note")?.textContent?.startsWith(`Exported Holed box.${k}.`), kind);
         const note = await page.textContent("#action-note");
-        assert.ok(note.startsWith(`Exported spindlelabs-box.${kind}. ${missing} What was built is checked solid.`), note);
+        assert.ok(note.startsWith(`Exported Holed box.${kind}. ${missing} What was built is checked solid.`), note);
         assert.ok(!note.includes("Checked solid"), note);
         const b = await page.evaluate(() => {
           const el = document.getElementById("solid-badge");

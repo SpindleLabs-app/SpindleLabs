@@ -8,7 +8,7 @@
 .whats-new .whats-new-note { margin: var(--look-space-2) 0 0; font-size: 12px; line-height: 1.4; color: var(--text-dim); }
 .whats-new .close { font: inherit; min-height: var(--look-target); padding: 0 var(--look-space-4); color: inherit; background: var(--look-field); border: 1px solid var(--look-edge); border-radius: var(--look-radius-s); cursor: pointer; }
 .whats-new .close:hover { border-color: var(--look-accent); color: var(--look-accent-text); }
-.whats-new .whats-new-body { overflow-y: auto; padding: 0 var(--look-space-4) var(--look-space-4); overscroll-behavior: contain; }
+.whats-new .whats-new-body { overflow-y: auto; padding: 0 var(--look-space-4) var(--look-space-4); overscroll-behavior-y: contain; }
 .whats-new section { padding: var(--look-space-3) 0; border-bottom: 1px solid var(--look-edge); }
 .whats-new section:last-child { border-bottom: 0; }
 .whats-new h3 { display: flex; align-items: baseline; gap: var(--look-space-2); margin: 0 0 var(--look-space-2); font-size: 14px; }

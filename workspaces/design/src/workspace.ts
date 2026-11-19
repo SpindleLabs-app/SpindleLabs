@@ -978,7 +978,8 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
     else panel.showNoBody(); // a body that did not build, or a design with no body (24f4)
     // Verbs, not apps: whatever the registry offers for this selection, from any workspace.
     const verbs = ctx.actions.actionsFor(targetsOf(items, doc, failedNow));
-    panel.showActions(verbs, (id) => runAction(id, ctx.selection.items));
+    // A verb pressed while an OK is checked runs on the selection as the OK leaves it, as when pressed slowly (SL #764 item 6).
+    panel.showActions(verbs, (id) => afterOk(() => void runAction(id, ctx.selection.items)));
   }
 
   /** The tool open now that changes the bodies (#639), or null: an export waits for it, as the file would not be what the view shows. */
@@ -1032,6 +1033,9 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
    * now, waited for when a rebuild is under way; otherwise it says why and saves nothing.
    */
   async function exportReady(verb: string): Promise<boolean> {
+    // An OK the kernel still checks first lands (SL #764 item 6): refused at once, the words went into the tool's own
+    // error line, which shut with the panel as the OK landed, so the export saved nothing and nothing said why.
+    while (okChecks.size > 0) await Promise.allSettled([...okChecks]);
     if (exportWaits(verb)) return false;
     if (await builtNow()) return !exportWaits(verb); // a tool opened while it waited
     if (shown) panel.showActionNote(stillRebuilding(verb), true, true);
@@ -1051,6 +1055,12 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
     if (outcome.solid && shown) {
       solidCard.show(outcome.solid, (outcome as DesignOutcome).notes);
       solidFor = ctx.project.workspaces.design as DesignDocument | undefined;
+    } else if (verb !== undefined && shown && solidFor !== undefined) {
+      // An export whose check could not run (or that saved nothing): the last export's card is not about this file, so
+      // it must not go on saying "Checked solid" under the note that the check could not run (SL #764 item 3).
+      solidCard.hide();
+      ctx.viewport.clearOverlay(SOLID_OVERLAY);
+      solidFor = undefined;
     }
     if (shown) panel.showActionNote([outcome.message, note].filter(Boolean).join(" "), outcome.bad, !outcome.bad);
   }
