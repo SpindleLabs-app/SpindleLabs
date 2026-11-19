@@ -259,7 +259,9 @@ export function expectedView(design, failed = new Set()) {
   let next = Math.max(design.nextBody ?? 1, ...[...given.values()].map((n) => n + 1));
   for (const f of [...solids, ...made.filter((f) => !solids.includes(f))]) if (!given.has(f.id)) given.set(f.id, next++);
   // The numbers as the app keeps them: the file's (gone items' dropped) in its order, then each new one as given.
-  const numbered = { bodies: [...given].map(([id, number]) => ({ id: `body:${id}`, number })), nextBody: next };
+  // A piece's remembered faces (Design data version 13) stay with its number, as the app keeps them (issue #767).
+  const facesOf = new Map((design.bodies ?? []).filter((b) => Array.isArray(b.faces)).map((b) => [b.id, b.faces]));
+  const numbered = { bodies: [...given].map(([id, number]) => ({ ...(facesOf.has(`body:${id}`) && { faces: facesOf.get(`body:${id}`) }), id: `body:${id}`, number })), nextBody: next };
   // The bodies in timeline order: each solid that built adds its body; a Combine that built (all its bodies there before
   // it, not failed) takes its tools away unless it keeps them, changes its target in place (so the target's volume is no
   // longer its item's: `combined`), and adds its numbered pieces after the rest, in number order. Whether a piece exists
@@ -473,6 +475,25 @@ export function reusedIds(before, after) {
  * counter as they were. A preset's own outline (profiles) is its sizes'
  * too, so it isn't compared. Returns what changed that shouldn't have.
  */
+/**
+ * The sketches with what Design moves by itself left out: a point pinned to a
+ * body's edge, and what a projection made (its point, or its curve's points
+ * and radius), follow the body when an edit changes it (26f, 27d), recorded
+ * into the edit's own undo step (issue #765: a corner pinned to Box 24 went
+ * from x 12 to 40 with the box's width). Everything else in them must stay.
+ */
+function unfollowed(sketches) {
+  return (sketches ?? []).map((s) => {
+    const made = new Set([...(s.pins ?? []).map((p) => p.point), ...(s.projected ?? []).map((p) => p.made)]);
+    for (const c of s.curves ?? []) if (made.has(c.id)) for (const k of ["start", "end", "centre", "a", "b"]) if (typeof c[k] === "string") made.add(c[k]);
+    return {
+      ...s,
+      points: (s.points ?? []).map((p) => (made.has(p.id) ? { id: p.id } : p)),
+      curves: (s.curves ?? []).map((c) => (made.has(c.id) && "radius" in c ? { ...c, radius: null } : c)),
+    };
+  });
+}
+
 export function editLeaks(before, after) {
   const out = [];
   const a = before.timeline.features;
@@ -484,7 +505,8 @@ export function editLeaks(before, after) {
     const [x, y] = [a.find((f) => f.id === id), b.find((f) => f.id === id)];
     if (JSON.stringify(x.dependsOn) !== JSON.stringify(y.dependsOn) || x.suppressed !== y.suppressed || x.intent.type !== y.intent.type) out.push(`${id} changed more than its sizes`);
   }
-  for (const key of ["sketches", "kept", "nextId"]) if (JSON.stringify(before[key]) !== JSON.stringify(after[key])) out.push(`its ${key} changed`);
+  if (JSON.stringify(unfollowed(before.sketches)) !== JSON.stringify(unfollowed(after.sketches))) out.push("its sketches changed");
+  for (const key of ["kept", "nextId"]) if (JSON.stringify(before[key]) !== JSON.stringify(after[key])) out.push(`its ${key} changed`);
   if (before.timeline.marker !== after.timeline.marker) out.push("the marker moved");
   return out;
 }

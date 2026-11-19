@@ -225,6 +225,28 @@ test("a new id comes from the counter, worked by hand (25a5)", () => {
   assert.equal(reusedIds(before, curve).length, 1);
 });
 
+test("regression (#765, monkey seed 359820996): a point pinned to the edited box's corner follows it, and is no leak", () => {
+  // Box 24 made 12 → 40 wide; sketch-16's point-34 is pinned to its front-right-top corner, so Design moves it from
+  // x 12 to x 40 in the edit's own step (26f). The monkey called that "its sketches changed" at action 1536.
+  const sketch = (x) => ({ id: "sketch-16", constraints: [], curves: [{ id: "circle-35", kind: "circle", centre: "point-34", radius: 55.86 }, { id: "line-36", kind: "line", start: "point-28", end: "point-37" }], pins: [{ feature: "feature-24", kind: "endpoint", name: "front+right&front+top&right+top", point: "point-34" }], points: [{ id: "point-28", x: 36.5, y: 91 }, { id: "point-34", x, y: 5 }, { id: "point-37", x: 0, y: 0 }] });
+  const box = (width) => ({ id: "feature-24", dependsOn: [], suppressed: false, intent: { type: "box", parameters: { width, depth: 20, height: 5 }, summary: `Box: ${width} × 20 × 5 mm` }, provenance: { from: [], self: { id: "feature-24", label: "Box 24", workspace: "design" } } });
+  const doc = (width, x) => ({ nextId: 40, sketches: [sketch(x)], kept: {}, timeline: { features: [box(width)] } });
+  assert.deepEqual(editLeaks(doc(12, 12), doc(40, 40)), []);
+  // A projected circle's radius and a projected line's ends follow the same way.
+  const projected = (r, x) => ({ ...doc(40, 40), sketches: [{ ...sketch(40), projected: [{ id: "projection-1", feature: "feature-24", edge: "e", made: "circle-35" }, { id: "projection-2", feature: "feature-24", edge: "f", made: "line-36" }], curves: [{ id: "circle-35", kind: "circle", centre: "point-34", radius: r }, { id: "line-36", kind: "line", start: "point-28", end: "point-37" }], points: [{ id: "point-28", x, y: 91 }, { id: "point-34", x: 40, y: 5 }, { id: "point-37", x: 0, y: 0 }] }] });
+  assert.deepEqual(editLeaks(projected(55.86, 36.5), projected(70, 50)), []);
+  // Controls: a point no pin or projection holds, a pinned point's id, the pins themselves and a free circle's radius still count.
+  const free = doc(40, 40);
+  free.sketches[0].points[0].x = 37;
+  assert.deepEqual(editLeaks(doc(12, 12), free), ["its sketches changed"]);
+  const renamed = doc(40, 40);
+  renamed.sketches[0].pins[0].feature = "feature-1";
+  assert.deepEqual(editLeaks(doc(12, 12), renamed), ["its sketches changed"]);
+  const radius = doc(40, 40);
+  radius.sketches[0].curves[0].radius = 60;
+  assert.deepEqual(editLeaks(doc(12, 12), radius), ["its sketches changed"]);
+});
+
 test("an Edit feature step changes only its item's sizes, worked by hand (25a5)", () => {
   const before = design();
   // Extrude feature-3's distance 10 → 25: one item, only its sizes. Nothing leaks.
@@ -397,6 +419,31 @@ test("hand-worked: what a file with Combines should show (35f1d)", () => {
   const gone = structuredClone(design);
   gone.timeline.features.splice(2, 1);
   assert.deepEqual(expectedView(gone).numbered.bodies.map((b) => b.id), ["body:feature-1", "body:feature-2", "body:feature-4"]);
+});
+
+test("regression (#767, monkey seed 359821374): a piece's remembered faces are kept when the file's bodies are numbered again", () => {
+  const box = (id) => ({ id, intent: { type: "box", parameters: { width: 10, depth: 10, height: 10 }, summary: "Box: 10 × 10 × 10 mm" }, provenance: { self: { workspace: "design", id, label: id }, from: [] }, dependsOn: [], suppressed: false });
+  const combine = (id) => ({ id, intent: { type: "combine", parameters: { target: "body:feature-1", tools: ["body:feature-2"], operation: "cut", keepTools: false }, summary: "Combine" }, provenance: { self: { workspace: "design", id, label: id }, from: [] }, dependsOn: ["feature-1", "feature-2"], suppressed: false });
+  // Box 1 cut by Box 2 into two pieces; the file (version 13 on) remembers the piece's faces, which the app keeps on save.
+  const faces = ["face:feature-1/top", "face:feature-2/left"];
+  const file = {
+    workspaces: {
+      design: {
+        version: 29,
+        nextId: 4,
+        profiles: [],
+        sketches: [],
+        timeline: { features: [box("feature-1"), box("feature-2"), combine("feature-3")] },
+        bodies: [{ id: "body:feature-1", number: 1 }, { id: "body:feature-2", number: 2 }, { faces, id: "body:feature-3/piece:1", number: 3 }],
+        nextBody: 4,
+      },
+    },
+  };
+  // "add-solid" appends a box (feature-4): numbered 4 after the file's 3, and the piece keeps its faces as the app does.
+  const added = JSON.parse(editFile(JSON.stringify(file), "add-solid", 0));
+  const settled = JSON.parse(settledText(JSON.stringify(added))).workspaces.design;
+  assert.deepEqual(settled.bodies, [{ id: "body:feature-1", number: 1 }, { id: "body:feature-2", number: 2 }, { faces, id: "body:feature-3/piece:1", number: 3 }, { id: "body:feature-4", number: 4 }]);
+  assert.equal(settled.nextBody, 5);
 });
 
 test("hand-worked: what a file with Extrude Join, Cut and Intersect should show (SL #507)", () => {
