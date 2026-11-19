@@ -517,8 +517,12 @@ export class ViewportView {
     const distance = this.camera.position.distanceTo(this.controls.target);
     const f = clampZoom(distance, factor, this.controls.minDistance, this.controls.maxDistance);
     if (f === 1 || !(f > 0)) return;
-    // Toward the part's own point under the cursor when there is one (navigation.ts zoomAt).
-    const onBody = this.faceHitAt(clientX, clientY)?.point ?? null;
+    // Toward the part's own point under the cursor when there is one (navigation.ts zoomAt). While a sketch is edited,
+    // toward the sketch plane's point instead: the body is see-through then and the sketch is what is drawn on, and
+    // closing in on a body face above the plane stopped the zoom tens of mm short of the sketch (free-placement.mjs).
+    const plane = this.host.sketchPlane();
+    const onPlane = plane ? this.onPlane(clientX, clientY, plane) : null;
+    const onBody = plane && onPlane ? toWorld(plane, onPlane) : (this.faceHitAt(clientX, clientY)?.point ?? null);
     this.setPose(zoomAt(this.cameraPose(), [ndc.x, ndc.y], { fov: this.camera.fov, aspect: this.camera.aspect }, f, onBody));
   }
 
