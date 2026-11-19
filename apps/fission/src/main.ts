@@ -319,6 +319,7 @@ if (__TEST_HOOKS__ && new URLSearchParams(location.search).has("test-hooks"))
       // Whether the undo history holds work still to be recorded (a delete the kernel still plans, an OK it still checks):
       // the page shows the step before until it lands, so the monkey waits on it before reading the bar (issue #650).
       historyBusy: () => ctx.history.working(), // held work running by itself, not a question waiting on the person (SL #397)
+      waitingToRecord: () => ctx.history.waitingToRecord(), // an OK asked for and not recorded yet: leaving asks first (#749)
       // The home screen's turning picture shows these edges instead of the open project's (e2e/home-backdrop.mjs, STL=).
       homeStandIn: (lines: number[] | null, surface?: { positions: number[]; indices: number[] } | null) => home?.showStandIn(lines, surface),
       // The home picture reports its angle and frames, each frame counted `ms` slower (e2e/home-backdrop.mjs, run under a paused clock).
