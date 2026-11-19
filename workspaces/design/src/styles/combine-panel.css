@@ -48,3 +48,18 @@
   .combine-panel #combine-error { order: 5; flex: 1 1 100%; margin: 0; }
   .combine-panel .combine-panel-buttons { order: 6; margin: 0; }
 }
+/* The narrowest phones (up to 374 px; issue #764): the sheet that opens by itself once a tool is picked covered 46 to 51%
+   of the view at 320 × 568, over Ben's 40% for one tap. The bar over the view already says Combine and holds Cancel
+   (phone-float.ts), so here the sheet drops its title and its own Cancel and keeps two rows: the operation, Keep tools
+   and OK, then the two fields (about 260 of the 273 px at 320). */
+@media (max-width: 374px) {
+  .combine-panel h2:not(#none) { display: none; }
+  .combine-panel #combine-cancel { display: none; }
+  .combine-panel #combine-ok { min-width: 44px; }
+  .combine-panel:not([hidden]) { gap: 4px 6px; }
+  .combine-panel .combine-panel-op select { width: 100px; }
+  .combine-panel .combine-panel-keep { order: 2; white-space: nowrap; }
+  .combine-panel .combine-panel-buttons { order: 3; margin-left: auto; }
+  .combine-panel .combine-panel-field { order: 5; }
+  .combine-panel #combine-error { order: 6; }
+}

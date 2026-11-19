@@ -1830,6 +1830,27 @@ phone.addEventListener("change", () => {
   let wanted = false;
   let opened = false;
   let shows = ""; // the Combine panel's count of times it was shown: one more means a Combine started again, even over an open one (#586)
+  // A sheet opened by itself under a finger (issue #764): the pick that opens it is made as the finger lifts, and the
+  // browser's click for that tap comes after, at the same spot, so it pressed whatever the sheet had just brought there.
+  // At 320 × 568 that was Undo, lifted over the new sheet (undo-lift.ts), which cancelled the Combine being finished.
+  // So a press's click that lands on something else than the press began on is dropped for a moment after the sheet
+  // opened by itself. A key's click (no press, detail 0) and a later tap are kept.
+  /** How long after a sheet opens by itself a press's stray click is dropped: a tap's click follows its lift by a frame or two. */
+  const SHEET_CLICK_MS = 500;
+  let pressedOn: EventTarget | null = null;
+  let swallowUntil = 0;
+  document.addEventListener("pointerdown", (e) => (pressedOn = e.target), true);
+  document.addEventListener(
+    "click",
+    (e) => {
+      if (e.detail === 0 || performance.now() > swallowUntil) return;
+      swallowUntil = 0;
+      if (pressedOn instanceof Node && e.target instanceof Node && (pressedOn === e.target || pressedOn.contains(e.target))) return;
+      e.preventDefault();
+      e.stopImmediatePropagation();
+    },
+    true,
+  );
   // `turned`: the screen just became phone width (a sketch started sideways, then the phone turned upright), so a prompt already up is shown.
   const update = (turned: boolean) => {
     const props = $("properties"); // a workspace's mount replaces the slot, so it is looked up each time
@@ -1853,6 +1874,7 @@ phone.addEventListener("change", () => {
     if (now && phone.matches && !open) {
       toggle.click();
       opened = true;
+      swallowUntil = performance.now() + SHEET_CLICK_MS;
       // The panel's first box took the keys while the sheet was still closed (nothing hidden is focused): give them again.
       const give = () => $("properties").querySelector<HTMLElement>("#feature-edit:not([hidden]) input")?.focus();
       give();

@@ -25,7 +25,7 @@ export interface SketchToolbarEvents {
   finish(): void;
   /** The Snap button pressed: snapping turned on (true) or off. */
   snap(on: boolean): void;
-  /** Type pressed (phone width only): the keys go to the typed-size boxes. */
+  /** Type pressed (touch screens only): the keys go to the typed-size boxes. */
   type(): void;
   /** Delete pressed: the sketch curves the Select tool picked are taken out (sketch-select.ts). */
   remove(): void;
@@ -99,7 +99,7 @@ export interface SketchToolbar {
   showSnap(on: boolean): void;
   /** The tool in use: its button pressed and its menu row ticked. */
   showTool(kind: ToolKind): void;
-  /** Shows Type (only ever drawn at phone width on a touch screen, sketchbar.css) while the typed-size boxes show. */
+  /** Shows Type (only ever drawn on a touch screen, sketchbar.css) while the typed-size boxes show. */
   showType(on: boolean): void;
   /** How many sketch curves the Select tool has picked: Delete is on only for one or more. */
   showPicked(count: number): void;
@@ -152,9 +152,9 @@ export function sketchToolbar(slot: HTMLElement, on: SketchToolbarEvents): Sketc
     row.append(withIcon(b, TOOL_ICONS[t.kind], TOOL_ICON_SIZE));
     return { kind: t.kind, button: b };
   });
-  // Type (sketch hunt 2026-11-01): at phone width the typed-size boxes take no taps until typed in, since beside the finger
+  // Type (sketch hunt 2026-11-01): on a touch screen the typed-size boxes take no taps until typed in, since beside the finger
   // they swallowed the next tap of a line drawn down; this puts the keys in their first box. In the toolbar, not over the
-  // view, so it never covers where a sketch is tapped; wider screens never show it (a digit starts typing there).
+  // view, so it never covers where a sketch is tapped; screens with a mouse never show it (a digit starts typing there).
   // Select and Delete (missing basics, 2026-11-04), at the end of the tools' row after a divider: the Select tool picks
   // single lines, circles and arcs (Escape with nothing half drawn chooses it too, as in Fusion), and Delete takes them
   // out. In the row, not a group of their own, so at phone width they wrap with the tools and show without a sideways

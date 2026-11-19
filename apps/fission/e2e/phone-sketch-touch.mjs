@@ -2,11 +2,12 @@
 // (phone hunt 2026-11-12, SpindleLabs #614; styles: typed-entry.css,
 // sketchbar.css, phone-short.css, phone-float.css, view-controls.css,
 // extrude-several.css).
-// 1. A phone held sideways wider than 640 px (667 × 375, 740 × 360): the
-//    typed-size boxes take no taps until typed in, so the next tap of a line,
-//    rectangle or circle, landing where the boxes stand, places the point and
-//    opens no keyboard; the sketch toolbar's Type button shows there.
-//    (A tablet, 1024 × 768 touch, keeps boxes that take taps and no Type.)
+// 1. A phone held sideways wider than 640 px (667 × 375, 740 × 360), and a
+//    tablet either way up (1024 × 768, 768 × 1024; app-wide hunt 2026-11-14,
+//    issue #764: its boxes took the tap): the typed-size boxes take no taps
+//    until typed in, so the next tap of a line, rectangle or circle, landing
+//    where the boxes stand, places the point and opens no keyboard; the
+//    sketch toolbar's Type button shows there.
 // 2. A short phone held sideways, also 640 px wide or less (568 × 320,
 //    600 × 340, 640 × 300) and the usual sizes: in a sketch and at the plane
 //    prompt no button's centre lies under another element.
@@ -71,12 +72,13 @@ const buried = (page) => page.evaluate(() => {
 
 try {
   // 1. Sideways phones: the next tap draws.
-  for (const [w, h] of [[667, 375], [740, 360]]) {
+  for (const [w, h] of [[667, 375], [740, 360], [1024, 768], [768, 1024]]) {
     const page = await phone(w, h);
     await enterSketch(page);
     const free = await freePoints(page);
-    const near = (x, y) => free.some(([a, b]) => Math.abs(a - x) < 12 && Math.abs(b - y) < 12);
     const c = await page.locator("#viewport canvas").boundingBox();
+    // Within half a grid cell of a free point (the grid is 30 × 20 over the canvas; 12 px was half a cell on a phone).
+    const near = (x, y) => free.some(([a, b]) => Math.abs(a - x) < Math.max(12, c.width / 60) && Math.abs(b - y) < Math.max(12, c.height / 40));
     free.sort((p, q) => Math.hypot(p[0] - c.x - c.width / 2, p[1] - c.y - c.height / 2) - Math.hypot(q[0] - c.x - c.width / 2, q[1] - c.y - c.height / 2));
     const A = free.find(([x, y]) => near(x + 60, y + 40) && near(x + 30, y + 30));
     assert.ok(A, `${w}x${h}: a free spot to draw`);
@@ -101,16 +103,23 @@ try {
     await page.context().close();
   }
   {
-    // A tablet is unchanged: its boxes take taps (no hover), no Type button.
-    const page = await phone(1024, 768);
-    await enterSketch(page);
-    await page.tap("#sketch-tool-line");
+    // A computer with a mouse is unchanged: no Type button (a digit starts typing), the boxes take the tap only while typing.
+    const context = await browser.newContext({ viewport: { width: 1280, height: 800 } });
+    const page = await context.newPage();
+    await page.addInitScript(() => indexedDB.deleteDatabase("fission"));
+    watchErrors(page);
+    await page.goto("http://localhost:4414/?test-hooks#design");
+    await page.locator("#start-hint").waitFor();
+    await page.click("#create-sketch");
+    await page.waitForTimeout(300);
+    await page.click("#sketch-plane-XY");
+    await page.waitForTimeout(800);
+    await page.click("#sketch-tool-line");
     const free = await freePoints(page);
-    await page.touchscreen.tap(...free[Math.floor(free.length / 2)]); await page.waitForTimeout(300);
-    const pe = await page.$eval("#typed-entry", (e) => getComputedStyle(e).pointerEvents);
-    if (pe !== "auto") fail(`1024x768: tablet boxes take taps (pointer-events ${pe})`);
-    if (await page.isVisible(".sketchbar-type")) fail("1024x768: a tablet shows the Type button");
-    await page.context().close();
+    await page.mouse.click(...free[Math.floor(free.length / 2)]); await page.waitForTimeout(300);
+    assert.ok(await page.locator("#typed-entry").boundingBox(), "1280x800: the size boxes show");
+    if (await page.isVisible(".sketchbar-type")) fail("1280x800 with a mouse: the Type button shows");
+    await context.close();
   }
 
   // 2. Nothing always-on lies on something else, in a sketch and at the plane prompt.

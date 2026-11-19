@@ -376,9 +376,10 @@ try {
   }
 
   // SL #677 item 5: at 320 px Keep tools wrapped down beside Target body, and Tool bodies beside OK. The sheet keeps its
-  // rows at 320, 375 and 393 px: the title, operation and Keep tools first; the two fields side by side; then OK and Cancel.
+  // rows at 375 and 393 px: the title, operation and Keep tools first; the two fields side by side; then OK and Cancel.
+  // At 320 px (issue #764) two rows: the operation, Keep tools and OK, then the two fields.
   for (const width of [320, 375, 393]) {
-    await check(`${width} px, taps: the Combine sheet's rows stay in order (title and choices, the two fields, OK and Cancel)`, async () => {
+    await check(`${width} px, taps: the Combine sheet's rows stay in order (title and choices, the two fields, OK and Cancel; at 320 px OK with the choices)`, async () => {
       const page = await fresh(width, 667, true, "&combine");
       try {
         await press(page, '[data-view="top"]', true);
@@ -397,8 +398,18 @@ try {
         assert.ok(keep.bottom <= target.top, `Keep tools above the fields: ${all}`);
         assert.equal(target.top, tools.top, `the two fields side by side: ${all}`);
         assert.ok(target.left < tools.left, `Target body left of Tool bodies: ${all}`);
-        assert.ok(Math.max(target.bottom, tools.bottom) <= ok.top && ok.top === cancel.top, `OK and Cancel on their own row under the fields: ${all}`);
-        assert.ok(cancel.right <= width, `nothing past the right edge: ${all}`);
+        if (width < 375) {
+          // Issue #764: under 375 px the sheet is two rows (it covered 46 to 51% of a 320 × 568 view): the operation, Keep tools and
+          // OK, then the fields; the title and Cancel are the bar's over the view (✓ Combine and Cancel), so the sheet has neither.
+          assert.equal(ok.top, keep.top, `OK beside Keep tools above the fields: ${all}`);
+          assert.ok(ok.bottom <= target.top && ok.right <= width, `OK on the first row, on screen: ${all}`);
+          assert.equal(await page.isVisible("#combine-cancel"), false, `Cancel is the bar's: ${all}`);
+          assert.equal(await page.isVisible("#combine-title"), false, `the title is the bar's: ${all}`);
+          assert.ok(await page.isVisible("#float-cancel"), "the bar's Cancel is there");
+        } else {
+          assert.ok(Math.max(target.bottom, tools.bottom) <= ok.top && ok.top === cancel.top, `OK and Cancel on their own row under the fields: ${all}`);
+          assert.ok(cancel.right <= width, `nothing past the right edge: ${all}`);
+        }
       } finally {
         await page.context().close();
       }

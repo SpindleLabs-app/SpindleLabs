@@ -135,6 +135,14 @@ export function startPhoneFloat(workspace: HTMLElement, viewport: HTMLElement, c
       return bar.replaceChildren(words, ...planes, proxy("float-cancel", "Cancel", "#sketch-cancel"));
     }
     const finish = withIcon(proxy("float-finish", state.ender.label, state.ender.ok, "phone-float-finish"), "finish");
+    // "Finish" in a word of its own, which the narrowest phones leave out (phone-float.css): at 320 px "Finish Combine"
+    // and Cancel wrapped to two rows reaching under the tool's hint (issue #764). Its name stays the whole label.
+    const word = finish.querySelector(".tool-word");
+    const verb = "Finish ";
+    if (word && state.ender.label.startsWith(verb)) {
+      word.replaceChildren(Object.assign(document.createElement("span"), { className: "phone-float-verb", textContent: verb }), state.ender.label.slice(verb.length));
+      finish.setAttribute("aria-label", state.ender.label);
+    }
     finish.disabled = okButton?.disabled ?? false;
     if (finish.disabled) finish.title = why || "Not yet: the panel in Properties says why";
     bar.replaceChildren(finish);
