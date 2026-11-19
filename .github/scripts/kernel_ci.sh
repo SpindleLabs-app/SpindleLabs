@@ -131,6 +131,12 @@ save-sealed)
   # as NAME. One that cannot be opened (changed, unsafe) is named, in words,
   # and makes the exit code 1 after the others are done.
   root=$2 key=$3 out=$4 bad=0
+  # download-artifact unpacks a pattern matching only one artifact straight
+  # into ROOT, without its sealed-NAME folder: files with no such folder are a
+  # lost artifact, never "nothing to open" (18 Nov 2026: a night's findings).
+  if [ -d "$root" ] && [ -n "$(ls -A "$root")" ] && ! compgen -G "$root/sealed-*/" >/dev/null; then
+    echo "found files but no sealed-NAME folder (one artifact downloaded flat?)"; exit 1
+  fi
   for d in "$root"/sealed-*/; do
     [ -d "$d" ] || continue
     name=$(basename "$d"); name=${name#sealed-}
@@ -148,6 +154,12 @@ open-sealed)
   # ROOT/sealed-NAME into OUT/NAME, so the caller saves them all in one push
   # (random testing's and fuzzing's collect jobs: twenty folders a run).
   root=$2 key=$3 out=$4 bad=0
+  # download-artifact unpacks a pattern matching only one artifact straight
+  # into ROOT, without its sealed-NAME folder: files with no such folder are a
+  # lost artifact, never "nothing to open" (18 Nov 2026: a night's findings).
+  if [ -d "$root" ] && [ -n "$(ls -A "$root")" ] && ! compgen -G "$root/sealed-*/" >/dev/null; then
+    echo "found files but no sealed-NAME folder (one artifact downloaded flat?)"; exit 1
+  fi
   for d in "$root"/sealed-*/; do
     [ -d "$d" ] || continue
     name=$(basename "$d"); name=${name#sealed-}
