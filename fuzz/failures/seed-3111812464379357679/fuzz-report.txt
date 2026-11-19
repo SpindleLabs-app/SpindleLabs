@@ -1,0 +1,9 @@
+Timeline sessions, seed 3111812464379357679, 500 steps: 1 kind(s) of failure
+failure: the rebuild differs from the model | step 89 {"op":"marker","pick":0.35029357919427706}: the rebuild differs from the model: sketch-48: at z -8 along (-1, 1.2246467991473532e-16) from (-20, -21), plane-ambiguous vs at z 14, plane-split | replay: cd packages/testing && FISSION_SEED=3111812464379357679 FISSION_TIMELINE_STEPS=500 node --experimental-strip-types --no-warnings --test journeys/timeline.journey.ts
+shrunk to 6 step(s) (1-minimal):
+  0. {"op":"add-move","pick":0.9410506093072323,"other":null,"shift":[0,4,0],"turnZ":180,"pivot":[29,-21]}
+  1. {"op":"add-face-sketch","pick":0.20172976343620708,"shape":{"kind":"circle","centre":[-12,3],"radius":16}}
+  2. {"op":"marker","pick":0.6626950284028474}
+  3. {"op":"add-duplicate","pick":0.5302821845329777}
+  4. {"op":"add-combine","target":0.6822924270157608,"tool":0.7908196527034581,"operation":"intersect","keep":true}
+  5. {"op":"marker","pick":0.35029357919427706}

@@ -1,0 +1,52 @@
+{
+ "seed": "3111812464379357679",
+ "check": "the rebuild differs from the model",
+ "steps": [
+  {
+   "op": "add-move",
+   "pick": 0.9410506093072323,
+   "other": null,
+   "shift": [
+    0,
+    4,
+    0
+   ],
+   "turnZ": 180,
+   "pivot": [
+    29,
+    -21
+   ]
+  },
+  {
+   "op": "add-face-sketch",
+   "pick": 0.20172976343620708,
+   "shape": {
+    "kind": "circle",
+    "centre": [
+     -12,
+     3
+    ],
+    "radius": 16
+   }
+  },
+  {
+   "op": "marker",
+   "pick": 0.6626950284028474
+  },
+  {
+   "op": "add-duplicate",
+   "pick": 0.5302821845329777
+  },
+  {
+   "op": "add-combine",
+   "target": 0.6822924270157608,
+   "tool": 0.7908196527034581,
+   "operation": "intersect",
+   "keep": true
+  },
+  {
+   "op": "marker",
+   "pick": 0.35029357919427706
+  }
+ ]
+}
