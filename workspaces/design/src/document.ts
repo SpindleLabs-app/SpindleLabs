@@ -282,7 +282,7 @@ export type Marker = string;
 
 export interface DesignDocument {
   /** Version of this part of the project file (see docs/project-format.md). */
-  version: 29;
+  version: 30;
   /** The number the next new id gets. Ids are never reused, even after a delete (docs/document-model.md, section 2). */
   nextId: number;
   profiles: ReadyProfile[];
@@ -1326,6 +1326,8 @@ function checkFaceSketch(f: Feature, content: Sketch, byId: ReadonlyMap<string, 
   if (Object.hasOwn(face, "reversed") && typeof face.reversed !== "boolean") throw new Error(`${at}'s reversed must be true or false, not ${shown(face.reversed)}`);
   // SL #707 (version 21): marked as drawn before, its body frame its face's first input's; only ever true, and with a body frame.
   if (Object.hasOwn(face, "first") && (face.first !== true || !Object.hasOwn(face, "body"))) throw new Error(`${at}'s first must be true, on a sketch with a body frame, not ${shown(face.first)}`);
+  // SL #759 item 4 (version 30): marked as drawn before, its body frame recorded without its body's base; only ever true, and with a body frame.
+  if (Object.hasOwn(face, "unbased") && (face.unbased !== true || !Object.hasOwn(face, "body"))) throw new Error(`${at}'s unbased must be true, on a sketch with a body frame, not ${shown(face.unbased)}`);
   // SL #539: the body's size when drawn (its scale factors multiplied), a number above 0.
   const body = face.body as Record<string, unknown> | undefined;
   if (body !== undefined && Object.hasOwn(body, "size") && !(typeof body.size === "number" && Number.isFinite(body.size) && body.size > 0)) throw new Error(`${at}'s body frame's size must be a number above 0, not ${shown(body.size)}`);
@@ -2083,6 +2085,22 @@ function hasVersion22Fields(d: Record<string, unknown>): boolean {
  * which is what carries it, so the design builds as it did; from version 22 a sketch records the frame of the input
  * face its name names. Anything not a sketch on a face with a body frame is left for the checks.
  */
+/**
+ * Version 29 data as version 30 (SL #759 item 4): every face sketch with a body frame marked `unbased`, its frame
+ * recorded without the base a body extruded from a placed sketch now starts from; the rebuild carries it as before and
+ * writes it again by today's rule (rebuild.ts `rebased`), which takes the mark off.
+ */
+export function migrateDesignV29(d: Record<string, unknown>): Record<string, unknown> {
+  if (!Array.isArray(d.sketches)) return { ...d, version: 30 };
+  const sketches = d.sketches.map((s) => (isRecord(s) && isRecord(s.face) && Object.hasOwn(s.face, "body") ? { ...s, face: { ...s.face, unbased: true } } : s));
+  return { ...d, sketches, version: 30 };
+}
+
+/** Whether version 29 data has a face sketch marked `unbased`, which only version 30 marks. */
+function hasVersion30Fields(d: Record<string, unknown>): boolean {
+  return Array.isArray(d.sketches) && d.sketches.some((s) => isRecord(s) && isRecord(s.face) && Object.hasOwn(s.face, "unbased"));
+}
+
 export function migrateDesignV21(d: Record<string, unknown>): Record<string, unknown> {
   if (!Array.isArray(d.sketches)) return { ...d, version: 22 };
   const sketches = d.sketches.map((s) => (isRecord(s) && isRecord(s.face) && Object.hasOwn(s.face, "body") ? { ...s, face: { ...s.face, first: true } } : s));
@@ -2267,7 +2285,7 @@ function checkMore(more: unknown, f: Feature, i: number, byId: ReadonlyMap<strin
 }
 
 /** The Design data version this SpindleLabs writes; readDesignDocument upgrades older data to it. */
-export const DESIGN_VERSION = 29;
+export const DESIGN_VERSION = 30;
 
 export function readDesignDocument(data: unknown): DesignDocument {
   if (!isRecord(data)) throw new Error("Design data is missing");
@@ -2369,10 +2387,14 @@ export function readDesignDocument(data: unknown): DesignDocument {
   // Version 29 (step 59a3b) lets a Pattern turn round a construction axis, which no version 28 reader holds; other
   // version 28 data is read as it is.
   if (v28.version === 28 && hasVersion29Fields(v28)) throw new Error(`Design data says version ${shown(given)} but has a Pattern round a construction axis, which version 29 brought`);
-  const d = (v28.version === 28 ? { ...v28, version: 29 } : v28) as Partial<DesignDocument>;
+  const v29 = v28.version === 28 ? { ...v28, version: 29 } : v28;
+  // Version 30 (SL #759 item 4): a body extruded from a sketch the rebuild places starts its frame from that sketch's,
+  // so a face sketch's `body` holds it; one from before is marked (`unbased`, `migrateDesignV29`), carried as before.
+  if (v29.version === 29 && hasVersion30Fields(v29)) throw new Error(`Design data says version ${shown(given)} but has a sketch marked as drawn before version 30, which only version 30 marks`);
+  const d = (v29.version === 29 ? migrateDesignV29(v29) : v29) as Partial<DesignDocument>;
   // Text quoted, so "5" (text) never reads as the 5 it is not (app sweep, finding 25).
   // A whole number above DESIGN_VERSION is from a newer SpindleLabs (kept by the unsaved-changes journal for it); anything else is wrong.
-  if (d.version !== DESIGN_VERSION) throw new (Number.isSafeInteger(d.version) && d.version! > DESIGN_VERSION ? NewerFormatError : Error)(`Design data version ${typeof d.version === "string" ? JSON.stringify(d.version) : shown(d.version)} is not one this SpindleLabs reads (1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28 or 29)`);
+  if (d.version !== DESIGN_VERSION) throw new (Number.isSafeInteger(d.version) && d.version! > DESIGN_VERSION ? NewerFormatError : Error)(`Design data version ${typeof d.version === "string" ? JSON.stringify(d.version) : shown(d.version)} is not one this SpindleLabs reads (1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29 or 30)`);
   // An empty timeline is an empty design (24f4: everything deleted), shown with no body.
   if (!Array.isArray(d.profiles) || !Array.isArray(d.timeline?.features)) throw new Error("Design data has no timeline");
   if (!Array.isArray(d.sketches)) throw new Error("Design data has no sketches list");

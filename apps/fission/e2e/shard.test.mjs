@@ -4,7 +4,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { existsSync, readFileSync } from "node:fs";
 import { spawnSync } from "node:child_process";
-import { fileOf, refusal, shares, UNKNOWN } from "./shard.mjs";
+import { fileOf, refusal, SECONDS, shares, UNKNOWN } from "./shard.mjs";
 import { allChecks } from "./checks.mjs";
 
 test("a share refuses to run with ONLY set (it would skip whole files' checks and pass)", () => {
@@ -58,4 +58,14 @@ test("npm run e2e runs all of the checks through this runner, in one share", () 
   const scripts = JSON.parse(readFileSync(new URL("../package.json", import.meta.url), "utf8")).scripts;
   assert.equal(scripts.e2e, "node e2e/shard.mjs 1 1");
   for (const n of [0, -1, 1.5, NaN]) assert.throws(() => shares(["node e2e/a.mjs"], n), /shard count/);
+});
+
+test("the seconds table times nearly every check, so the shares stay even (refresh it when this fails)", () => {
+  // 2026-11-19: the old table (2026-10-29) timed 60 of 198 checks; the rest counted UNKNOWN, so one share got
+  // 2,024 s of real checks and another 1,163 s, and the heavy one ran into the job's 45-minute limit. A new check
+  // may run untimed for a while; once more than a tenth are, this fails and the table is refreshed from a run.
+  const all = allChecks();
+  const untimed = all.map(fileOf).filter((f) => !(f in SECONDS));
+  assert.ok(untimed.length <= all.length / 10, `${untimed.length} of ${all.length} checks untimed: ${untimed.join(", ")}`);
+  for (const [f, s] of Object.entries(SECONDS)) assert.ok(Number.isInteger(s) && s >= 0, `${f}: ${s}`);
 });

@@ -80,12 +80,19 @@ export function faceFacts(mesh: Pick<DisplayMesh, "positions" | "indices" | "tri
   return { area: twice / 2, normal, flat };
 }
 
-/** The faces of a hold or load found on the body now, by index, each once. */
-function indices(faces: readonly HeldFace[], now: StudyNow): number[] {
+/**
+ * The faces of a hold or load found on the body now, by index, each once. On bodies joined for the test (join.ts)
+ * a picked face the join cut into pieces is every piece (`pieces`).
+ */
+function indices(faces: readonly HeldFace[], now: StudyNow & { pieces?: ReadonlyMap<string, readonly number[]> }): number[] {
   const out = new Set<number>();
   for (const f of faces) {
-    const at = now.found.get(f.ref.id);
-    if (at?.status === "found") out.add(at.face);
+    const pieces = now.pieces?.get(f.ref.id);
+    if (pieces !== undefined) for (const p of pieces) out.add(p);
+    else {
+      const at = now.found.get(f.ref.id);
+      if (at?.status === "found") out.add(at.face);
+    }
   }
   return [...out];
 }
@@ -121,7 +128,7 @@ export function kernelLoads(load: Load, faces: readonly number[], mesh: Pick<Dis
  * stiffness and strength (study.ts T2), the mesh size left to the kernel.
  * Refused in words when something can't be sent.
  */
-export function stressTestOf(study: Study, now: StudyNow, material: Mechanical): StressTest | { refused: string } {
+export function stressTestOf(study: Study, now: StudyNow & { pieces?: ReadonlyMap<string, readonly number[]> }, material: Mechanical): StressTest | { refused: string } {
   const weak = weakerWay(material);
   const loads: StressLoad[] = [];
   for (const [i, l] of study.loads.entries()) {

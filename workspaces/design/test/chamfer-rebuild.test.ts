@@ -197,7 +197,7 @@ test("the data: a Chamfer saves and reads back as the current version (24 brough
     const { doc, id } = insertChamfer(d0, body, [edge], size, true);
     const read = readDesignDocument(JSON.parse(JSON.stringify(doc)));
     assert.equal(read.version, DESIGN_VERSION);
-    assert.equal(DESIGN_VERSION, 29);
+    assert.equal(DESIGN_VERSION, 30);
     assert.deepEqual(read, doc);
     const f = read.timeline.features.find((x) => x.id === id)!;
     assert.deepEqual(chamferOf(f), { body, edges: [edge], size, flip: true });
@@ -248,7 +248,7 @@ test("the reader refuses each break of a Chamfer, and version 23 data holding on
   assert.doesNotThrow(broken((_, p) => (p.angle = 0.9 * 90)));
   assert.throws(broken((_, p) => (p.angle = 1.1 * 90)), { message: `${at}'s size: its angle ${1.1 * 90} is not between 0 and 90 degrees` });
   // Version 23 data without one opens as the current version (27 since the Shell, step 35h2c).
-  assert.equal(readDesignDocument({ ...JSON.parse(JSON.stringify(d0)), version: 23 }).version, 29);
+  assert.equal(readDesignDocument({ ...JSON.parse(JSON.stringify(d0)), version: 23 }).version, 30);
 });
 
 test("the rest of Design reads a Chamfer: the AI's timeline line, the change notes' name, Edit feature on (44a-app3 opens the Chamfer panel on it)", async () => {
