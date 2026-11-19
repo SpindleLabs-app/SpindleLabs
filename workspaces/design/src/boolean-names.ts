@@ -44,9 +44,11 @@ export interface FaceNames {
    * (rebuild.ts `BuiltBody.frames`; absent: the world's), so a later Move's motion can be taken off the click first.
    * Dropped by a copy (built-body.ts `copiedNames`), which then names the face by its first name as before. Each
    * origin's `frame` is its input face's frame then (built-body.ts `frameOfFace`; absent: not moved), so a sketch
-   * named after an origin that is not the first is carried by that input's Moves (SL #707).
+   * named after an origin that is not the first is carried by that input's Moves (SL #707). An input face that was itself
+   * merged hands on its own origins, each `frame` brought to the later boolean, so they last through every later boolean
+   * (SL #759 item 1); such an origin's `seen` is its frame when its `view` was taken, so a click is carried back to it.
    */
-  origins?: readonly { names: readonly string[]; view: BodyView; face: number; frame?: Plane & { size?: number } }[];
+  origins?: readonly { names: readonly string[]; view: BodyView; face: number; frame?: Plane & { size?: number }; seen?: Plane }[];
   frame?: Plane;
 }
 

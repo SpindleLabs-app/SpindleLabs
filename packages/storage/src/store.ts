@@ -252,14 +252,46 @@ export function projectStore(kv: KeyValue, readers: readonly DataReader[], now: 
  * is passed over. Only projects of the same name are read.
  */
 export async function storedCopy(store: ProjectStore, project: Project): Promise<ProjectSummary | undefined> {
-  const text = projectToJson(project);
-  for (const summary of await store.list()) {
-    if (summary.problem !== undefined || summary.name !== project.name) continue;
-    try {
-      if (projectToJson(await store.open(summary.id)) === text) return summary;
-    } catch {
-      // can't be read: not a copy of anything
-    }
+  return (await storedCopyOf(store, [project]))?.summary;
+}
+
+/**
+ * Stored projects read at once while looking for a copy: each read is a round trip to the browser's storage (60-140 ms
+ * in headless Chromium), so one at a time an Open among 60 kept projects took 20-35 s (nightly monkey issue #749),
+ * while a batch costs about one round trip. 16 bounds what is held at once to 16 projects' text.
+ */
+export const STORED_COPY_BATCH = 16;
+
+/**
+ * `storedCopy` for several wanted projects in one look through the store (an opened file under its file's name, then
+ * under the name inside it, main.ts): the copy of the first one that has any, with its place in `wanted`. Each
+ * project of a wanted name is read once however many are wanted, STORED_COPY_BATCH at a time, newest first, stopping
+ * at the batch that holds the first wanted one's copy.
+ */
+export async function storedCopyOf(store: ProjectStore, wanted: readonly Project[]): Promise<{ summary: ProjectSummary; index: number } | undefined> {
+  const texts = wanted.map((p) => projectToJson(p));
+  const names = new Set(wanted.map((p) => p.name));
+  const candidates = (await store.list()).filter((s) => s.problem === undefined && names.has(s.name));
+  /** The newest copy found so far of each wanted project (by its place in `wanted`). */
+  const found: (ProjectSummary | undefined)[] = wanted.map(() => undefined);
+  for (let start = 0; start < candidates.length; start += STORED_COPY_BATCH) {
+    const batch = candidates.slice(start, start + STORED_COPY_BATCH);
+    const read = await Promise.all(
+      batch.map(async (summary) => {
+        try {
+          return projectToJson(await store.open(summary.id));
+        } catch {
+          return null; // can't be read: not a copy of anything
+        }
+      }),
+    );
+    batch.forEach((summary, k) => {
+      wanted.forEach((p, i) => {
+        if (found[i] === undefined && summary.name === p.name && read[k] === texts[i]) found[i] = summary;
+      });
+    });
+    if (found[0] !== undefined) break; // the first wanted one's newest copy: nothing older can come before it
   }
-  return undefined;
+  const index = found.findIndex((s) => s !== undefined);
+  return index === -1 ? undefined : { summary: found[index]!, index };
 }

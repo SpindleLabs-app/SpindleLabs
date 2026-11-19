@@ -50,7 +50,7 @@ import { preview } from "vite";
 import { launch } from "./browser.mjs";
 import { switchTo } from "./start.mjs";
 import { shownNumber, summaryShown, volumeShown } from "./monkey-units.mjs";
-import { documentRules, editFile, editLeaks, expectedView, kernelVerdict, modelVolume, nextAction, reusedIds, rng, settledText, shrinkFailure, signature } from "./monkey-core.mjs";
+import { documentRules, editFile, editLeaks, expectedView, kernelVerdict, modelVolume, nextAction, pressed, reusedIds, rng, settledText, shrinkFailure, signature } from "./monkey-core.mjs";
 
 const PORT = Number(process.env.MONKEY_PORT || 4210);
 const STEPS = Number(process.env.MONKEY_STEPS || 60);
@@ -599,7 +599,8 @@ async function act(s, a) {
       if ((await settle(page)).sketching) {
         const out = page.locator("#sketch-cancel:visible, button:visible:has-text('Finish Sketch'), button:visible:has-text('Finish sketch')").first();
         if (!(await out.count())) fail("never stuck", "a sketch is open with no Cancel or Finish Sketch on screen");
-        await out.click({ timeout: 2000 });
+        // Landed: the sketch closed, though Playwright's own wait after the press ran out (issue #398).
+        await pressed(out, async () => !(await settle(page)).sketching);
       }
       const end = await settle(page);
       if (end.sketching) fail("never stuck", "still sketching after Finish Sketch");
