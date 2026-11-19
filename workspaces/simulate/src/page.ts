@@ -628,6 +628,7 @@ export function mountTestLabPage(ctx: WorkspaceContext): MountedWorkspace {
     ctx.graph.set({ id: studyNode(s.id), label: s.name, workspace: "simulate", cost: "expensive" }, inputs.filter((x) => ctx.graph.has(x)));
   };
 
+  const pickWants = () => "faces" as const;
   const onPick = (pick: ViewportPick) => {
     const s = study();
     if (!picking || s === null || now === null) return;
@@ -688,7 +689,10 @@ export function mountTestLabPage(ctx: WorkspaceContext): MountedWorkspace {
       }
       checkJoin(s);
     }
-    if (awake) ctx.viewport.onPick = onPick;
+    if (awake) {
+      ctx.viewport.onPick = onPick;
+      ctx.viewport.pickWants = pickWants; // holds and loads go on faces: no edge or corner takes a click on a thin one
+    }
     draw();
   };
 
@@ -815,6 +819,7 @@ export function mountTestLabPage(ctx: WorkspaceContext): MountedWorkspace {
       picking = null; // picking ends when TestLab is left; it never waits for a tap on another workspace's view
       showViewHint();
       ctx.viewport.onPick = null;
+      ctx.viewport.pickWants = null;
       for (const id of shownOverlays) ctx.viewport.clearOverlay(id);
       shownOverlays = [];
       ctx.viewport.showColourMap?.(null);
@@ -830,6 +835,7 @@ export function mountTestLabPage(ctx: WorkspaceContext): MountedWorkspace {
       offGraph();
       if (awake) {
         ctx.viewport.onPick = null;
+        ctx.viewport.pickWants = null;
         for (const id of shownOverlays) ctx.viewport.clearOverlay(id);
         ctx.viewport.showColourMap?.(null);
       }

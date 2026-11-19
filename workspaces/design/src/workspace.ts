@@ -2,7 +2,7 @@
 // Until the sketcher (steps 21–33) it builds primitives and ready-made
 // outlines; every other workspace will refer to its bodies, faces and edges.
 
-import { KernelError, chordLabel, parseChord, summaryInUnit, wordsInUnit, latestOnly, NO_HIGHLIGHT, playback, ORIGIN_AT_FIRST, type AnalysisOverlay, type OriginPlane, type BodyHandle, type BodySpec, type ChamferSize, type MoveKind, type BodyView, type ExtrudeArrow, type OfferedProfile, type SketchPointer, type SketchXY, type Command, type Feature, type Framing, type Plane, type GeometryReference, type MountedWorkspace, type Selected, type SharedViewport, type WorkspaceContext, type WorkspaceId, type WorkspacePlugin, type HistoryStep, withWorkspaceDocument, type DisplayMesh } from "@fission/core";
+import { KernelError, chordLabel, parseChord, summaryInUnit, wordsInUnit, latestOnly, NO_HIGHLIGHT, playback, ORIGIN_AT_FIRST, type AnalysisOverlay, type OriginPlane, type BodyHandle, type BodySpec, type ChamferSize, type MoveKind, type BodyView, type ExtrudeArrow, type OfferedProfile, type PickWants, type SketchPointer, type SketchXY, type Command, type Feature, type Framing, type Plane, type GeometryReference, type MountedWorkspace, type Selected, type SharedViewport, type WorkspaceContext, type WorkspaceId, type WorkspacePlugin, type HistoryStep, withWorkspaceDocument, type DisplayMesh } from "@fission/core";
 import { needsRefit, printView, snapDistance } from "@fission/viewport";
 import type { ShapeKind } from "./profiles.ts";
 import { bodyHidden, constructOf, isConstructItem, bodyIdOf, bodyItem, bodyNumbers, combineBodies, EYE_FOLDERS, CHAMFER_MAX, isChamferItem, isShellItem, shellOf, isCombineItem, extrudeOperation, insertAt, isHidden, isMoveItem, isOperationExtrude, isPiece, isSketchExtrude, numberPieces, isSketchItem, ORIGIN_AXES, ORIGIN_PLANES as EYE_PLANES, builds, ownShape, originDrawn, partFeature, partOf, readDesignDocument, shapeOf, withPartAt, SKETCH_PLANES, type ChamferSizing, type DesignDocument, type MoveParam, type PartKind, isPatternItem } from "./document.ts";
@@ -5929,6 +5929,8 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
     }
     applyChange(ctx.selection, pickChange(pick, lastScene)); // a double-click picks the whole body (picking.ts)
   };
+  // Shell opens faces: no edge or corner takes a click on a thin one (Ben, 2026-11-19); every other click can pick anything.
+  const pickWants = (): PickWants => (shellBox.shown ? "faces" : "any");
   let stopWatching = () => {};
   // The phone turned or the window resized (a keyboard, a panel): the line's point moved on screen, so the typed
   // boxes and the hint go beside it again rather than staying where they were, maybe past the view's edge (hunt D2).
@@ -5942,6 +5944,7 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
   /** Listens to picks and the selection: from mount, and again on each wake. Keys come from the shell (X7b), only while shown. */
   function listen() {
     viewport.onPick = onPick;
+    viewport.pickWants = pickWants;
     viewport.onMenu = openViewMenu;
     viewport.onSketchPointer = onSketchPointer;
     viewport.onExtrudePointer = onExtrudePointer;
@@ -5985,6 +5988,7 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
     ctx.properties.ownerDocument.removeEventListener(UNIT_EVENT, onUnitChange);
     showBuildAreaWords();
     viewport.onPick = null;
+    viewport.pickWants = null;
     viewport.onMenu = null;
     viewport.onSketchPointer = null;
     viewport.onExtrudePointer = null;
