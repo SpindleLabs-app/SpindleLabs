@@ -14,7 +14,7 @@ import { readFileSync } from "node:fs";
 import { boot, check, fails, readFile, REAL_FILE_PICKER, savedMark, volumeIs } from "./save-picker-lib.mjs";
 import { startWithBox, chooseFile } from "./start.mjs";
 import { pinProperties } from "./properties.mjs";
-import { browserName, chosen, watchErrors } from "./browser.mjs";
+import { assertNoErrors, browserName, chosen, watchErrors } from "./browser.mjs";
 
 const b = await boot(4802);
 const origin = b.url.replace(/\/$/, "");
@@ -189,6 +189,7 @@ try {
     assert.equal(JSON.parse(await readFile(page, "Other.spindle")).name, "Bracket", "named once, it keeps its name");
     await context.close();
   });
+  await check("no page errors, console errors or failed requests", async () => assertNoErrors());
 } finally {
   await b.close();
 }
