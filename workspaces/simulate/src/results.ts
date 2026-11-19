@@ -19,6 +19,7 @@ import { mpaWords } from "./materials.ts";
 import { bends, bentMesh, boxDiagonal, drawnScale, ESTIMATE, figure, safetyBand, safetyWords, scaleColour, vertexColours, type SafetyBand } from "./run.ts";
 import { DIRECTION_WORDS, newtons, newtonWords, type Load, type Study } from "./study.ts";
 import { downloadTestFile, testFileOf, type RunRecord } from "./test-file.ts";
+import { suggestSection } from "./suggest.ts";
 
 /** What the view's colours show. */
 export type ColourBy = "stress" | "bend";
@@ -109,9 +110,11 @@ export function resultOverlays(r: Result): AnalysisOverlay[] {
   ];
 }
 
-/** "Drawn 2,000 times bigger than the real bend", or that it is drawn as it is. */
+/** "Drawn 2,000 times bigger than the real bend", that it is drawn as it is, or (below 1) that a bend too big to draw truly is drawn smaller. */
 export function scaleWords(scale: number): string {
-  return scale === 1 ? "The bend is drawn as big as it really is." : `The bend is drawn ${scale.toLocaleString("en")} times bigger than it really is, so you can see it.`;
+  if (scale === 1) return "The bend is drawn as big as it really is.";
+  if (scale < 1) return `This estimate is for small bends and this one is too big to draw truly, so it is drawn ${Math.round(1 / scale).toLocaleString("en")} times smaller than worked out, just to show which way the part goes.`;
+  return `The bend is drawn ${scale.toLocaleString("en")} times bigger than it really is, so you can see it.`;
 }
 
 /** The result's lines, each a label and its words, in the panel's order. */
@@ -274,6 +277,9 @@ export function resultSection(doc: Document, r: Result, by: ColourBy, stale: boo
   foot.append(copied);
   card.append(foot);
   box.append(card);
+  // T5c6: ways to make it hold more, read from this result (suggest.ts).
+  const help = suggestSection(doc, r);
+  if (help !== null) box.append(help);
   // The colour scale: what the colours mean, from 0 to the largest.
   const choose = el("div", "testlab-results-by");
   choose.setAttribute("role", "group");

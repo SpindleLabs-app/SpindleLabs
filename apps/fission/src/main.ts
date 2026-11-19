@@ -311,6 +311,9 @@ if (__TEST_HOOKS__ && new URLSearchParams(location.search).has("test-hooks"))
         return ctx.changeNotes;
       },
       camera: () => viewer.main.cameraPose(),
+      // The main view's clipping range, and putting a pose back as a design tab does (e2e/long-part.mjs).
+      clip: () => viewer.main.clipRange(),
+      restoreCamera: (pose: Parameters<typeof viewer.main.restorePose>[0]) => viewer.main.restorePose(pose),
       splitView: () => split?.view ?? null,
       bodyCount: () => kernel.call("body_count"),
       wasmBytes: () => kernel.call("wasm_bytes"),
