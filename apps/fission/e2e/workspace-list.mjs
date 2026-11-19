@@ -177,6 +177,43 @@ try {
     assert.equal(await page.isVisible("#split-toggle"), true);
     await page.context().close();
   });
+
+  // Ben, 2026-11-19: on ?all TestLab still showed greyed with "2028" though its page opened.
+  // ?all turns on ?testlab and ?laser, so both are listed as working, with no date; the rest stay greyed.
+  for (const [width, touch] of [
+    [1280, false],
+    [375, true],
+  ]) {
+    await check(`${width} px: ?all lists TestLab and LaserLab as working (no date), the placeholders still greyed`, async () => {
+      const page = await fresh(width, touch, "?all#design");
+      // ?all opens on the home screen too: close it first (its Close), then the empty design's hint.
+      await page.locator("#home-close").waitFor({ state: "visible" });
+      await (touch ? page.tap("#home-close") : page.click("#home-close"));
+      await page.locator("#start-hint").waitFor();
+      const late = "Late 2027", later = "2028";
+      assert.deepEqual(await rows(page, touch), [
+        ["design", "DesignLab", "", false],
+        ["render", "RenderLab", late, true],
+        ["simulate", "TestLab", "", false],
+        ["manufacture", "CNCLab", later, true],
+        ["laser", "LaserLab", "", false],
+        ["slice", "SliceLab", "", false],
+        ["circuit", "PCBLab", later, true],
+        ["vector", "VectorLab", late, true],
+        ["image", "ImageLab", "", false],
+        ["layout", "LayoutLab", later, true],
+      ]);
+      await (touch ? page.tap("#workspace-menu") : page.click("#workspace-menu"));
+      await page.locator("#workspace-simulate").waitFor({ state: "visible" });
+      if (shots) await page.waitForTimeout(600); // the menu's fade, for the screenshot only
+      await shot(page, `workspace-list-all-${width}`);
+      await (touch ? page.tap("#workspace-simulate") : page.click("#workspace-simulate"));
+      // TestLab's own page, not the placeholder (at 375 px it sits in the folded Properties sheet, so attached, not seen).
+      await page.locator(".testlab-page").first().waitFor({ state: "attached" });
+      assert.equal(await page.getAttribute("#workspace-menu", "data-active"), "simulate");
+      await page.context().close();
+    });
+  }
 } finally {
   await browser.close();
   server.httpServer.close();

@@ -139,3 +139,48 @@ test("while Combine is open the Bodies rows say Target and Tool; after OK one li
   assert.equal(a.window.document.querySelectorAll(".combine-tag").length, 0, "the panel shut, the tags go");
   await a.close();
 });
+
+// App bug hunt 11-18 D-8 (SL #820): the line after a Combine's OK says "Undo puts it back", so it must go as soon as that
+// stops being true or the person moves on: another tool opened, the next step recorded, or Undo. It stayed its full 8 s.
+test("the line after a Combine's OK goes when another tool opens, the next step is recorded, or Undo is pressed (SL #820 D-8)", async () => {
+  // Box 1 (10 mm cube) and Box 2 (5 mm cube) overlapping at the origin; Combine: Box 2 joins Box 1 and is used up.
+  const start = insertPreset(partDocument("box", 10, 10, 10), "box", 5, 5, 5).doc;
+  const combined = async () => {
+    const a = await app(start, designWorkspace);
+    await openCombine(a);
+    a.selection.set([{ kind: "body", id: "body:feature-1" } as never, { kind: "body", id: "body:feature-2" } as never]);
+    await a.settle();
+    a.$("#combine-ok")!.click();
+    await a.settle();
+    assert.equal(a.$("#combine-done")!.hidden, false, "the line shows after OK");
+    return a;
+  };
+  const shown = (a: Awaited<ReturnType<typeof app>>) => {
+    const done = a.$("#combine-done");
+    return done !== null && !done.hidden;
+  };
+
+  // Another tool opened: Move.
+  const a = await combined();
+  a.$("#move")!.click();
+  await a.settle();
+  assert.equal(a.$("#move-panel")!.hidden, false, "Move opened");
+  assert.equal(shown(a), false, "Move opened: the Combine's line is gone");
+  await a.close();
+
+  // The next step recorded: the joined body duplicated (Ctrl+D), so Undo would now take back the copy, not the Combine.
+  const b = await combined();
+  b.selection.set([{ kind: "body", id: "body:feature-1" } as never]);
+  await b.settle();
+  const before = b.doc();
+  await b.key("duplicate-bodies");
+  assert.notEqual(b.doc(), before, "the copy was recorded");
+  assert.equal(shown(b), false, "a later step: the Combine's line is gone");
+  await b.close();
+
+  // Undo: the Combine is taken back, so the line about it goes.
+  const c = await combined();
+  await c.undo();
+  assert.equal(shown(c), false, "Undo: the Combine's line is gone");
+  await c.close();
+});

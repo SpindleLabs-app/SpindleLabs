@@ -200,7 +200,7 @@ test("the bent mesh: a vertex per point per face, an edge line where faces meet 
 test("a result made from an answer: the scale from the surface's own size", () => {
   // The sound answer's points span 100 × 10 × 0: diagonal √10100 = 100.5 mm; a twentieth is 5.025 mm over a
   // 0.005 mm bend, 1005, so drawn 1000 times.
-  const r = resultOf(sound(), { name: "Steel", mechanical: materialLibrary().get("steel-a36")!.mechanical! });
+  const r = resultOf(sound(), { name: "Steel", mechanical: materialLibrary().get("steel-a36")!.mechanical! }, { body: "Body 1", held: [], loads: [] });
   assert.equal(r.scale, 1000);
   assert.deepEqual(r.bend, [0, 0.005, 0.005]);
 });

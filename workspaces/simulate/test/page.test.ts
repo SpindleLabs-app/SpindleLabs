@@ -180,6 +180,36 @@ test("a design with one body tests it without being asked, framed in the view", 
   page.unmount();
 });
 
+// App bug hunt 11-18 D-6 (SL #820): with nothing held the view showed a "Held here" tag over the body while the panel said
+// "No face yet."; and Run's "Not run: fix what is said below first." had its reasons in the same paragraph, not below it.
+test("nothing held or pushed: no Held here or Load tag in the view; Run's refusal puts its reasons below it (SL #820 D-6)", async () => {
+  const c = context(1);
+  const page = mountTestLabPage(c.ctx);
+  await page.ready;
+  c.click("[data-testlab=add-load]");
+  await c.settle();
+  const s = c.data().studies[0];
+  assert.equal(s.fixtures.flatMap((f) => f.faces).length, 0, "no face held");
+  assert.equal(c.overlays.has(HELD_OVERLAY), false, "no Held here tag with nothing held");
+  assert.equal(c.overlays.has(loadOverlay(s.loads[0].id)), false, "no Load 1 tag before it has a face");
+  // Held once a face is: the tag comes with its face.
+  c.click("[data-testlab=pick-held]");
+  await c.tap(1);
+  assert.deepEqual(c.overlays.get(HELD_OVERLAY)!.marks, [{ target: { face: 1 }, severity: "info" }]);
+  await c.tap(1); // let go again
+  assert.equal(c.overlays.has(HELD_OVERLAY), false, "let go: the tag goes too");
+  c.click("[data-testlab=run]");
+  await c.settle();
+  await c.settle();
+  const box = c.ctx.properties.querySelectorAll(".testlab-page-status");
+  const words = box[box.length - 1];
+  // The first line says only that it was not run; each reason is its own line under it.
+  assert.match(words.querySelector("p")?.textContent ?? "", /^Not run: fix what is said below first\.( Tap faces of the body to pick them; tap a picked face to let it go\.)?$/);
+  const reasons = [...words.querySelectorAll("li")].map((li) => li.textContent);
+  assert.ok(reasons.length > 0 && reasons.some((r) => /Pick at least one face to hold in place/.test(r!)), JSON.stringify(reasons));
+  page.unmount();
+});
+
 /** Chooses what the study's part is made of, as a person would in the Made of box. */
 function chooseMaterial(c: ReturnType<typeof context>, id: string) {
   const select = [...c.ctx.properties.querySelectorAll<HTMLSelectElement>("select[name=material]")].at(-1)!;
@@ -328,7 +358,8 @@ test("a design edit: the faces found again by name, one taken away said in words
   await c.settle();
   await c.settle();
   assert.match(c.status(), /Held here is on Bottom face, which now matches 2 faces after the last edit, so it was not moved to any of them/);
-  assert.deepEqual(c.overlays.get(HELD_OVERLAY)!.marks, []);
+  // Its one face not found: nothing marked, so no Held here tag either (SL #820 D-6; it showed with no face under it).
+  assert.equal(c.overlays.has(HELD_OVERLAY), false);
   design.shared.clear();
   design.names["body:feature-1"] = ["top", "bottom", "front", null];
   page.unmount();
