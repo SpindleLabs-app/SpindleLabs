@@ -1075,11 +1075,13 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
   let healing = false;
   let again = false;
   let heals = 0;
+  /** The build a heal runs, for whatever waits for the design to be drawn again after a restart (issue #627 item 13). */
+  let healRun: Promise<unknown> = Promise.resolve();
   const heal = () => {
     healing = true;
     again = false;
     heals++;
-    void show(designDoc(), shape).finally(() => {
+    healRun = show(designDoc(), shape).finally(() => {
       healing = false;
       if (!again) heals = 0;
       else if (heals < HEALS) heal();
@@ -1450,9 +1452,13 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
     if (partFeature(doc) === null) framedKind = null;
     const added = inserted(doc, kind);
     boxesPart = added.id;
+    const seen = restarts;
     const made = update(insertStep(kind), undefined, added.doc);
     fold?.reveal(true); // its sizes; not on a crowded screen (issue #522: a sideways phone's card covered most of the view)
     await made;
+    // A restart cut the box's first build off: the heal builds it again on the fresh kernel, and the Move opens once
+    // it is drawn (issue #627 item 13: the box was inserted and saved but its Move never opened).
+    while (restarts !== seen && healing) await healRun.catch(() => {});
     const body = bodyIdOf(added.id);
     const built = (lastScene?.bodies ?? []).some((b) => b.body === body);
     if (!built || designDoc() !== added.doc || mode.kind !== "none" || extruding || extrudeBox.shown || editBox.editing !== null || moveBox.shown || combineBox.shown || chamferBox.shown || patternBox.shown || shellBox.shown || deleting.open !== null) return;
@@ -3688,7 +3694,8 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
       if (both) made = { ...made, doc: setExtrudeSymmetric(made.doc, true, made.id) };
       // Through all (version 23): the distance typed kept for when it is let go; the rebuild finds its length.
       if (extrudeBox.through) made = { ...made, doc: setExtrudeThrough(made.doc, true, made.id) };
-      await okCheck((async () => buildSpec(kernel, await featureSpec(kernel, made.doc, made.doc.timeline.features.find((f) => f.id === made.id)!)))());
+      // Asked once more on a fresh kernel when a restart cut it off (issue #627 item 13: OK had to be pressed twice).
+      await okCheck(onceMoreAfterRestart(async () => buildSpec(kernel, await featureSpec(kernel, made.doc, made.doc.timeline.features.find((f) => f.id === made.id)!))));
       // Several profiles are joined only in the rebuild (SL #611 C1): the whole item is built before it is recorded.
       if (choice !== null || more.length > 0) {
         const checked = await okCheck(onceMoreAfterRestart(() => checkedItem(kernel, made.doc, made.id)));
@@ -5741,7 +5748,9 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
       if (mode.kind !== "edit") return;
       let rounded: SketchXY;
       try {
-        rounded = await roundPointer(at, mode.grid, pointer.pixel, held);
+        // Once more on a fresh kernel when a restart cut the rounding off (issue #627 item 13: the click placed no point).
+        const grid = mode.grid;
+        rounded = await onceMoreAfterRestart(() => roundPointer(at, grid, pointer.pixel, held));
       } catch (e) {
         return sketchBox.showError(e instanceof Error ? e.message : String(e));
       }
