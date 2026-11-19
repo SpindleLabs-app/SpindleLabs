@@ -13,7 +13,8 @@
     "sessions": "node --experimental-strip-types --no-warnings fuzz/sketch-extrude.ts",
     "timeline-fuzz": "node --experimental-strip-types --no-warnings fuzz/timeline.ts",
     "stack": "node --experimental-strip-types --no-warnings fuzz/face-stack.ts",
-    "golden": "node --experimental-strip-types --no-warnings golden/nightly.ts"
+    "golden": "node --experimental-strip-types --no-warnings golden/nightly.ts",
+    "testlab-rerun": "node --experimental-strip-types --no-warnings scripts/testlab-rerun.ts"
   },
   "dependencies": {
     "@fission/ai": "*",
