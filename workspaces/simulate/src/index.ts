@@ -16,6 +16,7 @@ import { readTestLab } from "./study.ts";
 export { GEOMETRY_OWNER, lostWords, studyLost, studyNow, studyOn, type StudyNow } from "./faces.ts";
 export * from "./run.ts";
 export * from "./results.ts";
+export * from "./suggest.ts";
 export { readTestLabFlag, setTestLabShown, TESTLAB_KEY, testlabShown } from "./flag.ts";
 export { BODIES_LISTER, GETTING_READY, HELD_OVERLAY, loadOverlay, mountTestLabPage, pickedFace, STOPPED, studyNode, studyOverlays, type Picking } from "./page.ts";
 export * from "./study.ts";
