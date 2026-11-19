@@ -11,21 +11,23 @@
 // each pane's viewport, for the workspace in that pane.
 /// <reference types="vite/client" />
 // First, before any module that starts work: a framed page stops here (audit S10).
+import { fileNotice } from "./file-notice.ts";
 import { pageShareSwitch } from "./share-switch.ts";
 import "./frame-guard.ts";
 import "@fission/ui/theme.css";
 // Every feature's own styles (src/styles/<feature>.css in packages/ui and the
 // workspaces), loaded without a list, so two features never edit one file.
 import.meta.glob(["../../../packages/ui/src/styles/*.css", "../../../packages/print/src/styles/*.css", "../../../workspaces/*/src/styles/*.css"], { eager: true });
-import { type FileFormat, ActionRegistry, CLIPBOARD_CHORDS, chordLabel, chordOf, parseChord, SHELL_SHORTCUTS, ShortcutTable, type Chord, ChangeNotes, DependencyGraph, DownstreamRegistry, emptyProject, FILE_FORMATS, formatInfo, headBytesFor, projectFromJson, routeFiles, unreadableMessage, type FileHead, projectToJson, RepresentationRegistry, createHistory, KernelClient, createSelection, type ChangeNote, type MountedWorkspace, type Project, type SavedHistory, type GeometryReference, type SharedViewport, type WorkspaceContext, type WorkspaceId, type WorkspacePlugin, workspaceName } from "@fission/core";
+import { type FileFormat, ActionRegistry, CLIPBOARD_CHORDS, chordLabel, chordOf, parseChord, SHELL_SHORTCUTS, ShortcutTable, type Chord, ChangeNotes, DependencyGraph, DownstreamRegistry, emptyProject, FILE_FORMATS, formatInfo, headBytesFor, projectFromJson, routeFiles, unreadableMessage, type FileHead, projectToJson, RepresentationRegistry, createHistory, KernelClient, createSelection, type ChangeNote, type MountedWorkspace, type Project, type SavedHistory, type GeometryReference, type SharedViewport, type WorkspaceContext, type WorkspaceId, type WorkspacePlugin, workspaceName, previews } from "@fission/core";
 import { ProjectGone, shellTabs, type ShellTabs } from "./design-tabs.ts";
-import { historyPanel, baseNameOf, startDesignDefaults, readGridSize, readGridSnap, bugReportDialog, bugReportEndpoint, changeNote, fileMenu, fileSections, shellCommands, type FileMenuParts, holdSkeleton, keepTypingVisible, PROJECT_KIND, repeatGuard, saveFile, type FileHandle, iconSvg, openElsewhere, shortcutList, parseWhatsNew, whatsNewList, whatsNewNote, defaultSplit, showPlaceholder, SPLIT_MIN_WIDTH_PX, splitChoices, WarmPool, fillSettings, SETTINGS_KEY, SettingsStore, startTheme, startUnits, readUnitChoice, startMouse, readMouseChoice, startTooltips, readThemeChoice, applyCustom, readCustom, withIcon, workspaceSwitcher, homeScreen, projectNameBox } from "@fission/ui";
+import { historyPanel, baseNameOf, startDesignDefaults, readGridSize, readGridSnap, bugReportDialog, bugReportEndpoint, changeNote, fileMenu, fileSections, shellCommands, type FileMenuParts, holdSkeleton, keepTypingVisible, PROJECT_KIND, repeatGuard, saveFile, type FileHandle, iconSvg, openElsewhere, shortcutList, parseWhatsNew, whatsNewList, whatsNewNote, defaultSplit, showPlaceholder, workspaceEta, SPLIT_MIN_WIDTH_PX, splitChoices, WarmPool, fillSettings, SETTINGS_KEY, SettingsStore, startTheme, startUnits, readUnitChoice, startMouse, readMouseChoice, startTooltips, readThemeChoice, applyCustom, readCustom, withIcon, workspaceSwitcher, homeScreen, projectNameBox, HOME_MOTION_KEY, motionChoiceOf, type MotionChoice } from "@fission/ui";
 import { paneViewports, Viewer, type ViewportView } from "@fission/viewport";
 import { communityPage } from "@fission/community";
 import { bringForward, forget, MAX_PROJECT_NAME, rename as renameKept, keepStorage, keptEntry, localStore, OPENING_KEY, recoverUnsaved, reopenGuard, startAutosave, STORAGE_ANSWER_MS, storedCopy, type Autosave, type AutosaveStatus, type OpeningChannel } from "@fission/storage";
 import { listedProjects } from "./projects.ts";
 import { startPrintLog } from "./print-log.ts";
 import { versionList, versionTime, type VersionPlace } from "@fission/ui";
+import { watchScrollMore } from "@fission/ui";
 import { createAssistant } from "./assistant.ts";
 import { startOffline } from "./offline.ts";
 import { openLatest, watchKernel } from "./kernel-lost.ts";
@@ -42,11 +44,22 @@ import { laserWorkspace } from "@fission/laser";
 import { sliceWorkspace, slicePageWorkspace } from "@fission/slice";
 /** The Slice page (slice-page.config.mjs): off in the shipped build until it does everything Slice for printing does. */
 declare const __SLICE_PAGE__: boolean;
+// The build-time switches, also on for a tab opened with `?all` (@fission/core preview.ts): the shipped build carries their code.
+const SLICE_PAGE = __SLICE_PAGE__ || previews().all;
 import { circuitWorkspace } from "@fission/circuit";
 import { vectorWorkspace } from "@fission/vector";
 import { imageWorkspace } from "@fission/image";
 import { layoutWorkspace } from "@fission/layout";
 import { keptSteps } from "./kept-steps.ts";
+import { showNo3d, webglWorks } from "./no-3d.ts";
+import "./styles/no-3d.css";
+
+// No 3D drawing in this browser (bug hunt 2026-11-18 D-11): say so where the loading shapes are and start nothing, rather
+// than shimmer for good over an uncaught error. The wait never settles, so nothing below runs.
+if (!webglWorks(document)) {
+  showNo3d(document);
+  await new Promise<never>(() => {});
+}
 
 const workspaces: WorkspacePlugin[] = [
   designWorkspace,
@@ -54,7 +67,7 @@ const workspaces: WorkspacePlugin[] = [
   simulateWorkspace,
   manufactureWorkspace,
   laserWorkspace,
-  __SLICE_PAGE__ ? slicePageWorkspace : sliceWorkspace,
+  SLICE_PAGE ? slicePageWorkspace : sliceWorkspace,
   circuitWorkspace,
   vectorWorkspace,
   imageWorkspace,
@@ -82,6 +95,7 @@ representations.registerImporter({
     // A browser that can't keep projects holds the design on screen nowhere else: Open asks before it replaces one
     // with changes (it was gone without a question, export hunt 2026-11-12, #644 item 2). A file that can't be read
     // is refused first, in its own words, so no one is asked about an Open that won't happen.
+    await okLanded();
     if (!canKeep && ctx.history.canUndo()) {
       projectFromJson(bytes, workspaces);
       if (!window.confirm(`Open "${name}" in place of your design? This browser can't keep projects, so the design on screen is saved nowhere: Cancel, then use Save to keep it as a file first.`)) return;
@@ -96,7 +110,7 @@ for (const w of workspaces) w.registerActions?.(actions);
 const downstream = new DownstreamRegistry();
 for (const w of workspaces) w.registerDownstream?.(downstream);
 // The workspaces DESIGN ▾ lists (listed-workspaces.ts); the rest stay built in, opened by their links.
-const everyWorkspace = new URLSearchParams(location.search).has(ALL_WORKSPACES_SWITCH);
+const everyWorkspace = new URLSearchParams(location.search).has(ALL_WORKSPACES_SWITCH) || previews().all;
 const listed = listedWorkspaces(workspaces, everyWorkspace);
 const workspaceTitle = (id: WorkspaceId) => workspaces.find((w) => w.id === id)?.title ?? id;
 
@@ -105,8 +119,10 @@ const $ = <T extends HTMLElement>(id: string) => document.getElementById(id) as 
 declare const __ACCOUNTS__: { url: string; anonKey: string } | null;
 /** The home screen (home.config.mjs): the app opens on it over the last project; off in the shipped build until released. */
 declare const __HOME_SCREEN__: boolean;
+const HOME_SCREEN = __HOME_SCREEN__ || previews().all;
 /** The design tabs (tabs.config.mjs; also on with the home screen, which is built with them): off until released. */
 declare const __DESIGN_TABS__: boolean;
+const DESIGN_TABS = __DESIGN_TABS__ || previews().all;
 /** The account code's hooks once it has started (only with accounts on): My designs. */
 let accountHooks: import("./account.ts").AccountHooks | null = null;
 /**
@@ -303,6 +319,10 @@ if (__TEST_HOOKS__ && new URLSearchParams(location.search).has("test-hooks"))
       // Whether the undo history holds work still to be recorded (a delete the kernel still plans, an OK it still checks):
       // the page shows the step before until it lands, so the monkey waits on it before reading the bar (issue #650).
       historyBusy: () => ctx.history.working(), // held work running by itself, not a question waiting on the person (SL #397)
+      // The home screen's turning picture shows these edges instead of the open project's (e2e/home-backdrop.mjs, STL=).
+      homeStandIn: (lines: number[] | null, surface?: { positions: number[]; indices: number[] } | null) => home?.showStandIn(lines, surface),
+      // The home picture reports its angle and frames, each frame counted `ms` slower (e2e/home-backdrop.mjs, run under a paused clock).
+      backdropCost: (ms: number) => home?.probeBackdrop(ms),
     },
   });
 
@@ -342,12 +362,14 @@ const PRISTINE: Record<PaneId, Slots> = {
 };
 /** Four empty slots shaped like `pane`'s as the page first had them. */
 const emptySlots = (pane: PaneId): Slots => Object.fromEntries(SLOT_KEYS.map((key) => [key, PRISTINE[pane][key].cloneNode(false) as HTMLElement])) as Slots;
-const pool = new WarmPool<WorkspaceId, PaneId, { slots: Slots; view: MountedWorkspace }>({
+const pool = new WarmPool<WorkspaceId, PaneId, { slots: Slots; view: MountedWorkspace; unwatch: () => void }>({
   mount(pane, id) {
     const slots = emptySlots(pane);
     placeSlots(pane, slots);
+    // At phone width the toolbar is one row you swipe: its edge fades while tools lie past it (@fission/ui scroll-more.ts).
+    const unwatch = watchScrollMore(slots.toolbar);
     const view = workspaces.find((w) => w.id === id)!.mount(paneCtx(pane, slots));
-    return { slots, view };
+    return { slots, view, unwatch };
   },
   sleep(pane, _id, { view }) {
     view.sleep?.();
@@ -357,7 +379,10 @@ const pool = new WarmPool<WorkspaceId, PaneId, { slots: Slots; view: MountedWork
     placeSlots(pane, slots);
     view.wake?.();
   },
-  unmount: (_pane, _id, { view }) => view.unmount(), // asleep: its slots are already out of the page
+  unmount: (_pane, _id, { view, unwatch }) => {
+    unwatch();
+    view.unmount(); // asleep: its slots are already out of the page
+  },
 });
 // DESIGN ▾ (U0f2b): one button naming the page on screen, its menu the
 // workspaces listed (listed-workspaces.ts: Design and Slice in the public
@@ -368,7 +393,7 @@ const SLICE_SUMMARY = "Slice for printing: slice the design and save the printer
 const markTab = workspaceSwitcher(
   $("workspaces"),
   listed.map((w) => (w.id === "slice" ? { id: w.id, title: w.title, summary: SLICE_SUMMARY, placeholder: false } : { id: w.id, title: w.title, summary: w.summary, placeholder: w.status === "placeholder" })),
-  (id) => (id === "slice" && !__SLICE_PAGE__ ? sliceForPrinting() : show(id as WorkspaceId)),
+  (id) => (id === "slice" && !SLICE_PAGE ? sliceForPrinting() : show(id as WorkspaceId)),
   { community: "Community", ...Object.fromEntries(workspaces.map((w) => [w.id, w.title])) },
 );
 /** DESIGN ▾'s Slice: Design on screen, then its File ▾ > Slice for printing, or the reason there is nothing to slice. */
@@ -376,7 +401,7 @@ function sliceForPrinting() {
   if (current !== "design") show("design");
   const entry = pool.awake("main")?.view.fileEntries?.()?.exports?.find((e) => e.id === "file-slice-print");
   if (!entry) return;
-  if (entry.off) return fileStatus(entry.off);
+  if (entry.off) return passingStatus(entry.off);
   entry.run();
 }
 
@@ -407,6 +432,12 @@ function showPage(page: Page) {
     showPlaceholder($("properties"), communityPage);
   }
   markTab(page);
+  // The Community page is all its words: at phone width they fill the view instead of waiting in the shut Properties
+  // sheet over Design's box (SL #522 item 4, styles/placeholder-page.css). Only Community: a workspace still marked
+  // "placeholder" (Laser, TestLab…) mounts a real page of its own, which the words' sheet would cover.
+  document.body.classList.toggle("placeholder-page", !workspace);
+  // A page that is only its words (Community, and every workspace not built yet) is one centred page on wide screens (styles/placeholder-centred.css).
+  document.body.classList.toggle("placeholder-centred", !!$("properties").querySelector(":scope > .placeholder"));
   $("community").setAttribute("aria-pressed", String(page === "community"));
   document.body.dataset.activeWorkspace = page; // read by the e2e test
   current = page;
@@ -423,7 +454,11 @@ function showPage(page: Page) {
 }
 
 // Community pressed again closes it, back to the workspace it was opened from (like AI and Guide).
-$("community").addEventListener("click", () => show(current === "community" ? lastWorkspace : "community"));
+$("community").addEventListener("click", () => {
+  // At phone width the AI sheet would stay over the Community page (SL #522 item 5): Community has nothing for it to do.
+  if (current !== "community" && window.matchMedia("(max-width: 640px)").matches) setAssistant(false);
+  show(current === "community" ? lastWorkspace : "community");
+});
 
 // Split view (X3): Split (over the viewport, wide screens only) puts a
 // second workspace beside the first; the choice in its pane changes which;
@@ -523,7 +558,7 @@ function mountSplitPane(id: WorkspaceId) {
 /**
  * A workspace not built yet gets no 3D view in the second pane: the view
  * stops drawing (its camera kept for the next workspace there) and the
- * pane shows its name and "Coming soon" with what its page says it will
+ * pane shows its name and when it is expected with what its page says it will
  * do; a working workspace gets the view back.
  */
 function showSoon(workspace: WorkspacePlugin) {
@@ -538,7 +573,7 @@ function showSoon(workspace: WorkspacePlugin) {
   }
   const page = $("split-properties").querySelector(".placeholder");
   if (page) soon.replaceChildren(page.cloneNode(true));
-  else soon.innerHTML = `<div class="placeholder"><h2></h2><p class="coming-soon">Coming soon</p></div>`;
+  else soon.innerHTML = `<div class="placeholder"><h2></h2><p class="coming-soon">Expected ${workspaceEta(workspace.id)}</p></div>`;
   if (!page) soon.querySelector("h2")!.textContent = workspace.title;
 }
 /** Frames the second view at home once, the first time it shows in 3D at its settled size. */
@@ -572,7 +607,8 @@ if (everyWorkspace) {
   toggle.setAttribute("aria-pressed", "false");
   toggle.addEventListener("click", () => {
     if (split) return closeSplit();
-    const id = defaultSplit(splitEntries, shownWorkspace())?.id;
+    // Split opens beside Design with Image, as before the Slice page was a working workspace; Slice is one pick away in the choice.
+    const id = (defaultSplit(splitEntries.filter((e) => e.id !== "slice"), shownWorkspace()) ?? defaultSplit(splitEntries, shownWorkspace()))?.id;
     if (id) mountSplit(id);
   });
   $("viewport").append(toggle);
@@ -625,6 +661,18 @@ if (everyWorkspace) {
     setMenu(false);
   });
 }
+// At phone width the AI panel is a sheet over the view, and Escape puts it away as it does every other sheet and menu
+// (SL #522 item 5, a phone with a keyboard), its own key: the shortcut table below never also hears it. Wider, the panel
+// sits beside the view and Escape stays the workspace's.
+document.addEventListener("keydown", (e) => {
+  if (e.key !== "Escape" || $("assistant").hidden || !window.matchMedia("(max-width: 640px)").matches) return;
+  if (document.querySelector("dialog[open]")) return; // an open dialog (the first-send question) takes its own Escape
+  e.preventDefault();
+  e.stopImmediatePropagation();
+  setAssistant(false);
+  const opener = $("assistant-toggle");
+  (opener.offsetParent !== null ? opener : $("menu-toggle")).focus(); // behind Menu at phone width
+});
 
 // Autosave (19c): the project is kept in this browser and saved a moment
 // after each change; the top bar says "Saving…", "Saved" or what went wrong.
@@ -703,6 +751,8 @@ function askBeforeLeaving(e: BeforeUnloadEvent) {
 }
 /** What the save mark says now: put back when an opened file is abandoned before it was kept (issue #247). */
 let shownStatus: AutosaveStatus = { state: "saved" };
+/** Tells the design tabs whether the project on screen has changes not stored yet (a dot on its tab); set once the tabs exist. */
+let markTabs: (() => void) | null = null;
 /** Marks that say "Saving…" only while an opened project is stored again as it is: no change of the person's is waiting (tabs hunt A5). */
 const storingAgain = new WeakSet<AutosaveStatus>();
 const saveStatus = (s: AutosaveStatus) => {
@@ -713,6 +763,7 @@ const saveStatus = (s: AutosaveStatus) => {
   el.title = el.textContent; // the words behind the mark at phone width
   if (s.state === "saved") accountHooks?.saved(); // My designs: kept in the account a few seconds later, when signed in
   askWhileUnsaved();
+  markTabs?.();
 };
 /** Listens for beforeunload only while something could be lost (a saved page with nothing held stays fit for the back/forward cache). */
 function askWhileUnsaved() {
@@ -771,7 +822,10 @@ function keepOnFirstChange() {
 // .spindle file (docs/project-format.md). Opening replaces the project
 // only once all of it has read cleanly; a refused file leaves the open
 // project as it was and says why.
-const fileStatus = (message: string) => ($("file-status").textContent = message);
+const notice = fileNotice({ show: (t) => void ($("file-status").textContent = t), read: () => $("file-status").textContent ?? "" }, { set: (f, ms) => setTimeout(f, ms), clear: (id) => clearTimeout(id as number) });
+const fileStatus = notice.sticky;
+/** A notice about something that just went wrong (a refused file, a failed undo): it goes by itself at the next change or new project, or after a while (src/file-notice.ts). */
+const passingStatus = notice.passing;
 $("file-dismiss").addEventListener("click", () => fileStatus(""));
 /** The file the project was last saved to (the save picker's), so Save writes it again without asking; Save As and a new or opened project let it go. */
 let savedTo: FileHandle | null = null;
@@ -808,6 +862,10 @@ async function save(asNew = false) {
     // Another project opened while this save was asking: the file holds the last project, so it is not kept as
     // this one's, or the next Save would write this project over it without asking (SL #644 item 5).
     if (result.status === "saved" && owner === fileOwner) {
+      // The steps that belonged to the file this project had now belong to the one just saved to: an Undo back to a
+      // design saved before a Save As must not bring the old file back, or the next Save writes over the copy left
+      // behind without asking and the new file misses the work (app-wide hunt 2026-11-14, R-3).
+      if (savedTo !== null || projectFile !== null) for (const [text, file] of filesOf) if (file.handle === savedTo && file.name === projectFile) filesOf.set(text, { handle: result.handle, name: result.name });
       savedTo = result.handle;
       projectFile = result.name;
       fileOf(projectToJson(ctx.project), { handle: savedTo, name: projectFile }); // an Undo back to here finds this file
@@ -849,7 +907,7 @@ const fileKey = (keys: string) => chordLabel(parseChord(keys), /Mac|iPhone|iPad/
 const printLog = startPrintLog(document);
 const fileParts: FileMenuParts = {
   open: { id: "open", label: "Open…", title: OPEN_TITLE, key: fileKey("Mod+O"), run: () => $("open-file").click() },
-  ...(__HOME_SCREEN__ ? { home: { id: "file-home", label: "Home…", title: "Home: carry on with the last project, start a new one, or find another", run: () => void home?.show() } } : {}),
+  ...(HOME_SCREEN ? { home: { id: "file-home", label: "Home…", title: "Home: carry on with the last project, start a new one, or find another", run: () => void home?.show() } } : {}),
   projects: { id: "file-projects", label: "Projects in this browser…", title: "Projects in this browser: every project kept here, to open again or delete", run: () => void projects.show() },
   ...(__ACCOUNTS__ ? { myDesigns: { id: "file-my-designs", label: "My designs…", title: "My designs: the designs kept in your account, to open on any device you sign in on", run: () => void accountHooks?.showDesigns() } } : {}),
   ...(__ACCOUNTS__ && pageShareSwitch().on ? { share: { id: "file-share", label: "Share…", title: "Share: make a link to a frozen copy of this design that anyone can open (this feature is still being checked)", run: () => void accountHooks?.share() } } : {}),
@@ -889,6 +947,7 @@ function replaceProject(project: Project) {
   filesOf.clear(); // and nothing of the old project can be undone back to
   freshPending = false;
   fileOwner++;
+  notice.changed(); // a refused file's notice was about the old project
   ctx.selection.clear(); // it named the old part's faces
   ctx.project = project;
   useGraph(new DependencyGraph(), new ChangeNotes()); // the old notes were about the old project
@@ -899,6 +958,14 @@ function replaceProject(project: Project) {
   ctx.history.reset(); // a new start: nothing from the old project to undo
   assistant.projectReplaced(); // an AI answer asked about the old project never reaches this one (tabs hunt E1)
   tabs?.landed();
+}
+/**
+ * An OK the kernel is still checking lands before another project takes the open one's place (Open, Projects in this
+ * browser, a shared link's copy), as the design tabs wait before a switch: opened at once, the step was dropped from the
+ * project left behind without a word (app-wide hunt 2026-11-14, S-1). A question waiting for the person is not waited on.
+ */
+async function okLanded() {
+  if (ctx.history.working()) await ctx.history.whenIdle();
 }
 /**
  * Replaces the open project with the one in `text`; throws, leaving the
@@ -993,6 +1060,7 @@ const inTime = <T>(asked: Promise<T>) =>
  */
 async function openStored(id: string, modified: Date | null) {
   await started;
+  await okLanded();
   // Its newest state when the store had no room for it (storage full), as start() opens it (real-use hunt B1).
   const kept = keptEntry(local, id);
   // Read before anything is replaced, so a store that never answers leaves the open project as it was (tabs hunt B4).
@@ -1077,6 +1145,9 @@ const projects = listedProjects(document, {
 /** A new, empty project in place of the open one (the home screen's New, and "+" on the design tabs). */
 async function startNewProject(keepNow = false) {
   await started;
+  // An OK still being checked lands in the project left behind first, as Open waits (app bug hunt 2026-11-18, E-3:
+  // the home screen's New project dropped it without a word).
+  await okLanded();
   openings++; // a project still opening is never kept or counted as reopened
   endOffer();
   guard.finished();
@@ -1091,7 +1162,7 @@ async function startNewProject(keepNow = false) {
   fileStatus("");
 }
 /** The design tabs (only when the build has them, tabs.config.mjs): one tab for each project open at once. */
-const tabs: ShellTabs | null = !__DESIGN_TABS__
+const tabs: ShellTabs | null = !DESIGN_TABS
   ? null
   : shellTabs(document, {
       after: $("topbar"),
@@ -1136,8 +1207,9 @@ const tabs: ShellTabs | null = !__DESIGN_TABS__
         }
       })(),
     });
+markTabs = () => tabs?.strip.mark(shownStatus.state !== "saved" && !storingAgain.has(shownStatus));
 /** The home screen (U6b, only when the build has it): over the open project, which stays open under it. */
-const home = !__HOME_SCREEN__ ? null : homeScreen(document, {
+const home = !HOME_SCREEN ? null : homeScreen(document, {
   list: () => store.list(),
   openId: keptId,
   open: openStored,
@@ -1156,6 +1228,11 @@ const home = !__HOME_SCREEN__ ? null : homeScreen(document, {
   chooseFile: () => $("open-file").click(),
   showGuide: () => $("guide-open").click(),
   workspaceTitle,
+  outline: () => viewer.outline(),
+  surface: () => viewer.surface(),
+  shown: () => shownOnScreen(), // the picture waits for the reopened project's body, so it never jumps to it
+  // How the picture moves, shared with Settings > General (this computer's choice: never sent with the account's settings).
+  motion: { read: () => settings().get(HOME_MOTION_KEY, "system"), keep: (choice) => settings().set(HOME_MOTION_KEY, choice) },
 });
 
 // While a project opens (the last one reopened, or a file), the top bar
@@ -1248,12 +1325,12 @@ async function receive(files: File[], folders: readonly boolean[] = []) {
     // A project-named file is read whole (it is size-capped) so it can be parsed; anything else, its start.
     heads = await Promise.all(files.map(async (f, i): Promise<FileHead> => (folders[i] ? { name: f.name, size: f.size, head: new Uint8Array(), folder: true } : { name: f.name, size: f.size, head: new Uint8Array(await readBytes(f, f.slice(0, headBytesFor(f.name, f.size)))) })));
   } catch (e) {
-    if (e instanceof Unreadable) return fileStatus(e.message);
+    if (e instanceof Unreadable) return passingStatus(e.message);
     throw e;
   }
   const route = routeFiles(representations, heads, (w) => listed.some((l) => l.id === w)); // an unlisted workspace's files are refused (listed-workspaces.ts)
   if (!route) return;
-  if (route.kind === "refused") return fileStatus(route.message);
+  if (route.kind === "refused") return passingStatus(route.message);
   const file = files[0];
   const target = route.importer.workspace;
   if (target && pool.showing("main") !== target && pool.showing("split") !== target) {
@@ -1263,8 +1340,8 @@ async function receive(files: File[], folders: readonly boolean[] = []) {
   try {
     await route.importer.open(file.name, new Uint8Array(await readBytes(file, file)));
   } catch (e) {
-    if (e instanceof Unreadable) return fileStatus(e.message);
-    return fileStatus(`Couldn't open “${file.name}”: ${e instanceof Error ? e.message : String(e)}`);
+    if (e instanceof Unreadable) return passingStatus(e.message);
+    return passingStatus(`Couldn't open “${file.name}”: ${e instanceof Error ? e.message : String(e)}`);
   }
   const into = route.importer.workspace;
   if (!into) return; // the shell itself (a project) has already shown it, and said what it says (openProject)
@@ -1449,7 +1526,7 @@ function backFromWhatsNew() {
   document.getElementById("settings-whats-new")?.focus();
 }
 function fillSettingsNow(backToSettings: () => void) {
-  fillSettings(settingsDialog, { version: $("version").textContent ?? "", onShortcuts: () => showShortcuts(backToSettings), onWhatsNew: () => showWhatsNew(backFromWhatsNew), theme: readThemeChoice(settings()), onTheme: chooseTheme, custom: readCustom(settings()), onCustom: (c) => applyCustom(document, settings(), c).notes, unit: readUnitChoice(settings()), onUnit: chooseUnit, onReportBug: () => bugReport.show(), mouse: readMouseChoice(settings()), onMouse: chooseMouse, grid: readGridSize(settings()), onGrid: designDefaults.setGrid, snap: readGridSnap(settings()), onSnap: designDefaults.setSnap, onAiSettings: showAiSettings });
+  fillSettings(settingsDialog, { version: $("version").textContent ?? "", onShortcuts: () => showShortcuts(backToSettings), onWhatsNew: () => showWhatsNew(backFromWhatsNew), theme: readThemeChoice(settings()), onTheme: chooseTheme, custom: readCustom(settings()), onCustom: (c) => applyCustom(document, settings(), c).notes, unit: readUnitChoice(settings()), onUnit: chooseUnit, onReportBug: () => bugReport.show(), mouse: readMouseChoice(settings()), onMouse: chooseMouse, grid: readGridSize(settings()), onGrid: designDefaults.setGrid, snap: readGridSnap(settings()), onSnap: designDefaults.setSnap, onAiSettings: showAiSettings, ...(home ? { motion: motionChoiceOf(settings().get(HOME_MOTION_KEY, "system")), onMotion: (choice: MotionChoice) => settings().set(HOME_MOTION_KEY, choice) } : {}) });
 }
 // Report a bug (Ben, 2026-11-04, easier 2026-11-11; @fission/ui bug-report.ts): from Settings > About, one optional
 // box and the open design attached (ticked by default), sent to the report service when there is one, else a filled-in
@@ -1529,6 +1606,7 @@ if (__ACCOUNTS__)
         picture: pictureOfView,
         openText: async (text) => {
           await started;
+          await okLanded();
           openProject(text, "");
         },
       })) ?? null;
@@ -1584,7 +1662,7 @@ function undoRedoNow(which: "undo" | "redo") {
   try {
     ctx.history[which]();
   } catch (e) {
-    return fileStatus(`Couldn't ${which}: ${e instanceof Error ? e.message : String(e)}`);
+    return passingStatus(`Couldn't ${which}: ${e instanceof Error ? e.message : String(e)}`);
   }
   ctx.history.amend(); // defaults the remounted workspaces filled in
 }
@@ -1637,6 +1715,7 @@ for (const id of ["undo", "redo"] as const) $(id).append(iconSvg(document, id));
 $("undo").addEventListener("click", () => undoRedo("undo"));
 $("redo").addEventListener("click", () => undoRedo("redo"));
 ctx.history.onChange(showUndoRedo);
+ctx.history.onChange(notice.changed); // a passing notice goes at the next change
 refreshUndoRedo = showUndoRedo;
 ctx.history.onBusy(showUndoRedo);
 showUndoRedo();
@@ -1659,13 +1738,13 @@ function jumpHistory(step: number) {
   const now = () => {
     const tool = openTool();
     // Going back would close the tool and lose what is typed in it (issue #520): it waits until the tool closes.
-    if (tool) return fileStatus(`Finish or cancel ${tool.name} first (OK or Cancel), then go back in History.`);
+    if (tool) return passingStatus(`Finish or cancel ${tool.name} first (OK or Cancel), then go back in History.`);
     const target = ctx.history.steps()[step];
     try {
       // Refused while a sketch is open, for a step from before it (its own steps only, issue #520).
-      if (ctx.history.jumpTo(step) === null && target !== undefined && target.state !== "current") return fileStatus("While a sketch is open, History goes back only through the sketch's own steps: Finish Sketch first.");
+      if (ctx.history.jumpTo(step) === null && target !== undefined && target.state !== "current") return passingStatus("While a sketch is open, History goes back only through the sketch's own steps: Finish Sketch first.");
     } catch (e) {
-      return fileStatus(`Couldn't go back: ${e instanceof Error ? e.message : String(e)}`);
+      return passingStatus(`Couldn't go back: ${e instanceof Error ? e.message : String(e)}`);
     }
     ctx.history.amend(); // defaults the remounted workspaces filled in
   };
@@ -1755,8 +1834,16 @@ phone.addEventListener("change", () => {
     const props = $("properties"); // a workspace's mount replaces the slot, so it is looked up each time
     const now = props.querySelector<HTMLElement>("#feature-edit:not([hidden])") !== null || props.querySelector("#move-panel:not([hidden]) #move-bodies:not([hidden])") !== null ||
       // Combine's operation and OK once its target and a tool are picked (or an edited Combine's), its hint over the view gone (35f1d).
-      (props.querySelector("#combine-panel:not([hidden])") !== null && document.querySelector("#combine-hint[hidden]") !== null);
-    const again = props.querySelector<HTMLElement>("#combine-panel:not([hidden])")?.dataset.shows ?? "";
+      (props.querySelector("#combine-panel:not([hidden])") !== null && document.querySelector("#combine-hint[hidden]") !== null) ||
+      // Chamfer's size boxes and OK once an edge is picked, its hint over the view gone (44a-app2).
+      (props.querySelector("#chamfer-panel:not([hidden])") !== null && document.querySelector("#chamfer-hint[hidden]") !== null) ||
+      // Shell's thickness box and OK once a face or body is picked, its hint over the view gone (35h2c-app2).
+      (props.querySelector("#shell-panel:not([hidden])") !== null && document.querySelector("#shell-hint[hidden]") !== null) ||
+      // Pattern's boxes and OK once a body is picked (or an edited Pattern's), its hint over the view gone (61c).
+      (props.querySelector("#pattern-panel:not([hidden])") !== null && document.querySelector("#pattern-hint[hidden]") !== null) ||
+      // Construct's rows, lists and number (step 59a2): the sheet opens with it, a tap on the view puts it away to pick.
+      props.querySelector("#construct-panel:not([hidden])") !== null;
+    const again = (props.querySelector<HTMLElement>("#combine-panel:not([hidden])") ?? props.querySelector<HTMLElement>("#pattern-panel:not([hidden])") ?? props.querySelector<HTMLElement>("#construct-panel:not([hidden])"))?.dataset.shows ?? "";
     const restarted = now && again !== "" && again !== shows;
     shows = again;
     if (now === wanted && !(turned && now) && !restarted) return;
@@ -1867,7 +1954,12 @@ async function start() {
       keep(newest, kept === null, newestAt, kept !== null);
       saveStatus(kept === null ? { state: "saved" } : { state: "error", message: "this browser's storage had no room for your latest changes. They're kept until it has, and Save keeps them as a file." });
       opened = newest;
-    } else keep(newId());
+      // A first visit's empty design is kept from its first change, as every new one is: kept at once, a New project
+      // or a file opened left it behind as an empty "Untitled" (a second design tab; app bug hunt 2026-11-18, D-4).
+    } else {
+      keepOnFirstChange();
+      saveStatus({ state: "saved" }); // nothing of the person's to keep yet, as after New project: the bar says Saved as it did
+    }
   } catch (e) {
     guard.finished(); // refused with a message, which is not a freeze
     keepOnFirstChange(); // stored only once changed, so a reload tries the old one again (real-use hunt A1)

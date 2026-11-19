@@ -132,6 +132,11 @@ try {
     }
     await page.click("#create-sketch");
     await refused(page, downloads, r.toolbar, false, "Sketch is still open: pick its plane or press Cancel first, then Export STL.", "action-note");
+    // The red words must not outlive the plane prompt (Ben, 16 Nov: "Sketch is still open" stayed after Cancel).
+    await page.click("#sketch-cancel");
+    await until(page, () => document.getElementById("action-note")?.textContent === "", null, "Cancel takes the refusal away");
+    if (shots) await page.screenshot({ path: `${shots}/open-tool-note-cleared-1280.png` });
+    await page.click("#create-sketch");
     await pickPlane(page, "XY", false);
     await until(page, () => !!document.getElementById("finish-sketch") && !document.getElementById("finish-sketch").closest("[hidden]"), null, "the sketch opens");
     await refused(page, downloads, r.fileStl, false, "Sketch 1 is still open: press Finish sketch first, then Export STL.", "sketch-grid-error"); // the sketch's own toolbar has no STL
@@ -139,6 +144,16 @@ try {
     await page.click("#finish-sketch");
     await until(page, () => document.getElementById("viewport")?.dataset.rebuilding === "false", null, "the rebuild");
     near(await stlBounds(page, false), [[0, 90], [-20, 30], [0, 20]], "every tool put away: the STL as before");
+    await page.context().close();
+  }
+  // 375 px: the plane prompt's refusal also clears at Cancel.
+  {
+    const { page, downloads } = await fresh(375, 740, true);
+    await page.tap("#create-sketch");
+    await refused(page, downloads, routes(page, true).toolbar, true, "Sketch is still open: pick its plane or press Cancel first, then Export STL.", "action-note");
+    await page.tap("#sketch-cancel");
+    await until(page, () => document.getElementById("action-note")?.textContent === "", null, "Cancel takes the refusal away at 375 px");
+    if (shots) await page.screenshot({ path: `${shots}/open-tool-note-cleared-375.png` });
     await page.context().close();
   }
   // 375 px, taps: the same refusal for the Move, read on the phone.

@@ -14,8 +14,10 @@
 
 import { bodyWords, readings, shapings } from "./body-uses.ts";
 import type { Feature } from "@fission/core";
-import { bodyIdOf, bodyItem, EYE_ROWS, eyeOrder, isExtrudeJoin, isHidden, isOperationExtrude, isPiece, isDuplicateItem, isMoveItem, isSketchItem, makesBody, NAME_LIMIT, numberBodies, numberedWhenBuilt, operationMakers, ORIGIN_PLANES, nameKey, relabelled, shown, takenNames, type DesignDocument } from "./document.ts";
+import { bodyIdOf, bodyItem, combineBodies, isCombineItem, EYE_ROWS, eyeOrder, isExtrudeJoin, isHidden, isOperationExtrude, isPiece, isDuplicateItem, isMoveItem, isSketchItem, isConstructItem, makesBody, NAME_LIMIT, numberBodies, numberedWhenBuilt, operationMakers, ORIGIN_PLANES, nameKey, relabelled, shown, takenNames, type DesignDocument } from "./document.ts";
 import { faceFeature, isFacePlane } from "./face-sketch.ts";
+import { renamedSummary } from "./summary-names.ts";
+import { constructPlaneItem } from "./construct-data.ts";
 
 /** The undo step each timeline edit is recorded as, from the item's name ("Delete Sketch 1"). */
 export const TIMELINE_STEPS = {
@@ -117,6 +119,7 @@ export function hideBody(doc: DesignDocument, bodyId: string, hide: boolean): De
   if (isPiece(bodyId) || (listed && numberedWhenBuilt(bodyId, item))) {
     if (!listed) throw new Error(`${itemName(item)} left no body ${JSON.stringify(bodyId)}`);
   } else if (isSketchItem(item)) throw new Error(`${itemName(item)} is a sketch, which has no body to hide`);
+  else if (isConstructItem(item)) throw new Error(`${itemName(item)} is a construction, which has no body to hide`);
   else if (isOperationExtrude(item)) throw new Error(`${itemName(item)} joins, cuts or intersects other bodies, so it has no body of its own to hide`);
   else if (!makesBody(item)) throw new Error(`${itemName(item)} is a move, which has no body of its own to hide`);
   if (isHidden(doc, bodyId) === hide) return doc;
@@ -147,7 +150,7 @@ export function hideRow(doc: DesignDocument, id: string, hide: boolean): DesignD
   if (bodyItem(id) !== null) return hideBody(doc, id, hide);
   if (!EYE_ROWS.includes(id)) {
     const item = itemIn(doc, id);
-    if (!isSketchItem(item)) return hideBody(doc, bodyIdOf(id), hide);
+    if (!isSketchItem(item) && !isConstructItem(item)) return hideBody(doc, bodyIdOf(id), hide);
   }
   if (isHidden(doc, id) === hide) return doc;
   if (!hide) return withoutHidden(doc, id);
@@ -174,10 +177,11 @@ export function usedSketchHidden(doc: DesignDocument, id: string): DesignDocumen
  */
 function link(doc: DesignDocument, f: Feature, on: Feature): string {
   if (isMoveItem(f)) return "a move of";
-  if (isDuplicateItem(f)) return "a copy of";
+  if (isDuplicateItem(f)) return isConstructItem(on) ? "mirrored across" : "a copy of";
   if (!isSketchItem(f)) return "built from";
   const plane = f.intent.parameters.plane;
   if (isFacePlane(plane) && faceFeature(plane) === on.id) return "drawn on a face of";
+  if (constructPlaneItem(plane) === on.id) return "drawn on";
   const pinned = doc.sketches.find((s) => s.id === f.id)?.pins?.some((p) => p.feature === on.id) ?? false;
   return pinned ? "snapped to an edge of" : "projecting an edge of";
 }
@@ -196,7 +200,8 @@ function link(doc: DesignDocument, f: Feature, on: Feature): string {
  * an Extrude Join joins with one of its own: the joined body keeps the id
  * of the one made first (docs/document-model.md section 8, rule 1), so the
  * swap would quietly make it the other body, and a later Move or Combine
- * of it would find its body gone.
+ * of it would find its body gone. The same under a Combine's Join (SL #760
+ * item 2), for the items that made its target and its tools.
  */
 export function reorderItem(doc: DesignDocument, id: string, to: number): Reordered {
   const item = itemIn(doc, id);
@@ -209,8 +214,10 @@ export function reorderItem(doc: DesignDocument, id: string, to: number): Reorde
   const user = features.find((f, j) => j < to && f.dependsOn.includes(id));
   if (user) return { refused: "after-dependent", message: `${itemName(item)} can't go after ${itemName(user)}: ${itemName(user)} is ${link(doc, user, item)} it` };
   const was = (x: string) => doc.timeline.features.findIndex((f) => f.id === x);
-  for (const join of features.filter(isExtrudeJoin)) {
-    const makers = operationMakers(join).filter((m) => m !== join.id);
+  // SL #760 item 2: a Combine's Join too. Its body keeps the target's id, but once a later Cut splits it, the piece
+  // that keeps that id is the one holding the input made first, so the swap would make "Body 1" the other piece.
+  for (const join of features.filter((f) => isExtrudeJoin(f) || (isCombineItem(f) && combineBodies(f).operation === "join"))) {
+    const makers = isCombineItem(join) ? [...new Set([combineBodies(join).target, ...combineBodies(join).tools].flatMap((body) => bodyItem(body) ?? []))] : operationMakers(join).filter((m) => m !== join.id);
     if (!makers.includes(id)) continue;
     const passed = makers.find((m) => m !== id && was(m) >= 0 && was(m) < was(id) !== place(m) < to);
     if (passed !== undefined) {
@@ -295,5 +302,20 @@ export function renameItem(doc: DesignDocument, id: string, typed: string): Rena
     const other = doc.timeline.features.find((f) => f.id !== id && nameKey(itemName(f)) === nameKey(name))!;
     return { refused: "taken", message: `${itemName(other)} is already the name of another item: each item needs its own name, since messages name items by them` };
   }
-  return { doc: withTimeline(doc, relabelled(doc.timeline.features, id, name), doc.timeline.marker) };
+  return { doc: withTimeline(doc, renamedInWords(doc.timeline.features, relabelled(doc.timeline.features, id, name), id), doc.timeline.marker) };
+}
+
+/**
+ * The features after a rename (`after`, their provenance naming item `id` anew) with the descriptions of the items made
+ * from it said again with the new name: "Mirror of Base across the YZ plane", "Move Base by …", "Cut Box 2 from Base"
+ * (SL #524 item 1, as Fusion names an item by its name now). Each description is said again from its own kind's words
+ * (summary-names.ts), never by replacing text, so renaming "Box" leaves "Box 2" alone and an item named "XY" or "5"
+ * changes no plane or number (SL #819); a description that can't be said again from its parameters stays as it is.
+ */
+function renamedInWords(before: readonly Feature[], after: Feature[], id: string): Feature[] {
+  return after.map((f, i) => {
+    if (f.id === id || !f.provenance.from.some((p) => p.workspace === "design" && p.id === id)) return f;
+    const summary = renamedSummary(before[i], f);
+    return summary === f.intent.summary ? f : { ...f, intent: { ...f.intent, summary } };
+  });
 }

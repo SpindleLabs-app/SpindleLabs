@@ -13,11 +13,18 @@
 // (a mirrored body, kernel 0.33.40, inside out never: the kernel turns its
 // faces round). Its faces keep the names they had ("side:line-2" is the
 // same side, now on the other hand), so what was sketched on the source is
-// found on the copy the same way. A face of the body as the plane comes
-// later (with step 59's construction planes).
+// found on the copy the same way. From step 59a3 the plane can be a
+// construction plane ("construct:feature-7", behind ?construct): the Mirror
+// then depends on the construction too (after the body's item), so it is
+// greyed with it, can't go before it, and follows it when an edit before
+// moves the plane.
 
 import type { Feature, Motion } from "@fission/core";
-import { bodyIdOf, bodyItem, counted, freshName, insertAt, insertItem, isDuplicateItem, isPiece, makesBody, numberBodies, numberedWhenBuilt, shown, SKETCH_PLANES, takenNames, type DesignDocument, type SketchPlane } from "./document.ts";
+import { bodyIdOf, bodyItem, constructOf, counted, freshName, insertAt, insertItem, isConstructItem, isDuplicateItem, isPiece, makesBody, numberBodies, numberedWhenBuilt, shown, SKETCH_PLANES, takenNames, type DesignDocument, type SketchPlane } from "./document.ts";
+import { CONSTRUCT_KINDS, CONSTRUCT_REF, constructPlaneItem, type ConstructAnswer } from "./construct-data.ts";
+
+/** What a Mirror mirrors across: an origin plane, or (step 59a3) a construction plane by its name, "construct:feature-7". */
+export type MirrorPlane = SketchPlane | `${typeof CONSTRUCT_REF}${string}`;
 
 /** The undo step new Duplicates are recorded as. */
 export const DUPLICATE_STEP = "Duplicate bodies";
@@ -25,17 +32,44 @@ export const DUPLICATE_STEP = "Duplicate bodies";
 /** The undo step new mirrored copies are recorded as. */
 export const MIRROR_STEP = "Mirror bodies";
 
-/** What a Duplicate's summary and the timeline row say: "Copy of Box 1", or a Mirror's "Mirror of Box 1 across the XY plane". */
-export const duplicateSummary = (source: string, mirror?: SketchPlane): string => (mirror === undefined ? `Copy of ${source}` : `Mirror of ${source} across the ${mirror} plane`);
+/**
+ * What a Duplicate's summary and the timeline row say: "Copy of Box 1", or a
+ * Mirror's "Mirror of Box 1 across the XY plane", or across a construction
+ * plane by its name ("Mirror of Box 1 across Plane 1").
+ */
+export const duplicateSummary = (source: string, mirror?: MirrorPlane, planeName?: string): string => (mirror === undefined ? `Copy of ${source}` : planeName !== undefined ? `Mirror of ${source} across ${planeName}` : `Mirror of ${source} across the ${mirror} plane`);
 
-/** The origin plane Duplicate `f` mirrors its copy across (Mirror body), or undefined for a plain copy. */
-export const mirrorOf = (f: Feature): SketchPlane | undefined => f.intent.parameters.mirror as SketchPlane | undefined;
+/** The plane Duplicate `f` mirrors its copy across (Mirror body): an origin plane or a construction plane's name; undefined for a plain copy. */
+export const mirrorOf = (f: Feature): MirrorPlane | undefined => f.intent.parameters.mirror as MirrorPlane | undefined;
 
 /** The unit normal of each origin plane: the axis it doesn't hold. */
 const PLANE_NORMALS: Record<SketchPlane, [number, number, number]> = { XY: [0, 0, 1], XZ: [0, 1, 0], YZ: [1, 0, 0] };
 
-/** What the kernel is asked to do to a copy mirrored across origin plane `plane`: reflect it in the plane through the origin square to the axis the plane doesn't hold. */
-export const mirrorMotion = (plane: SketchPlane): Motion => ({ mirror: { point: [0, 0, 0], normal: [...PLANE_NORMALS[plane]] } });
+/**
+ * What the kernel is asked to do to a copy mirrored across `plane`: an
+ * origin plane reflects it in the plane through the origin square to the
+ * axis the plane doesn't hold; a construction plane's answer (`answer`, the
+ * plane as the rebuild found it) in that plane, through its foot point with
+ * its normal.
+ */
+export function mirrorMotion(plane: MirrorPlane, answer?: ConstructAnswer): Motion {
+  if ((SKETCH_PLANES as readonly string[]).includes(plane)) return { mirror: { point: [0, 0, 0], normal: [...PLANE_NORMALS[plane as SketchPlane]] } };
+  if (answer?.kind !== "plane") throw new Error(`${shown(plane)} is mirrored across with no plane answered for it`);
+  return { mirror: { point: [...answer.point], normal: [...answer.normal] } };
+}
+
+/** Why `plane` can't be a new Mirror's plane in `doc` (a construction plane: one before the marker, not suppressed), in words, or null. */
+export function mirrorPlaneProblem(doc: DesignDocument, plane: string): string | null {
+  if ((SKETCH_PLANES as readonly string[]).includes(plane)) return null;
+  const item = constructPlaneItem(plane);
+  if (item === null) return `${plane} is not an origin plane (XY, XZ or YZ) or a construction plane`;
+  const at = doc.timeline.features.findIndex((f) => f.id === item);
+  const f = doc.timeline.features[at];
+  if (f === undefined || !isConstructItem(f) || CONSTRUCT_KINDS[constructOf(f).make].makes !== "plane") return `${JSON.stringify(plane)} is not a construction plane in the design`;
+  if (at >= insertAt(doc)) return `${f.provenance.self.label} comes after the rollback marker, so a Mirror put in at the marker can't use it`;
+  if (f.suppressed) return `${f.provenance.self.label} is suppressed: turn it back on to mirror across it`;
+  return null;
+}
 
 /** Whether the design numbers body `id` (a Combine's piece is a body once `bodies` lists it). */
 const numbered = (doc: DesignDocument, id: string): boolean => (doc.bodies ?? []).some((b) => b.id === id);
@@ -47,8 +81,11 @@ const numbered = (doc: DesignDocument, id: string): boolean => (doc.bodies ?? []
  * changing nothing, unless each is a body made before the marker, each
  * picked once, at least one.
  */
-export function insertDuplicates(doc: DesignDocument, bodies: readonly string[], mirror?: SketchPlane): { doc: DesignDocument; ids: string[] } {
-  if (mirror !== undefined && !SKETCH_PLANES.includes(mirror)) throw new Error(`${shown(mirror)} is not an origin plane (XY, XZ or YZ)`);
+export function insertDuplicates(doc: DesignDocument, bodies: readonly string[], mirror?: MirrorPlane): { doc: DesignDocument; ids: string[] } {
+  const problem = mirror === undefined ? null : mirrorPlaneProblem(doc, mirror);
+  if (problem !== null) throw new Error(problem);
+  const across = mirror === undefined ? null : constructPlaneItem(mirror);
+  const plane = across === null ? undefined : doc.timeline.features.find((f) => f.id === across)!;
   if (bodies.length === 0) throw new Error(mirror === undefined ? "pick at least one body to duplicate" : "pick at least one body to mirror");
   const end = insertAt(doc);
   const sources = bodies.map((b, i) => {
@@ -70,9 +107,10 @@ export function insertDuplicates(doc: DesignDocument, bodies: readonly string[],
     const name = isPiece(bodies[i]) ? `a piece of ${source.provenance.self.label}` : source.provenance.self.label;
     const feature: Feature = {
       id,
-      intent: { type: "duplicate", parameters: mirror === undefined ? { body: bodies[i] } : { body: bodies[i], mirror }, summary: duplicateSummary(name, mirror) },
-      provenance: { self: { workspace: "design", id, label }, from: [{ workspace: "design", id: source.id, label: source.provenance.self.label }] },
-      dependsOn: [source.id],
+      intent: { type: "duplicate", parameters: mirror === undefined ? { body: bodies[i] } : { body: bodies[i], mirror }, summary: duplicateSummary(name, mirror, plane?.provenance.self.label) },
+      provenance: { self: { workspace: "design", id, label }, from: [{ workspace: "design", id: source.id, label: source.provenance.self.label }, ...(plane ? [{ workspace: "design" as const, id: plane.id, label: plane.provenance.self.label }] : [])] },
+      // The body's item first (rebuild.ts `copyBody` reads it there), then the construction mirrored across (59a3).
+      dependsOn: plane === undefined ? [source.id] : [source.id, plane.id],
       suppressed: false,
     };
     next = { ...next, nextId: counted(next.nextId + 1), timeline: insertItem(next, feature) };

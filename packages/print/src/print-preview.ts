@@ -110,7 +110,7 @@ export interface PrintPreview {
  * layer (or carries on from where the scrubber is). Close or Escape close
  * it and free the view.
  */
-export function openPrintPreview(slot: HTMLElement, p: Playback, words: string, makeView: (host: HTMLElement, p: Playback) => PreviewView, warning?: string): PrintPreview {
+export function openPrintPreview(slot: HTMLElement, p: Playback, words: string, makeView: (host: HTMLElement, p: Playback) => PreviewView, warning?: string, returnTo?: () => HTMLElement | null): PrintPreview {
   const document = slot.ownerDocument;
   const window = document.defaultView!;
   const el = <K extends keyof HTMLElementTagNameMap>(tag: K, id: string, text = "") => {
@@ -227,7 +227,7 @@ export function openPrintPreview(slot: HTMLElement, p: Playback, words: string, 
   try {
     view = makeView(host, p);
   } catch (e) {
-    host.textContent = `The 3D preview needs WebGL, which this browser didn't give: ${e instanceof Error ? e.message : String(e)}`;
+    host.textContent = "The 3D preview needs WebGL (your browser's 3D drawing), and this browser didn't turn it on. Try another browser, or switch on hardware acceleration in its settings.";
     host.classList.add("print-preview-bad");
   }
   let time = p.seconds;
@@ -314,8 +314,9 @@ export function openPrintPreview(slot: HTMLElement, p: Playback, words: string, 
     view?.dispose();
     view = null;
     dialog.remove();
-    // The Slice dialog closed when the preview opened, so focus would fall to the page: put it on File ▾, where Slice for printing is (slicer hunt 2026-10-31).
-    slot.ownerDocument.getElementById("file-menu")?.focus();
+    // The Slice dialog closed when the preview opened, so focus would fall to the page: put it on File ▾, where Slice for printing is
+    // (slicer hunt 2026-10-31). The Slice page stays open under the preview: `returnTo` names its Preview button.
+    (returnTo?.() ?? slot.ownerDocument.getElementById("file-menu"))?.focus();
   });
   window.addEventListener("resize", onResize);
   showKinds();

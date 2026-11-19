@@ -24,6 +24,8 @@ def filtered(text):
 class Filter(unittest.TestCase):
     def test_public_lines_pass(self):
         lines = "RESULT clippy PASS 12\nRESULT boolean-facts FAIL 340\nRESULT mutants-shard-3 PASS 900\ncount 41\ncount error\nshards [0,1]\nshards []\nmissed 0\n"
+        # Which crates the mutants plan found changed lines in (test audit E-3): fixed names only.
+        lines += "crates none\ncrates kernel\ncrates slice,fea\ncrates kernel,slice,fea\n"
         self.assertEqual(filtered(lines), lines)
 
     def test_leaks_are_dropped(self):
@@ -36,6 +38,9 @@ class Filter(unittest.TestCase):
             "count 4 mutants in fn x",
             "shards [0,1] ok",
             "missed 1: src/x.rs",
+            "crates kernel,src/x.rs",
+            "crates widgets",
+            "crates ",
             "",
         ]
         self.assertEqual(filtered("\n".join(leaks) + "\n"), "")
@@ -144,6 +149,91 @@ class Save(unittest.TestCase):
 
     def saved(self):
         return subprocess.run(["git", "-C", self.remote, "ls-tree", "-r", "--name-only", "main"], capture_output=True, text=True, check=True).stdout.split()
+
+    def test_fetch_gives_back_a_saved_folder_and_refuses_a_missing_one(self):
+        self.assertEqual(self.save().returncode, 0)
+        env = dict(os.environ, RESULTS_REPO=self.remote)
+        out = os.path.join(self.tmp.name, "got")
+        ok = subprocess.run(["bash", SCRIPT, "fetch", "ci/pr-3/abc/1-1/checks", out], capture_output=True, text=True, env=env)
+        self.assertEqual((ok.returncode, ok.stdout), (0, ""))
+        with open(os.path.join(out, "tests.log")) as f:
+            self.assertEqual(f.read(), "all passed\n")
+        bad = subprocess.run(["bash", SCRIPT, "fetch", "ci/none", os.path.join(self.tmp.name, "x")], capture_output=True, text=True, env=env)
+        self.assertNotEqual(bad.returncode, 0)
+        evil = subprocess.run(["bash", SCRIPT, "fetch", "../x", os.path.join(self.tmp.name, "y")], capture_output=True, text=True, env=env)
+        self.assertNotEqual(evil.returncode, 0)
+
+    def test_save_sealed_opens_each_artifact_and_names_one_it_cannot(self):
+        keys = os.path.join(self.tmp.name, "keys")
+        subprocess.run(["bash", SCRIPT, "keygen", keys], check=True)
+        root = os.path.join(self.tmp.name, "downloaded")
+        for name in ("checks-rest", "mutants-plan"):
+            subprocess.run(["bash", SCRIPT, "seal", self.logs, os.path.join(root, "sealed-" + name), os.path.join(keys, "public.pem")], check=True)
+        # A third bundle, changed after sealing.
+        bad = os.path.join(root, "sealed-checks-solver")
+        subprocess.run(["bash", SCRIPT, "seal", self.logs, bad, os.path.join(keys, "public.pem")], check=True)
+        with open(os.path.join(bad, "data.enc"), "r+b") as f:
+            f.seek(5)
+            f.write(b"\x00\x01")
+        env = dict(os.environ, RESULTS_REPO=self.remote, RESULTS_PATH="ci/pr-3/abc/1-1", LABEL="pr-3", HEAD_SHA="abc", SAVE_WAIT_SCALE="0")
+        out = subprocess.run(["bash", SCRIPT, "save-sealed", root, os.path.join(keys, "private.pem"), os.path.join(self.tmp.name, "opened")],
+                             capture_output=True, text=True, env=env)
+        self.assertEqual(out.returncode, 1)
+        self.assertIn("saved checks-rest", out.stdout)
+        self.assertIn("saved mutants-plan", out.stdout)
+        self.assertIn("could not open checks-solver", out.stdout)
+        saved = self.saved()
+        self.assertIn("ci/pr-3/abc/1-1/checks-rest/tests.log", saved)
+        self.assertIn("ci/pr-3/abc/1-1/mutants-plan/tests.log", saved)
+        self.assertFalse([f for f in saved if "checks-solver" in f])
+
+    def test_open_sealed_opens_each_artifact_saves_nothing_and_names_one_it_cannot(self):
+        keys = os.path.join(self.tmp.name, "keys")
+        subprocess.run(["bash", SCRIPT, "keygen", keys], check=True)
+        root = os.path.join(self.tmp.name, "downloaded")
+        for name in ("endless-a-0", "mutants-1"):
+            subprocess.run(["bash", SCRIPT, "seal", self.logs, os.path.join(root, "sealed-" + name), os.path.join(keys, "public.pem")], check=True)
+        bad = os.path.join(root, "sealed-endless-b-3")
+        subprocess.run(["bash", SCRIPT, "seal", self.logs, bad, os.path.join(keys, "public.pem")], check=True)
+        with open(os.path.join(bad, "data.enc"), "r+b") as f:
+            f.seek(5)
+            f.write(b"\x00\x01")
+        opened = os.path.join(self.tmp.name, "opened")
+        env = dict(os.environ, RESULTS_REPO=self.remote, SAVE_WAIT_SCALE="0")
+        out = subprocess.run(["bash", SCRIPT, "open-sealed", root, os.path.join(keys, "private.pem"), opened], capture_output=True, text=True, env=env)
+        self.assertEqual(out.returncode, 1)
+        self.assertEqual(sorted(out.stdout.split("\n")), ["", "could not open endless-b-3", "opened endless-a-0", "opened mutants-1"])
+        with open(os.path.join(opened, "endless-a-0", "tests.log")) as f:
+            self.assertEqual(f.read(), "all passed\n")
+        self.assertFalse(os.path.exists(os.path.join(opened, "endless-b-3", "tests.log")))
+        self.assertEqual(self.saved(), ["README"])
+        # Then one save of them all lands as runs/<run>/<name>/.
+        env = dict(env, RESULTS_PATH="runs")
+        self.assertEqual(subprocess.run(["bash", SCRIPT, "save", "9-1", opened], capture_output=True, text=True, env=env).returncode, 0)
+        self.assertIn("runs/9-1/mutants-1/tests.log", self.saved())
+
+    def test_a_lone_artifact_downloaded_flat_is_named_not_passed_over(self):
+        # download-artifact unpacks a pattern that matches one artifact straight
+        # into its path, with no sealed-NAME folder: the 18 Nov 2026 random
+        # testing night's golden-step findings were sealed, downloaded, then
+        # "no findings to save", green. Both openers must say so and fail.
+        keys = os.path.join(self.tmp.name, "keys")
+        subprocess.run(["bash", SCRIPT, "keygen", keys], check=True)
+        root = os.path.join(self.tmp.name, "downloaded")
+        subprocess.run(["bash", SCRIPT, "seal", self.logs, root, os.path.join(keys, "public.pem")], check=True)
+        env = dict(os.environ, RESULTS_REPO=self.remote, RESULTS_PATH="runs", SAVE_WAIT_SCALE="0")
+        for cmd in ("open-sealed", "save-sealed"):
+            opened = os.path.join(self.tmp.name, "opened-" + cmd)
+            out = subprocess.run(["bash", SCRIPT, cmd, root, os.path.join(keys, "private.pem"), opened], capture_output=True, text=True, env=env)
+            self.assertEqual(out.returncode, 1, cmd)
+            self.assertEqual(out.stdout, "found files but no sealed-NAME folder (one artifact downloaded flat?)\n", cmd)
+        self.assertEqual(self.saved(), ["README"])
+        # An empty or missing root (nothing was handed on) is still no error.
+        for empty in (os.path.join(self.tmp.name, "empty"), os.path.join(self.tmp.name, "missing")):
+            if empty.endswith("empty"):
+                os.makedirs(empty)
+            out = subprocess.run(["bash", SCRIPT, "open-sealed", empty, os.path.join(keys, "private.pem"), os.path.join(self.tmp.name, "o")], capture_output=True, text=True, env=env)
+            self.assertEqual((out.returncode, out.stdout), (0, ""))
 
     def test_files_over_50_mb_stay_behind_and_are_counted(self):
         # 50 MiB + 1 byte is over the limit (find -size +50M counts whole
@@ -462,6 +552,55 @@ def jobs(text):
     return found
 
 
+class SealedDownloadsKeepTheirFolder(unittest.TestCase):
+    """A job that opens sealed artifacts with open-sealed or save-sealed looks
+    for ROOT/sealed-NAME folders. download-artifact unpacks a pattern that
+    matches a single artifact straight into its path, without that folder, so
+    a job whose sealed artifact is always just one takes it by name into
+    ROOT/sealed-NAME (18 Nov 2026: a night's oracle findings were lost so).
+    A pattern stays only where several artifacts can match."""
+
+    # Jobs whose pattern can match several sealed artifacts (a matrix or parts).
+    MANY = {("kernel-ci.yml", "checks-report"), ("kernel-ci.yml", "mutants"),
+            ("kernel-fuzz.yml", "collect"), ("kernel-nightly.yml", "collect")}
+
+    @staticmethod
+    def problems(workflow, text):
+        found = []
+        for job, lines in jobs(text).items():
+            if not re.search(r"\b(open|save)-sealed\b", lines):
+                continue
+            for step in re.findall(r"uses: actions/download-artifact@.*?(?=\n      - |\Z)", lines, re.S):
+                name = re.search(r"\n\s+name: (sealed-[\w.-]+)\s*\n", step)
+                path = re.search(r"\n\s+path: (.+)\n", step + "\n")
+                if name:
+                    if not path or not path.group(1).rstrip().endswith("/" + name.group(1)):
+                        found.append(f"{workflow} {job}: {name.group(1)} must go into a folder of that name")
+                elif re.search(r"pattern: sealed-", step) and (workflow, job) not in SealedDownloadsKeepTheirFolder.MANY:
+                    found.append(f"{workflow} {job}: a pattern matching one artifact unpacks flat")
+        return found
+
+    def test_every_workflow(self):
+        for name in sorted(os.listdir(NoNoisyKernelCheckout.WORKFLOWS)):
+            with open(os.path.join(NoNoisyKernelCheckout.WORKFLOWS, name)) as f:
+                self.assertEqual(self.problems(name, f.read()), [], name)
+
+    def test_the_many_list_names_real_jobs(self):
+        for workflow, job in sorted(self.MANY):
+            with open(os.path.join(NoNoisyKernelCheckout.WORKFLOWS, workflow)) as f:
+                self.assertIn(job, jobs(f.read()), workflow)
+
+    def test_the_check_catches_it(self):
+        head = "on: push\njobs:\n  oracle-save:\n    steps:\n      - name: Take\n        uses: actions/download-artifact@abc # v8\n        with:\n"
+        run = "      - name: Open\n        run: ci open-sealed a b c\n"
+        flat = head + "          pattern: sealed-*\n          path: ${{ runner.temp }}/sealed\n" + run
+        named_flat = head + "          name: sealed-golden-step\n          path: ${{ runner.temp }}/sealed\n" + run
+        good = head + "          name: sealed-golden-step\n          path: ${{ runner.temp }}/sealed/sealed-golden-step\n" + run
+        self.assertEqual(len(self.problems("x.yml", flat)), 1)
+        self.assertEqual(len(self.problems("x.yml", named_flat)), 1)
+        self.assertEqual(self.problems("x.yml", good), [])
+
+
 class SecretsOnlyOnMain(unittest.TestCase):
     """Every job that uses the kernel's keys or the merge queue's token names
     the environment holding them, which only main may use: as plain
@@ -476,7 +615,7 @@ class SecretsOnlyOnMain(unittest.TestCase):
     which is why the keys are step-scoped and the environments main-only."""
 
     WORKFLOWS = NoNoisyKernelCheckout.WORKFLOWS
-    NEEDS = {"KERNEL_READ": "kernel", "RESULTS_WRITE": "kernel", "MERGE_QUEUE_TOKEN": "merge"}
+    NEEDS = {"KERNEL_READ": "kernel", "KERNEL_SOURCE": "kernel", "KERNEL_STATUS": "kernel", "RESULTS_WRITE": "kernel", "MERGE_QUEUE_TOKEN": "merge"}
     # Secrets that are no key: GitHub's own per-run token.
     PLAIN = {"GITHUB_TOKEN"}
     SECRET = re.compile(r"""secrets\s*(?:\.\s*([A-Za-z_][A-Za-z0-9_]*)|\[\s*['"]([^'"]+)['"]\s*\])""")
@@ -723,6 +862,98 @@ class NoKeyBesideKernelCode(unittest.TestCase):
         self.assertEqual(self.problems("w", wf(save + good)), [])
 
 
+class SplitJobsHoldOnlyTheReadKey(unittest.TestCase):
+    """Security hunt H3: a job that runs the kernel's code holds no key that can write anything. For the jobs already
+    split (SPLIT, which grows as each job is), the only secret such a job may name is KERNEL_SOURCE (read-only on the
+    kernel, which the code can read anyway), and no job naming a writing key runs kernel code."""
+
+    SPLIT = {("kernel-ci.yml", job) for job in ("coverage", "checks-plan", "checks", "mutants-plan", "mutants-shard")} | {
+        ("kernel-nightly.yml", job) for job in ("test", "test-second-leg", "mutants")} | {
+        ("kernel-fuzz.yml", "stl"), ("kernel-fuzz.yml", "kernel"),
+        # The oracle (the kernel's prototypes/oracle) judging the app's own sessions and golden models.
+        ("fuzz.yml", "sessions-oracle"), ("nightly.yml", "golden-step")}
+    # The workflows whose every job is split: none of them holds a writing key beside kernel code.
+    DONE = {name for name, _ in SPLIT}
+    WRITING = {"RESULTS_WRITE", "KERNEL_STATUS", "KERNEL_READ", "MERGE_QUEUE_TOKEN"}
+    KERNEL = re.compile(r"kernel_ci\.sh run\b|\bk/ci/|\bk/kernel/|cd k/kernel|\bk/prototypes/")
+
+    def problems(self, name, text):
+        out = []
+        for job, lines in jobs(text).items():
+            code = "\n".join(line for line in lines.split("\n") if not line.lstrip().startswith("#"))
+            named = SecretsOnlyOnMain.secrets(code)
+            runs_kernel = bool(self.KERNEL.search(code))
+            if name in self.DONE and runs_kernel and named & self.WRITING:
+                out.append(f"{name} {job}: runs kernel code beside {', '.join(sorted(named & self.WRITING))}")
+            if (name, job) in self.SPLIT:
+                if not runs_kernel:
+                    out.append(f"{name} {job}: listed as a kernel-code job but runs none")
+        return out
+
+    def test_every_workflow(self):
+        found = []
+        for name in sorted(os.listdir(SecretsOnlyOnMain.WORKFLOWS)):
+            with open(os.path.join(SecretsOnlyOnMain.WORKFLOWS, name)) as f:
+                found += self.problems(name, f.read())
+        self.assertEqual(found, [])
+
+    def test_split_workflows_no_longer_use_the_old_all_in_one_key(self):
+        for name in sorted(self.DONE):
+            with open(os.path.join(SecretsOnlyOnMain.WORKFLOWS, name)) as f:
+                self.assertNotIn("secrets.KERNEL_READ", f.read(), name)
+
+    def test_the_check_catches_a_writing_key_in_a_nightly_test_leg(self):
+        with open(os.path.join(SecretsOnlyOnMain.WORKFLOWS, "kernel-nightly.yml")) as f:
+            text = f.read()
+        self.assertEqual(self.problems("kernel-nightly.yml", text), [])
+        # Put back what the leg held before the split: the save step's key.
+        bad = text.replace("          PUBLIC: ${{ needs.plan.outputs.public }}\n",
+                           "          PUBLIC: ${{ needs.plan.outputs.public }}\n          RESULTS_WRITE: ${{ secrets.RESULTS_WRITE }}\n", 1)
+        self.assertNotEqual(bad, text)
+        self.assertEqual(self.problems("kernel-nightly.yml", bad), ["kernel-nightly.yml test: runs kernel code beside RESULTS_WRITE"])
+
+    def test_the_check_catches_a_writing_key_in_a_fuzzing_leg(self):
+        with open(os.path.join(SecretsOnlyOnMain.WORKFLOWS, "kernel-fuzz.yml")) as f:
+            text = f.read()
+        self.assertEqual(self.problems("kernel-fuzz.yml", text), [])
+        # Put back what the legs held before the split: the save step's key, in each leg.
+        bad = text.replace("          PUBLIC: ${{ needs.plan.outputs.public }}\n",
+                           "          PUBLIC: ${{ needs.plan.outputs.public }}\n          RESULTS_WRITE: ${{ secrets.RESULTS_WRITE }}\n")
+        self.assertNotEqual(bad, text)
+        self.assertEqual(self.problems("kernel-fuzz.yml", bad), [
+            "kernel-fuzz.yml stl: runs kernel code beside RESULTS_WRITE",
+            "kernel-fuzz.yml kernel: runs kernel code beside RESULTS_WRITE"])
+
+    def test_the_check_counts_the_oracle_as_kernel_code(self):
+        # The app's own workflows run the kernel's oracle (prototypes/oracle): the old all-in-one key back beside it is caught.
+        with open(os.path.join(SecretsOnlyOnMain.WORKFLOWS, "fuzz.yml")) as f:
+            text = f.read()
+        self.assertEqual(self.problems("fuzz.yml", text), [])
+        bad = text.replace("KERNEL_READ: ${{ secrets.KERNEL_SOURCE }}", "KERNEL_READ: ${{ secrets.KERNEL_READ }}", 1)
+        self.assertNotEqual(bad, text)
+        self.assertEqual(self.problems("fuzz.yml", bad), ["fuzz.yml sessions-oracle: runs kernel code beside KERNEL_READ"])
+
+    def test_no_workflow_uses_the_old_all_in_one_key(self):
+        # KERNEL_READ (kernel read + commit statuses) is retired: KERNEL_SOURCE and KERNEL_STATUS replaced it (H3).
+        # A secret name can be spelled secrets.X or secrets['X'].
+        old = re.compile(r"secrets\s*(?:\.\s*KERNEL_READ\b|\[\s*['\"]KERNEL_READ['\"]\s*\])")
+        for name in sorted(os.listdir(SecretsOnlyOnMain.WORKFLOWS)):
+            with open(os.path.join(SecretsOnlyOnMain.WORKFLOWS, name)) as f:
+                self.assertIsNone(old.search(f.read()), name)
+        for spelled in ("${{ secrets.KERNEL_READ }}", "${{ secrets['KERNEL_READ'] }}", '${{ secrets [ "KERNEL_READ" ] }}'):
+            self.assertIsNotNone(old.search(spelled), spelled)
+        self.assertIsNone(old.search("KERNEL_READ: ${{ secrets.KERNEL_SOURCE }}"))
+        self.assertIsNone(old.search("${{ secrets.KERNEL_READER }}"))
+
+    def test_the_check_catches_a_writing_key_beside_kernel_code(self):
+        job = "on: push\njobs:\n  coverage:\n    runs-on: x\n    steps:\n      - run: .github/scripts/kernel_ci.sh run a d k/ci/x.sh\n"
+        self.assertEqual(self.problems("kernel-ci.yml", job), [])
+        bad = job + "      - env:\n          K: ${{ secrets.RESULTS_WRITE }}\n"
+        self.assertEqual(self.problems("kernel-ci.yml", bad), ["kernel-ci.yml coverage: runs kernel code beside RESULTS_WRITE"])
+        ok = job + "      - env:\n          K: ${{ secrets.KERNEL_SOURCE }}\n"
+        self.assertEqual(self.problems("kernel-ci.yml", ok), [])
+
+
 class LabelCheck(unittest.TestCase):
     """kernel-ci.yml's input check accepts the kernel repo's merge queue's
     label train-<number> beside pr-<number> and main, and nothing looser
@@ -732,7 +963,8 @@ class LabelCheck(unittest.TestCase):
         path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "workflows", "kernel-ci.yml")
         with open(path) as f:
             found = re.findall(r"\$LABEL =~ \^(\([^)]*\))\$", f.read())
-        self.assertEqual(len(found), 2, "both input checks")
+        # keys, checks-plan, checks and the three jobs that hold RESULTS_WRITE and KERNEL_STATUS
+        self.assertEqual(len(found), 6, "every job that uses the label has the input check")
         return found
 
     def test_accepted_and_refused(self):

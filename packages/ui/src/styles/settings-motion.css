@@ -1,0 +1,4 @@
+/* Settings > General: the home screen background's choice (settings.ts motionBlock) and the chosen one's sentence. */
+.settings-motion { display: flex; flex-direction: column; gap: var(--look-space-2); }
+.settings-motion .settings-row { flex-wrap: wrap; }
+.settings-motion p { margin: 0; font-size: 13px; color: var(--text-dim); }

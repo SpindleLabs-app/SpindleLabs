@@ -13,6 +13,11 @@ name: Kernel random testing
 # first; the whole kernel no longer fits in one night, so each night carries
 # on where the last stopped and a new cycle starts when every mutant has been
 # tested). Every job is cut off at 22:35 UTC however late it started.
+# Once a week (the night starting on a Saturday, UTC) 12 more jobs run every
+# planted bug of the kernel's ci/plants.json (each must still be caught by
+# its test); a pull request runs only the plants its changed files choose,
+# so a change that loses a catch some other way is found within a week
+# (test audit E-2, 2026-11-18). `plants` runs them by hand on any branch.
 #
 # Round the clock (Ben, 2026-11-09): while .github/scripts/round_the_clock.txt
 # on main says `on`, the clock also starts daytime runs (`day`) between
@@ -41,9 +46,23 @@ name: Kernel random testing
 # collect-results.sh (log.csv, summary.txt, failures/<seed>/, mutants/) and
 # files one issue per kind of problem there (file_issues.py).
 #
-# Secrets: KERNEL_READ (kernel: contents read-only, statuses read-write) and
-# RESULTS_WRITE (kernel-results: contents and issues read-write), as for
-# kernel-ci.yml; only this repo's own branches' workflows see them.
+# Secrets, in the main-only "kernel" environment: KERNEL_SOURCE (kernel:
+# contents read-only) and RESULTS_WRITE (kernel-results: contents and issues
+# read-write), as for kernel-ci.yml. The jobs are split like kernel-ci.yml's
+# (security hunt H3: code a job runs can change what its later steps run and
+# read the keys they hold):
+#   plan: holds RESULTS_WRITE, runs no kernel code: picks the commit, makes
+#     this run's key pair (the private half only in kernel-results), and hands
+#     the mutation rotation's state on as done units' hashed ids only.
+#   test, test-second-leg, mutants: run the kernel's code holding only
+#     KERNEL_SOURCE (read-only on the kernel, which that code can read anyway)
+#     and the run's own read-only token, seal their files with the public key
+#     and upload them: an encrypted artifact, 1 day.
+#   collect: holds RESULTS_WRITE, never runs kernel code: opens the artifacts
+#     (HMAC checked, then files and folders only), saves them to
+#     kernel-results and adds them to test-results.
+# A job that was itself compromised can still lie about its own files and
+# result; it can't reach a writing key or another job's files.
 run-name: ${{ inputs.night && 'Kernel random testing, nightly' || inputs.day && 'Kernel random testing, daytime' || format('Kernel random testing on {0}', inputs.ref) }}
 
 on:
@@ -68,6 +87,10 @@ on:
         default: "290"
       mutants:
         description: "Also run the next slice of the whole-kernel mutation rotation (main only)"
+        type: boolean
+        default: false
+      plants:
+        description: "Also run every planted bug (ci/plants.json; the night does on Saturdays)"
         type: boolean
         default: false
 
@@ -120,21 +143,26 @@ jobs:
     if: needs.idle.outputs.go == 'true'
     runs-on: ubuntu-latest
     environment: kernel
-    timeout-minutes: 5
+    timeout-minutes: 10
     outputs:
       sha: ${{ steps.plan.outputs.sha }}
+      public: ${{ steps.keys.outputs.public }}
+      key_folder: ${{ steps.keys.outputs.folder }}
+      rotation: ${{ steps.rotation.outputs.done }}
       deadline: ${{ steps.plan.outputs.deadline }}
       mutants_deadline: ${{ steps.plan.outputs.mutants_deadline }}
       jobs: ${{ steps.plan.outputs.jobs }}
       second_leg: ${{ steps.plan.outputs.second_leg }}
       shards: ${{ steps.plan.outputs.shards }}
+      plants: ${{ steps.plan.outputs.plants }}
     steps:
       - id: plan
         env:
           NIGHTLY: ${{ env.NIGHT }}
           MINUTES: ${{ inputs.minutes || '290' }}
           MUTANTS: ${{ inputs.mutants }}
-          KERNEL_READ: ${{ secrets.KERNEL_READ }}
+          PLANTS: ${{ inputs.plants }}
+          KERNEL_READ: ${{ secrets.KERNEL_SOURCE }}
         run: |
           case $MINUTES in ""|*[!0-9]*) echo "minutes must be a whole number"; exit 1;; esac
           [[ $REF =~ ^[A-Za-z0-9._][A-Za-z0-9._/-]*$ ]] || { echo "bad branch name"; exit 1; }
@@ -179,10 +207,15 @@ jobs:
           # leg runs when the first can't reach the deadline.
           second_leg=false
           [ $(( deadline - now )) -gt $(( 330 * 60 )) ] && second_leg=true
+          # Every planted bug: weekly on the night starting on a Saturday
+          # (UTC), or when asked (not in the daytime runs).
+          plants=0
+          if [ "$NIGHTLY" = true ] && [ "$(date -u +%u)" = 6 ]; then plants=12; fi
+          if [ "$NIGHTLY" != true ] && [ "$DAY" != true ] && [ "$PLANTS" = true ]; then plants=12; fi
           # Mutation shards: at most 330 minutes, and never past the night's deadline.
           mutants_deadline=$(( now + 330 * 60 ))
           [ "$NIGHTLY" = true ] && [ $deadline -lt $mutants_deadline ] && mutants_deadline=$deadline
-          echo "Testing kernel $REF at $sha until $(date -u -d "@$deadline" '+%F %H:%M UTC'); second leg: $second_leg; mutation shards: $shards"
+          echo "Testing kernel $REF at $sha until $(date -u -d "@$deadline" '+%F %H:%M UTC'); second leg: $second_leg; mutation shards: $shards; plant shards: $plants"
           {
             echo "sha=$sha"
             echo "deadline=$deadline"
@@ -190,7 +223,42 @@ jobs:
             echo "jobs=$jobs"
             echo "second_leg=$second_leg"
             echo "shards=$(if [ $shards -gt 0 ]; then seq -s, 0 $((shards - 1)) | sed 's/.*/[&]/'; else echo '[]'; fi)"
+            echo "plants=$(if [ $plants -gt 0 ]; then seq -s, 0 $((plants - 1)) | sed 's/.*/[&]/'; else echo '[]'; fi)"
           } >>"$GITHUB_OUTPUT"
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          sparse-checkout: .github/scripts
+          persist-credentials: false
+      - name: A key pair for this run (the private half only in kernel-results)
+        id: keys
+        env:
+          RESULTS_WRITE: ${{ secrets.RESULTS_WRITE }}
+        run: |
+          .github/scripts/kernel_ci.sh keygen "$RUNNER_TEMP/keys"
+          mkdir -p "$RUNNER_TEMP/private"
+          mv "$RUNNER_TEMP/keys/private.pem" "$RUNNER_TEMP/private/"
+          folder="seal/$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT"
+          RESULTS_PATH="$folder" .github/scripts/kernel_ci.sh save key "$RUNNER_TEMP/private"
+          echo "public=$(base64 -w0 "$RUNNER_TEMP/keys/public.pem")" >> "$GITHUB_OUTPUT"
+          echo "folder=$folder/key" >> "$GITHUB_OUTPUT"
+      # mutants/rotation.json on test-results: which units this cycle still
+      # has to test (none yet: the first cycle starts). The mutants jobs hold
+      # no key to kernel-results, so they get only the cycle and its done
+      # units' ids, hashed (mutant_rotation.py done): no kernel file's name.
+      # A failed fetch stops the run's mutants: without the state they would
+      # redo cycle 1.
+      - name: The rotation's state, for the mutants jobs (quietly)
+        id: rotation
+        if: steps.plan.outputs.shards != '[]'
+        env:
+          RESULTS_WRITE: ${{ secrets.RESULTS_WRITE }}
+        run: |
+          git clone -q --depth 1 --branch test-results --filter=blob:none --sparse \
+            "https://x-access-token:$RESULTS_WRITE@github.com/SpindleLabs-app/kernel-results.git" "$RUNNER_TEMP/r" >/dev/null 2>&1 &&
+            git -C "$RUNNER_TEMP/r" sparse-checkout set mutants >/dev/null 2>&1 || { echo "could not fetch the rotation's state"; exit 1; }
+          if [ -f "$RUNNER_TEMP/r/mutants/rotation.json" ]; then echo "state found"; else echo "no state yet"; fi
+          done=$(python3 .github/scripts/mutant_rotation.py done --state "$RUNNER_TEMP/r/mutants/rotation.json" --salt "$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT")
+          echo "done=$done" >> "$GITHUB_OUTPUT"
 
   test:
     needs: plan
@@ -211,7 +279,7 @@ jobs:
           persist-credentials: false
       - name: Check out the kernel (quietly, the log is public)
         env:
-          KERNEL_READ: ${{ secrets.KERNEL_READ }}
+          KERNEL_READ: ${{ secrets.KERNEL_SOURCE }}
           REF: ${{ needs.plan.outputs.sha }}
         run: .github/scripts/kernel_ci.sh checkout k "$REF"
       - uses: dtolnay/rust-toolchain@b725eda525362e7cf34af9a7243cac1e3f01a7ec # stable
@@ -219,16 +287,17 @@ jobs:
         with:
           python-version: "3.12"
       - run: pip install -q --require-hashes -r "$GITHUB_WORKSPACE/.github/scripts/oracle-requirements.txt" >/dev/null 2>&1
-      # The watcher that stops the rounds when CI wants the runner has the
-      # keys, so it starts in its own step, before any kernel code runs, and
-      # the rounds' step has no key in its environment (a step's environment
+      # The watcher that stops the rounds when CI wants the runner holds two
+      # read-only keys (the run's token, actions: read, and KERNEL_SOURCE), so
+      # it starts in its own step, before any kernel code runs, and the
+      # rounds' step has no key in its environment (a step's environment
       # reaches every program the kernel's build starts: security hunt H2).
       # It keeps running after this step ends, until the job does.
       - name: Watch for the runner to be wanted (stop-on-merge.sh)
         env:
           FISSION_ENDLESS_STOP_FILE: ${{ runner.temp }}/stop-random-testing
           GH_TOKEN: ${{ github.token }}
-          KERNEL_READ: ${{ secrets.KERNEL_READ }}
+          KERNEL_READ: ${{ secrets.KERNEL_SOURCE }}
           KERNEL_REPO: SpindleLabs-app/kernel
           TESTING_WORKFLOW: kernel-nightly.yml
         run: |
@@ -246,25 +315,27 @@ jobs:
           .github/scripts/kernel_ci.sh run rounds "$RUNNER_TEMP/out" k/kernel/scripts/run-until.sh "$DEADLINE" || code=$?
           cp "$RUNNER_TEMP/watcher.log" "$RUNNER_TEMP/out/" 2>/dev/null || true
           exit $code
-      # The kernel's result files are gathered by a step with no key; the
-      # step that saves them holds the key and never names the kernel's files.
-      - name: Gather the kernel's result files
-        if: always()
-        run: |
-          mkdir -p "$RUNNER_TEMP/out"
-          cp -R k/kernel/endless-results/. "$RUNNER_TEMP/out/" 2>/dev/null || true
-      - name: Save the results to kernel-results
+      # The kernel's result files and this leg's own result (the job's is
+      # one for every leg: file_issues.py counts a leg that passed as clean
+      # beside one that failed), sealed so only collect opens them.
+      - name: Seal the results (only collect can open them)
         if: always()
         env:
-          RESULTS_WRITE: ${{ secrets.RESULTS_WRITE }}
-          RESULTS_PATH: runs/${{ github.run_id }}-${{ github.run_attempt }}
-          # This leg's own result (the job's is one for every leg): file_issues.py
-          # counts a leg that passed as clean beside one that failed.
+          PUBLIC: ${{ needs.plan.outputs.public }}
           JOB_STATUS: ${{ job.status }}
         run: |
           mkdir -p "$RUNNER_TEMP/out"
+          cp -R k/kernel/endless-results/. "$RUNNER_TEMP/out/" 2>/dev/null || true
           echo "$JOB_STATUS" >"$RUNNER_TEMP/out/job-status.txt"
-          .github/scripts/kernel_ci.sh save endless-a-${{ matrix.job }} "$RUNNER_TEMP/out"
+          printf %s "$PUBLIC" | base64 -d > "$RUNNER_TEMP/public.pem"
+          .github/scripts/kernel_ci.sh seal "$RUNNER_TEMP/out" "$RUNNER_TEMP/sealed" "$RUNNER_TEMP/public.pem"
+      - name: Hand the sealed results on
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: sealed-endless-a-${{ matrix.job }}
+          path: ${{ runner.temp }}/sealed
+          retention-days: 1
 
   test-second-leg:
     needs: [plan, test]
@@ -285,7 +356,7 @@ jobs:
           persist-credentials: false
       - name: Check out the kernel (quietly, the log is public)
         env:
-          KERNEL_READ: ${{ secrets.KERNEL_READ }}
+          KERNEL_READ: ${{ secrets.KERNEL_SOURCE }}
           REF: ${{ needs.plan.outputs.sha }}
         run: .github/scripts/kernel_ci.sh checkout k "$REF"
       - uses: dtolnay/rust-toolchain@b725eda525362e7cf34af9a7243cac1e3f01a7ec # stable
@@ -293,16 +364,17 @@ jobs:
         with:
           python-version: "3.12"
       - run: pip install -q --require-hashes -r "$GITHUB_WORKSPACE/.github/scripts/oracle-requirements.txt" >/dev/null 2>&1
-      # The watcher that stops the rounds when CI wants the runner has the
-      # keys, so it starts in its own step, before any kernel code runs, and
-      # the rounds' step has no key in its environment (a step's environment
+      # The watcher that stops the rounds when CI wants the runner holds two
+      # read-only keys (the run's token, actions: read, and KERNEL_SOURCE), so
+      # it starts in its own step, before any kernel code runs, and the
+      # rounds' step has no key in its environment (a step's environment
       # reaches every program the kernel's build starts: security hunt H2).
       # It keeps running after this step ends, until the job does.
       - name: Watch for the runner to be wanted (stop-on-merge.sh)
         env:
           FISSION_ENDLESS_STOP_FILE: ${{ runner.temp }}/stop-random-testing
           GH_TOKEN: ${{ github.token }}
-          KERNEL_READ: ${{ secrets.KERNEL_READ }}
+          KERNEL_READ: ${{ secrets.KERNEL_SOURCE }}
           KERNEL_REPO: SpindleLabs-app/kernel
           TESTING_WORKFLOW: kernel-nightly.yml
         run: |
@@ -320,25 +392,27 @@ jobs:
           .github/scripts/kernel_ci.sh run rounds "$RUNNER_TEMP/out" k/kernel/scripts/run-until.sh "$DEADLINE" || code=$?
           cp "$RUNNER_TEMP/watcher.log" "$RUNNER_TEMP/out/" 2>/dev/null || true
           exit $code
-      # The kernel's result files are gathered by a step with no key; the
-      # step that saves them holds the key and never names the kernel's files.
-      - name: Gather the kernel's result files
-        if: always()
-        run: |
-          mkdir -p "$RUNNER_TEMP/out"
-          cp -R k/kernel/endless-results/. "$RUNNER_TEMP/out/" 2>/dev/null || true
-      - name: Save the results to kernel-results
+      # The kernel's result files and this leg's own result (the job's is
+      # one for every leg: file_issues.py counts a leg that passed as clean
+      # beside one that failed), sealed so only collect opens them.
+      - name: Seal the results (only collect can open them)
         if: always()
         env:
-          RESULTS_WRITE: ${{ secrets.RESULTS_WRITE }}
-          RESULTS_PATH: runs/${{ github.run_id }}-${{ github.run_attempt }}
-          # This leg's own result (the job's is one for every leg): file_issues.py
-          # counts a leg that passed as clean beside one that failed.
+          PUBLIC: ${{ needs.plan.outputs.public }}
           JOB_STATUS: ${{ job.status }}
         run: |
           mkdir -p "$RUNNER_TEMP/out"
+          cp -R k/kernel/endless-results/. "$RUNNER_TEMP/out/" 2>/dev/null || true
           echo "$JOB_STATUS" >"$RUNNER_TEMP/out/job-status.txt"
-          .github/scripts/kernel_ci.sh save endless-b-${{ matrix.job }} "$RUNNER_TEMP/out"
+          printf %s "$PUBLIC" | base64 -d > "$RUNNER_TEMP/public.pem"
+          .github/scripts/kernel_ci.sh seal "$RUNNER_TEMP/out" "$RUNNER_TEMP/sealed" "$RUNNER_TEMP/public.pem"
+      - name: Hand the sealed results on
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: sealed-endless-b-${{ matrix.job }}
+          path: ${{ runner.temp }}/sealed
+          retention-days: 1
 
   mutants:
     needs: plan
@@ -357,24 +431,19 @@ jobs:
           persist-credentials: false
       - name: Check out the kernel (quietly, the log is public)
         env:
-          KERNEL_READ: ${{ secrets.KERNEL_READ }}
+          KERNEL_READ: ${{ secrets.KERNEL_SOURCE }}
           REF: ${{ needs.plan.outputs.sha }}
         run: .github/scripts/kernel_ci.sh checkout k "$REF"
       - uses: dtolnay/rust-toolchain@b725eda525362e7cf34af9a7243cac1e3f01a7ec # stable
       - uses: taiki-e/install-action@a4d3f3f761dcd95cce1b72cb61cb6d1963438177 # v2.87.30
         with:
           tool: cargo-mutants@27.1.0
-      - name: Fetch the rotation's state from kernel-results (quietly)
+      - name: The rotation's state, as plan handed it on (done units' hashed ids)
         env:
-          RESULTS_WRITE: ${{ secrets.RESULTS_WRITE }}
+          ROTATION: ${{ needs.plan.outputs.rotation }}
         run: |
-          # mutants/rotation.json on test-results: which units this cycle
-          # still has to test (none yet: the first cycle starts). A failed
-          # fetch stops the job: without the state it would redo cycle 1.
-          git clone -q --depth 1 --branch test-results --filter=blob:none --sparse \
-            "https://x-access-token:$RESULTS_WRITE@github.com/SpindleLabs-app/kernel-results.git" "$RUNNER_TEMP/r" >/dev/null 2>&1 &&
-            git -C "$RUNNER_TEMP/r" sparse-checkout set mutants >/dev/null 2>&1 || { echo "could not fetch the rotation's state"; exit 1; }
-          if [ -f "$RUNNER_TEMP/r/mutants/rotation.json" ]; then echo "state found"; else echo "no state yet"; fi
+          [ -n "$ROTATION" ] || { echo "plan handed on no state"; exit 1; }
+          printf %s "$ROTATION" > "$RUNNER_TEMP/done.json"
       - name: Mutation testing, this job's share of the rotation's next units (logs in kernel-results)
         env:
           DEADLINE: ${{ needs.plan.outputs.mutants_deadline }}
@@ -390,7 +459,7 @@ jobs:
           code=0
           # Its output names kernel files: all of it goes to the log in kernel-results.
           .github/scripts/kernel_ci.sh run mutants-shard-$SHARD "$out" bash -c \
-            "cd k/kernel && python3 '$GITHUB_WORKSPACE/.github/scripts/mutant_rotation.py' run --job $SHARD --jobs $SHARDS --deadline $DEADLINE --state '$RUNNER_TEMP/r/mutants/rotation.json' --out '$out' --scratch '$RUNNER_TEMP/scratch'" || code=$?
+            "cd k/kernel && python3 '$GITHUB_WORKSPACE/.github/scripts/mutant_rotation.py' run --job $SHARD --jobs $SHARDS --deadline $DEADLINE --done '$RUNNER_TEMP/done.json' --out '$out' --scratch '$RUNNER_TEMP/scratch'" || code=$?
           echo $code >"$out/exit-code.txt"
           # Counts only (no mutant names): units done, and the mutants caught and missed in them.
           done=0 caught=0 missed=0
@@ -404,29 +473,120 @@ jobs:
           # 4: the unmutated tests failed; anything else but 0: the rotation
           # itself failed. Both make the job red, and collect files an issue.
           exit $code
-      - name: Save the results to kernel-results
+      - name: Seal the results (only collect can open them)
         if: always()
         env:
-          RESULTS_WRITE: ${{ secrets.RESULTS_WRITE }}
-          RESULTS_PATH: runs/${{ github.run_id }}-${{ github.run_attempt }}
+          PUBLIC: ${{ needs.plan.outputs.public }}
           JOB_STATUS: ${{ job.status }}
         run: |
           mkdir -p "$RUNNER_TEMP/out"
           echo "$JOB_STATUS" >"$RUNNER_TEMP/out/job-status.txt"
-          .github/scripts/kernel_ci.sh save mutants-${{ matrix.shard }} "$RUNNER_TEMP/out"
+          printf %s "$PUBLIC" | base64 -d > "$RUNNER_TEMP/public.pem"
+          .github/scripts/kernel_ci.sh seal "$RUNNER_TEMP/out" "$RUNNER_TEMP/sealed" "$RUNNER_TEMP/public.pem"
+      - name: Hand the sealed results on
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: sealed-mutants-${{ matrix.shard }}
+          path: ${{ runner.temp }}/sealed
+          retention-days: 1
 
-  collect:
-    needs: [plan, test, test-second-leg, mutants]
-    if: always() && needs.plan.result == 'success'
+  # Every planted bug (the kernel's ci/plants.py), a round-robin share per
+  # job: about 410 plants of 2 to 3 minutes over 12 jobs is under 2 hours.
+  # The verdict lines name kernel code: they go to plants.txt, never this log.
+  plants:
+    needs: plan
+    if: ${{ needs.plan.outputs.plants != '[]' }}
     runs-on: ubuntu-latest
     environment: kernel
-    timeout-minutes: 15
+    timeout-minutes: 350
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: ${{ fromJSON(needs.plan.outputs.plants) }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           sparse-checkout: .github/scripts
           persist-credentials: false
+      - name: Check out the kernel (quietly, the log is public)
+        env:
+          KERNEL_READ: ${{ secrets.KERNEL_SOURCE }}
+          REF: ${{ needs.plan.outputs.sha }}
+        run: .github/scripts/kernel_ci.sh checkout k "$REF"
+      - uses: dtolnay/rust-toolchain@b725eda525362e7cf34af9a7243cac1e3f01a7ec # stable
+      - name: This job's share of the planted bugs (verdicts in kernel-results)
+        env:
+          SHARD: ${{ matrix.shard }}
+          SHARDS: ${{ strategy.job-total }}
+          CARGO_INCREMENTAL: "0"
+        run: |
+          out="$RUNNER_TEMP/out"
+          mkdir -p "$out"
+          code=0
+          .github/scripts/kernel_ci.sh run plants "$out" bash -c \
+            "cd k && python3 ci/plants.py --shard $SHARD/$SHARDS --log '$out/plants-detail.log' >'$out/plants.txt'" || code=$?
+          echo $code >"$out/exit-code.txt"
+          exit $code
+      - name: Seal the results (only collect can open them)
+        if: always()
+        env:
+          PUBLIC: ${{ needs.plan.outputs.public }}
+          JOB_STATUS: ${{ job.status }}
+        run: |
+          mkdir -p "$RUNNER_TEMP/out"
+          echo "$JOB_STATUS" >"$RUNNER_TEMP/out/job-status.txt"
+          printf %s "$PUBLIC" | base64 -d > "$RUNNER_TEMP/public.pem"
+          .github/scripts/kernel_ci.sh seal "$RUNNER_TEMP/out" "$RUNNER_TEMP/sealed" "$RUNNER_TEMP/public.pem"
+      - name: Hand the sealed results on
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: sealed-plants-${{ matrix.shard }}
+          path: ${{ runner.temp }}/sealed
+          retention-days: 1
+
+  collect:
+    needs: [plan, test, test-second-leg, mutants, plants]
+    if: always() && needs.plan.result == 'success'
+    runs-on: ubuntu-latest
+    environment: kernel
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          sparse-checkout: .github/scripts
+          persist-credentials: false
+      # The jobs that ran the kernel's code hold no key to kernel-results:
+      # their sealed results are opened here (untrusted data: HMAC checked,
+      # files and folders only) and saved in one push to runs/<run>-<attempt>/,
+      # where the next step reads them. One that can't be opened is named and
+      # left out; its job's red result still files an issue.
+      - name: Take the sealed results
+        continue-on-error: true
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          pattern: sealed-*
+          path: ${{ runner.temp }}/sealed
+      - name: Open them and save them to kernel-results
+        env:
+          RESULTS_WRITE: ${{ secrets.RESULTS_WRITE }}
+          KEY_FOLDER: ${{ needs.plan.outputs.key_folder }}
+          RUN: ${{ github.run_id }}-${{ github.run_attempt }}
+        run: |
+          ci=.github/scripts/kernel_ci.sh
+          out="$RUNNER_TEMP/opened"
+          mkdir -p "$out" "$RUNNER_TEMP/sealed"
+          code=0
+          $ci fetch "$KEY_FOLDER" "$RUNNER_TEMP/private" || exit 1
+          $ci open-sealed "$RUNNER_TEMP/sealed" "$RUNNER_TEMP/private/private.pem" "$out" || code=1
+          rm -rf "$RUNNER_TEMP/private"
+          if [ -n "$(ls -A "$out")" ]; then RESULTS_PATH=runs $ci save "$RUN" "$out" || code=1; else echo "no results to save"; fi
+          exit $code
+      # Even when a folder could not be opened or saved: the rest still count,
+      # and a red job without its folder files an issue.
       - name: Add this run to kernel-results' test-results branch and file issues there
+        if: ${{ !cancelled() }}
         env:
           RESULTS_WRITE: ${{ secrets.RESULTS_WRITE }}
           GH_TOKEN: ${{ secrets.RESULTS_WRITE }}
@@ -436,7 +596,7 @@ jobs:
           COMMIT: ${{ needs.plan.outputs.sha }}
           # The tested code's repository: a closed issue seen again on code older than its closing is not reopened (file_issues.py).
           CODE_REPO: SpindleLabs-app/kernel
-          CODE_TOKEN: ${{ secrets.KERNEL_READ }}
+          CODE_TOKEN: ${{ secrets.KERNEL_SOURCE }}
           RUN: ${{ github.run_id }}-${{ github.run_attempt }}
           # Each job's result: a red one with no failure folder files an issue too.
           JOBS: ${{ toJSON(needs) }}
@@ -444,9 +604,10 @@ jobs:
           export BRANCH=$REF
           r="$RUNNER_TEMP/results"
           git clone -q "https://x-access-token:$RESULTS_WRITE@github.com/SpindleLabs-app/kernel-results.git" "$r" 2>/dev/null
-          # Copied out first: collect-results.sh switches the clone to test-results.
-          export IN="$RUNNER_TEMP/incoming"
-          cp -R "$r/runs/$RUN" "$IN" 2>/dev/null || mkdir -p "$IN"
+          # The folders opened above (the same as runs/$RUN, saved from them),
+          # outside the clone: collect-results.sh switches it to test-results.
+          export IN="$RUNNER_TEMP/opened"
+          mkdir -p "$IN"
           cp .github/scripts/collect-results.sh .github/scripts/mutant_rotation.py .github/scripts/file_issues.py .github/scripts/dump_pictures.sh .github/scripts/coverage_issue.py "$RUNNER_TEMP/"
           # The summary and issue text name kernel tests: only into the private repo, never this log.
           cd "$r" && GITHUB_STEP_SUMMARY='' "$GITHUB_WORKSPACE/.github/scripts/kernel_ci.sh" run collect "$RUNNER_TEMP/logs" bash "$RUNNER_TEMP/collect-results.sh"
@@ -475,7 +636,8 @@ jobs:
           persist-credentials: false
       - name: The engine's keys have more than three weeks left
         env:
-          KERNEL_READ: ${{ secrets.KERNEL_READ }}
+          KERNEL_SOURCE: ${{ secrets.KERNEL_SOURCE }}
+          KERNEL_STATUS: ${{ secrets.KERNEL_STATUS }}
           RESULTS_WRITE: ${{ secrets.RESULTS_WRITE }}
           GH_TOKEN: ${{ github.token }}
-        run: python3 .github/scripts/token_expiry.py KERNEL_READ RESULTS_WRITE
+        run: python3 .github/scripts/token_expiry.py KERNEL_SOURCE KERNEL_STATUS RESULTS_WRITE

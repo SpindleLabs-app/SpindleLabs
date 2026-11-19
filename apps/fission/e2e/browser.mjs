@@ -26,6 +26,67 @@ export async function untilBodies(page, n, what = `${n} bodies in the kernel`, t
   }
 }
 
+/**
+ * Errors seen on the pages and contexts given to `watchErrors` (test audit 2026-11-18 E-7: several checks collected page
+ * errors and never read them, or never listened at all, so an uncaught exception after the feature had done its visible
+ * part passed). Each entry names its kind: an uncaught exception or unhandled rejection, a console.error, a request
+ * that failed (one aborted by a navigation or a closed page, net::ERR_ABORTED, is not an error).
+ */
+const watched = [];
+/**
+ * Records every error of `target` (a page, or a context: each of its pages, now and later) less the ones `allow` names
+ * (strings found in the text, or RegExps), which a check causes on purpose. Returns `target`. Every file that calls it
+ * calls `assertNoErrors()` once its checks are done (e2e/checks.test.mjs holds them to it).
+ */
+export function watchErrors(target, allow = []) {
+  const allowed = (text) => allow.some((a) => (a instanceof RegExp ? a.test(text) : text.includes(a)));
+  const note = (kind, text) => !allowed(text) && watched.push(`${kind}: ${text}`);
+  const page = (p) => {
+    p.on("pageerror", (e) => note("uncaught", process.env.STACKS ? (e.stack ?? e.message) : e.message));
+    p.on("console", (m) => m.type() === "error" && note("console.error", m.text()));
+    p.on("requestfailed", (r) => {
+      const why = r.failure()?.errorText ?? "";
+      if (!/ERR_ABORTED|NS_BINDING_ABORTED|cancelled/i.test(why)) note("request failed", `${r.url()} ${why}`);
+    });
+  };
+  if (typeof target.newPage === "function") {
+    for (const p of target.pages()) page(p);
+    target.on("page", page);
+  } else page(target);
+  return target;
+}
+/** Every error `watchErrors` recorded so far (a copy). */
+export const errorsSeen = () => [...watched];
+/** Fails, listing them, if `watchErrors` recorded any error; then starts afresh. */
+export function assertNoErrors(what = "no page errors, console errors or failed requests") {
+  const seen = watched.splice(0);
+  if (seen.length) throw new Error(`${what}, but ${seen.length}:\n  ${seen.join("\n  ")}`);
+}
+
+/** Checks chosen under ONLY so far in this file. */
+let chosenCount = 0;
+let onlyArmed = false;
+/**
+ * Whether the check `name` runs: always, unless ONLY is set, then when `match(ONLY, name)` (by default, its name holds
+ * ONLY). With ONLY set, a file in which no check was chosen fails as it exits ("ONLY matched nothing"), so a stray ONLY
+ * (an env file, a matrix variable) never runs zero checks and reads "all passed" (test audit 2026-11-18 E-11).
+ */
+export function chosen(name, match = (only, n) => n.includes(only)) {
+  const only = process.env.ONLY;
+  if (!only) return true;
+  if (!onlyArmed) {
+    onlyArmed = true;
+    process.on("exit", () => {
+      if (chosenCount > 0) return;
+      console.log(`not ok - ONLY=${JSON.stringify(only)} matched no check in this file: nothing was tested`);
+      process.exitCode = 1;
+    });
+  }
+  const yes = Boolean(match(only, name));
+  if (yes) chosenCount++;
+  return yes;
+}
+
 /** Launches the chosen browser; `args`, command-line switches for Chromium (e2e/kernel-restart.mjs caps WebAssembly memory). */
 export function launch(args = []) {
   // E2E_CHROMIUM runs the Chromium checks on another build, for example CI's

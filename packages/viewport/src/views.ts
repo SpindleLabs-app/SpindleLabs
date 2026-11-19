@@ -72,6 +72,21 @@ export function viewBasis(name: ViewName, framing: Framing, fovDeg = 45, aspect 
 }
 
 /**
+ * Fit: the camera for framing a sphere from the direction the camera already looks from. The target moves to the
+ * sphere's centre and the camera to `fitDistance` away along `towardCamera` (current position minus current target;
+ * not normalised), so the viewing angle is unchanged and only the pan and zoom change. A zero direction has no angle
+ * to keep, so it falls back to the home view's.
+ */
+export function keepAngleBasis(towardCamera: readonly number[], framing: Framing, fovDeg = 45, aspect = 1): { position: Vec3; target: Vec3 } {
+  const n = Math.hypot(towardCamera[0], towardCamera[1], towardCamera[2]);
+  const d = n > 0 && Number.isFinite(n) ? towardCamera : VIEWS.home.towardCamera;
+  const m = Math.hypot(d[0], d[1], d[2]);
+  const dist = fitDistance(framing.radius, fovDeg, aspect);
+  const target: Vec3 = [...framing.centre];
+  return { position: target.map((c, i) => c + (d[i] / m) * dist) as Vec3, target };
+}
+
+/**
  * Look At: the camera square onto a plane, on the side its normal points
  * to (`side` +1) or the other (−1: a sketch on a back or bottom face, whose
  * frame keeps the world's axes so its normal points into the body; step

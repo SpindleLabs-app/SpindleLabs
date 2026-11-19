@@ -10,6 +10,7 @@
 import type { Plane, StableId, ViewportPick } from "@fission/core";
 import { faceHolds, type FaceNames } from "./boolean-names.ts";
 import { SKETCH_PLANES, type SketchPlane } from "./document.ts";
+import { constructPlaneItem } from "./construct-data.ts";
 import { carried, drawnOnFace, faceFeature, worldFrame, type SketchPlacement } from "./face-sketch.ts";
 import { originFrameNow, shownFrame } from "./built-body.ts";
 import { findInScene, sceneHit, shownReference, type Scene } from "./scene.ts";
@@ -23,6 +24,7 @@ export const UNNAMED_FACE = "This face has no name of its own (another face shar
 /** Where a click puts the new sketch: an origin plane, a flat face (its name, its feature and the frame it is drawn with), or nowhere with the words why. */
 export type SketchSpot =
   | { kind: "plane"; plane: SketchPlane }
+  | { kind: "construct"; item: string }
   | { kind: "face"; face: { plane: string; feature: string; reversed: boolean }; drawn: SketchPlacement }
   | { kind: "refused"; message: string };
 
@@ -35,7 +37,12 @@ export type SketchSpot =
  * plane that is not an origin plane, a face of no body on screen).
  */
 export function sketchSpot(pick: ViewportPick, scene: Scene | null): SketchSpot | null {
-  if (pick.plane != null) return (SKETCH_PLANES as readonly string[]).includes(pick.plane) ? { kind: "plane", plane: pick.plane as SketchPlane } : null;
+  if (pick.plane != null) {
+    // 59a3: a construction plane offered by its name ("construct:feature-7", workspace.ts `offeredPlanes`).
+    const item = constructPlaneItem(pick.plane);
+    if (item !== null) return { kind: "construct", item };
+    return (SKETCH_PLANES as readonly string[]).includes(pick.plane) ? { kind: "plane", plane: pick.plane as SketchPlane } : null;
+  }
   if (pick.face === null || scene === null || !Number.isInteger(pick.face) || pick.face < 0) return null;
   const hit = sceneHit(scene, "face", pick.face);
   if (hit === null) return null;

@@ -417,8 +417,8 @@ const PLANTS = [
   { name: "note-hidden", find: '      note = [droppedNote(dropped, shared, selectedSketches), followedNote(followed)].filter((x) => x !== "").join(" ");', replace: '      note = "";', caught: "without the note naming it" },
   {
     name: "highlight-first-only",
-    find: "    viewport.showSelection(highlightOf(items, lastScene));",
-    replace: "    viewport.showSelection(highlightOf(items.slice(0, 1), lastScene));",
+    find: "    viewport.showSelection(shellDrawn !== null ? NO_HIGHLIGHT : highlightOf(items, lastScene));",
+    replace: "    viewport.showSelection(shellDrawn !== null ? NO_HIGHLIGHT : highlightOf(items.slice(0, 1), lastScene));",
     caught: "the highlight",
   },
 ];

@@ -18,6 +18,7 @@ import { sketchItem } from "./sketch.ts";
 import { lengthRefused } from "./typed-entry.ts";
 import type { RegionRef } from "./regions.ts";
 import { centredSpec, isSymmetricParams } from "./extrude-symmetric.ts";
+import { isThroughParams, THROUGH_NO_SYMMETRIC, THROUGH_ONLY_CUT } from "./extrude-through.ts";
 import { extrudeSketches, hasMoreProfiles, MORE_PROFILES_LIMIT, moreProfiles, sameProfile, type ProfileRef } from "./extrude-profiles.ts";
 
 /**
@@ -49,7 +50,13 @@ export const extrudeStep = (doc: DesignDocument, sketchId: string) => `Extrude $
 /** The undo step a typed distance is recorded as, merged per box like the other sizes. */
 export const DISTANCE_STEP = "Change extrude distance";
 
-const summary = (sketchLabel: string, distance: number, flip: boolean, f: Feature) => `Extrude ${sketchLabel}${profilesWords(f)} by ${distance} mm${flip ? ", flipped" : ""}${isSymmetric(f) ? ", symmetric" : ""}${operationWords(f)}`;
+const summary = (sketchLabel: string, distance: number, flip: boolean, f: Feature) => `Extrude ${sketchLabel}${profilesWords(f)} ${isThrough(f) ? "through all" : `by ${distance} mm`}${flip ? ", flipped" : ""}${isSymmetric(f) ? ", symmetric" : ""}${operationWords(f)}`;
+
+/** An extrude of a sketch's summary from its parameters, its sketch named as its provenance names it (rename, SL #819). */
+export const extrudeSummaryOf = (f: Feature): string => {
+  const sketch = f.intent.parameters.sketch as string;
+  return summary(f.provenance.from.find((p) => p.id === sketch)?.label ?? sketch, f.intent.parameters.distance as number, isFlipped(f), f);
+};
 
 /** After the first sketch's name in an extrude's summary, its other profiles (version 18): " and 2 more profiles"; nothing for one profile. */
 function profilesWords(f: Feature): string {
@@ -128,7 +135,10 @@ function makersFor(doc: DesignDocument, bodies: readonly string[], end: number, 
 
 /** An extrude's parameters, dependencies and provenance with `choice` (null: a new body), for sketch `sketchId` named `label`. */
 function withOperation(base: Feature, sketchId: string, label: string, choice: OperationChoice | null, makers: readonly Feature[]): Feature {
-  const { operation: _o, bodies: _b, ...rest } = base.intent.parameters;
+  // Through all (version 23) stays only on a Cut or Intersect: a new body or a Join has nothing to go through.
+  const { operation: _o, bodies: _b, ...kept } = base.intent.parameters;
+  const { through: _t, ...plain } = kept;
+  const rest = choice === null || choice.operation === "join" ? plain : kept;
   // A new body depends on its sketches only (several with version 18's profiles, `extrudeSketches`).
   const sketches = extrudeSketches(base);
   if (choice === null) return { ...base, intent: { ...base.intent, parameters: rest }, dependsOn: sketches, provenance: { ...base.provenance, from: base.provenance.from.filter((x) => sketches.includes(x.id)) } };
@@ -146,6 +156,34 @@ export const isFlipped = (f: Feature): boolean => f.intent.parameters.flip === t
 export const isSymmetric = (f: Feature): boolean => isSymmetricParams(f.intent.parameters);
 
 /** Why a symmetric extrude can't be flipped: both ways are the same body. */
+/** Whether an extrude of a sketch goes through all the bodies it cuts or intersects (version 23; Fusion's All). */
+export const isThrough = (f: Feature): boolean => isThroughParams(f.intent.parameters);
+
+/**
+ * The document with extrude `id` of a sketch going through all (`on`) or
+ * by its distance again (version 23). Only a Cut or Intersect goes through
+ * all (`THROUGH_ONLY_CUT`), and never symmetric (`THROUGH_NO_SYMMETRIC`);
+ * its distance is kept, so turning it off gives back the one last typed.
+ * `through` is left out when off. The same document back when it already is.
+ */
+export function setExtrudeThrough(doc: DesignDocument, on: boolean, id: string): DesignDocument {
+  const old = doc.timeline.features.find((f) => f.id === id);
+  if (!old) throw new Error(`there is no feature ${shown(id)} in the design`);
+  if (!isSketchExtrude(old)) throw new Error(`${old.intent.summary} is not an extrude of a sketch`);
+  if (typeof on !== "boolean") throw new Error(`making ${old.provenance.self.label} go through all needs true or false, not ${shown(on)}`);
+  if (isThrough(old) === on) return doc;
+  const op = extrudeOperation(old)?.operation;
+  if (on && op !== "cut" && op !== "intersect") throw new Error(THROUGH_ONLY_CUT);
+  if (on && isSymmetric(old)) throw new Error(THROUGH_NO_SYMMETRIC);
+  const { through: _, ...rest } = old.intent.parameters;
+  const changed: Feature = { ...old, intent: { ...old.intent, parameters: on ? { ...rest, through: true } : rest } };
+  const sketchId = old.intent.parameters.sketch as string;
+  const there = doc.timeline.features.some((f) => f.id === sketchId);
+  const sketchLabel = there ? sketchItem(doc, sketchId).provenance.self.label : (old.provenance.from.find((p) => p.id === sketchId)?.label ?? sketchId);
+  const feature: Feature = { ...changed, intent: { ...changed.intent, summary: summary(sketchLabel, old.intent.parameters.distance as number, isFlipped(old), changed) } };
+  return { ...doc, timeline: { ...doc.timeline, features: doc.timeline.features.map((f) => (f === old ? feature : f)) } };
+}
+
 export const SYMMETRIC_NO_FLIP = "A symmetric extrude goes both ways from its sketch, so it has no Flip: untick Symmetric first.";
 
 /**
@@ -233,6 +271,7 @@ export function setExtrudeSymmetric(doc: DesignDocument, on: boolean, id?: strin
   if (!isSketchExtrude(old)) throw new Error(`${old.intent.summary} is not an extrude of a sketch`);
   if (typeof on !== "boolean") throw new Error(`making ${old.provenance.self.label} symmetric needs true or false, not ${shown(on)}`);
   if (isSymmetric(old) === on) return doc;
+  if (on && isThrough(old)) throw new Error(THROUGH_NO_SYMMETRIC);
   const { flip: _f, symmetric: _s, ...rest } = old.intent.parameters;
   const parameters = on ? { ...rest, symmetric: true } : { ...rest, ...(isFlipped(old) ? { flip: true } : {}) };
   const sketchId = old.intent.parameters.sketch as string;

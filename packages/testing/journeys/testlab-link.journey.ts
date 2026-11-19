@@ -33,6 +33,7 @@ function setUp(start: DesignDocument) {
   const overlays = new Map<string, AnalysisOverlay>();
   let mesh: DisplayMesh | null = null;
   const viewport = {
+    element: el(), // the view's element: TestLab's picking hint goes in it (T5c5a)
     onPick: null as ((p: ViewportPick) => void) | null,
     showBody: (m: DisplayMesh) => void (mesh = m),
     fit: () => null,
@@ -40,7 +41,7 @@ function setUp(start: DesignDocument) {
     clearOverlay: (id: string) => void overlays.delete(id),
   };
   const steps: string[] = [];
-  const ctx = { project, projectChanged: (l?: string) => void steps.push(l ?? "Edit"), graph, changeNotes: notes, toolbar: el(), browser: el(), properties: el(), viewport, representations: registry } as unknown as WorkspaceContext;
+  const ctx = { project, projectChanged: (l?: string) => void steps.push(l ?? "Edit"), graph, changeNotes: notes, toolbar: el(), browser: el(), properties: el(), viewport, representations: registry, kernel } as unknown as WorkspaceContext;
   /** Design's edit, as its workspace records one: the data, then the graph and the notes. */
   const edit = (next: DesignDocument) => {
     const before = project.workspaces.design as DesignDocument;
@@ -102,7 +103,11 @@ test("hand-worked: the box's bottom held and top pushed follow it made 35 high, 
   assert.deepEqual(t.steps, ["Test Body 1", "Make it of PLA", "Hold Bottom face", "Add load", "Push Top face with Load 1", "Change Load 1", "Change Load 1"]);
   assert.match(t.ctx.properties.textContent!, /5 kg hanging \(49\.0 N\) down on 1 face/); // 5 × 9.80665 = 49.03 N
   t.click("[data-testlab=run]");
-  await settle();
+  // Since T5b Run really runs the kernel's stress test: waited on until it has answered (no Cancel left), with a result.
+  const cancel = () => [...t.ctx.properties.querySelectorAll("[data-testlab=cancel]")].length > 0;
+  for (let i = 0; i < 20000 && (cancel() || t.ctx.properties.querySelector(".testlab-results") === null) && t.status() === ""; i++) await new Promise((r) => setTimeout(r, 1));
+  assert.equal(t.status(), "");
+  assert.notEqual(t.ctx.properties.querySelector(".testlab-results"), null, "Run's result shown");
   const node = studyNode("study-1");
   assert.equal(t.graph.isStale(node), false);
 

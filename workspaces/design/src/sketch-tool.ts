@@ -21,7 +21,7 @@
 // with the sketch constraints (29).
 
 import type { Fit } from "@fission/print";
-import type { Feature, Plane, SketchArc, SketchDrawing, SketchXY, OriginPlane, ViewName } from "@fission/core";
+import type { Feature, Plane, SketchArc, SketchDrawing, SketchXY, OriginPlane, Unit, ViewName } from "@fission/core";
 import { greyedItems, sketchHidden, type DesignDocument, type Sketch, type SketchArcCurve, type SketchLineCurve, type SketchPlane } from "./document.ts";
 import { SketchFull } from "./sketch-room.ts";
 import { arcThere, centreClick, centreHover, centrePreview, MIN_CHORD, SAME_ARC, type CentreArcTool } from "./centre-arc.ts";
@@ -711,7 +711,7 @@ export function previewSegments(doc: DesignDocument, tool: SketchTool | null, po
  * the Project tool the viewport is asked which edge or face is under the
  * pointer (`picks`).
  */
-export function sketchDrawings(doc: DesignDocument, editing: { tool: SketchTool; grid: number; pointer: SketchXY | null; gridSnap?: boolean; pixel?: number } | null, placed?: ReadonlyMap<string, Plane>, lost: ReadonlySet<string> = new Set()): SketchDrawing[] {
+export function sketchDrawings(doc: DesignDocument, editing: { tool: SketchTool; grid: number; pointer: SketchXY | null; gridSnap?: boolean; pixel?: number; unit?: Unit } | null, placed?: ReadonlyMap<string, Plane>, lost: ReadonlySet<string> = new Set()): SketchDrawing[] {
   // Each sketch's plane from its item, found by id once (security audit S2: a search per sketch took the timeline's length squared).
   const items = new Map<string, Feature>();
   for (const f of doc.timeline.features) if (!items.has(f.id)) items.set(f.id, f);
@@ -750,7 +750,7 @@ export function sketchDrawings(doc: DesignDocument, editing: { tool: SketchTool;
     const lit = (ids: readonly string[]) => [...segmentsOf(curvesOf(s.points, s.curves.filter((c) => ids.includes(c.id)))), ...s.points.filter((p) => ids.includes(p.id)).flatMap((p) => circleSegments([p.x, p.y], ring / 2))];
     // With Select a press on any of its points drags it (47d3, point-drag.ts; one that can't be dragged says why).
     const select = tool.kind !== "select" ? {} : { ...(tool.picked.length > 0 ? { picked: lit(tool.picked) } : {}), ...(tool.hover !== null && !tool.picked.includes(tool.hover) ? { hover: lit([tool.hover]) } : {}), ...(s.points.length > 0 ? { grab: s.points.map((p): SketchXY => [p.x, p.y]) } : {}) };
-    return { plane, ...side, lines, ...construction, ...projected, editing: { grid: editing.grid, gridSnap: editing.gridSnap ?? false, points, preview: previewSegments(doc, tool, editing.pointer), ...(tool.kind === "project" ? { picks: true as const } : {}), ...select, ...constraintDrawing(s, tool, editing.pixel, lit) } };
+    return { plane, ...side, lines, ...construction, ...projected, editing: { grid: editing.grid, gridSnap: editing.gridSnap ?? false, points, preview: previewSegments(doc, tool, editing.pointer), ...(tool.kind === "project" ? { picks: true as const } : {}), ...select, ...constraintDrawing(s, tool, editing.pixel, lit, editing.unit) } };
   });
 }
 
@@ -794,9 +794,9 @@ export const CONSTRAINT_MARK_PIXELS = 10;
  * The edited sketch's constraint marks (step 47d2), `pixel` mm a screen
  * pixel (1 mm when not known), and with a constraint tool, the point or line
  * it is over lit and the first point picked lit as picked; after a refusal
- * the constraints and arcs that fought red.
+ * the constraints and arcs that fought red. The labels' values are in `unit` (SL #519).
  */
-function constraintDrawing(s: Sketch, tool: SketchTool, pixel: number | undefined, lit: (ids: readonly string[]) => (readonly [SketchXY, SketchXY])[]) {
+function constraintDrawing(s: Sketch, tool: SketchTool, pixel: number | undefined, lit: (ids: readonly string[]) => (readonly [SketchXY, SketchXY])[], unit: Unit = "mm") {
   const size = CONSTRAINT_MARK_PIXELS * (pixel !== undefined && pixel > 0 ? pixel : 0.1);
   const marks = constraintMarks(s, size);
   const fighting = new Set(isConstraintTool(tool) ? tool.fighting : []);
@@ -807,7 +807,7 @@ function constraintDrawing(s: Sketch, tool: SketchTool, pixel: number | undefine
   const ring = (p: SketchXY | null): (readonly [SketchXY, SketchXY])[] => (p ? circleSegments(p, size / 2) : []);
   const out: { constraints?: (readonly [SketchXY, SketchXY])[]; fighting?: (readonly [SketchXY, SketchXY])[]; constraintCount?: number; hover?: (readonly [SketchXY, SketchXY])[]; picked?: (readonly [SketchXY, SketchXY])[]; labels?: { id: string; at: SketchXY; text: string; fighting?: boolean }[] } = {};
   // The dimensions' values (47e), red with the marks of the ones that fought.
-  const labels = dimensionLabels(s, size).map((l) => (fighting.has(l.id) ? { ...l, fighting: true } : l));
+  const labels = dimensionLabels(s, size, unit).map((l) => (fighting.has(l.id) ? { ...l, fighting: true } : l));
   if (labels.length > 0) out.labels = labels;
   // With Select (47d2), a constraint's mark is picked like a curve: lit with the picks, and lighter under the pointer.
   const select = tool.kind === "select" ? tool : null;

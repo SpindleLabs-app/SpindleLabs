@@ -16,7 +16,7 @@ import assert from "node:assert/strict";
 import { existsSync, readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { preview } from "vite";
-import { launch } from "./browser.mjs";
+import { chosen, launch } from "./browser.mjs";
 import { pinProperties } from "./properties.mjs";
 import { chooseFile, startWithBox } from "./start.mjs";
 
@@ -31,7 +31,7 @@ const shots = process.env.SHOTS;
 const errors = [];
 let failed = 0;
 async function check(name, fn) {
-  if (process.env.ONLY && !name.includes(process.env.ONLY)) return;
+  if (!chosen(name)) return;
   try {
     await fn();
     console.log(`ok - ${name}`);
@@ -178,6 +178,25 @@ if (!WITH_HOME) {
     await second.page.keyboard.press("Escape");
     await homeGone(second.page);
     await second.context.close();
+  });
+
+  await check("keys typed after a press on the picture never reach the design behind the screen (bug hunt 2026-11-18 D-1)", async () => {
+    const { context, page } = await newPage();
+    await homeShown(page);
+    await page.click("#home-close");
+    await startWithBox(page);
+    await chooseFile(page, "file-home"); // mid-session, so Insert Box is there to undo
+    await homeShown(page);
+    await page.mouse.click(640, 700); // the picture, not a button: the focus goes to the page's body
+    assert.equal(await page.evaluate(() => document.getElementById("home").contains(document.activeElement)), false, "the press left the focus outside the screen (the case being checked)");
+    await page.keyboard.press("ControlOrMeta+z"); // undid Insert Box unseen, and the autosave kept it so
+    await page.keyboard.press("e");
+    assert.equal(await page.evaluate(() => !document.getElementById("home").hidden), true, "the screen is still up");
+    await page.click("#home-close");
+    await homeGone(page);
+    assert.deepEqual(await page.$$eval("#timeline li[data-item]", (l) => l.length), 1, "Box 1 is still in the timeline");
+    assert.match(await page.getAttribute("#undo", "title"), /Undo Insert Box/);
+    await context.close();
   });
 
   for (const [label, width, touch] of [["1280 px", 1280, false], ["393 px with taps", 393, true]]) {

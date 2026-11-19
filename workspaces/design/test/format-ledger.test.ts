@@ -56,10 +56,25 @@ export function propertyNames(source: string, name: string): string[] {
 // Design data version 22 (SL #707): a face sketch's `body` is the frame of the input face its name names (on a face a Join
 // merged from level faces, that input's); one drawn before recorded the merged face's first input's, and is marked
 // `first` as it is read, so it is carried as before; a version 21 reader would carry a new one by the wrong input.
-const LEDGER_VERSION = 22;
+// Design data version 23 (Ben 2026-11-14): a Cut or Intersect extrude may say `through: true` in its parameters (going
+// through every body it picks, its length worked out on each rebuild), which a version 22 reader would stop at its distance.
+// Design data version 24 (step 44a): a timeline item may be a Chamfer (`intent.type` "chamfer", its parameters a body, the
+// edges by their design-wide names, a distance, a second distance or an angle, and flip), which a version 23 reader would refuse as an unknown feature.
+// Design data version 25 (step 61): a timeline item may be a Pattern (`intent.type` "pattern", its parameters the bodies, kind
+// linear (direction, spacing, count, an optional direction2, spacing2 and count2) or circular (axis, centre, count, angle), and
+// join), which a version 24 reader would refuse as an unknown feature.
+// Design data version 26 (step 59a1): a timeline item may be a construction plane, axis or point (`intent.type` "construct",
+// its parameters the kind, its inputs by name, a distance or angle, and its last answer), which a version 25 reader would refuse as an unknown feature.
+// Design data version 27 (step 35h2c): a timeline item may be a Shell (`intent.type` "shell", its parameters the body, the
+// faces left open by name and the wall thickness), which a version 26 reader would refuse as an unknown feature.
+// Design data version 28 (step 59a3): a sketch may be on a construction plane (`plane` "construct:<id>", its content keeping
+// `drawn`), a Duplicate may mirror across one, and the hidden list may name a construction or "folder-constructions".
+// Design data version 29 (step 59a3b): a circular Pattern's axis may be a construction axis ("construct:<id>"), with no
+// centre, depending on it after its bodies' items.
+const LEDGER_VERSION = 29;
 const LEDGER: { file: string; type: string; names: string[] }[] = [
   { file: "workspaces/design/src/document.ts", type: "DesignDocument", names: ["version", "nextId", "profiles", "sketches", "timeline", "kept", "bodies", "nextBody", "hidden", "shownPlanes"] },
-  { file: "workspaces/design/src/document.ts", type: "Sketch", names: ["id", "points", "curves", "constraints", "face", "pins", "projected"] },
+  { file: "workspaces/design/src/document.ts", type: "Sketch", names: ["id", "points", "curves", "constraints", "face", "drawn", "pins", "projected"] },
   { file: "workspaces/design/src/document.ts", type: "KeptShape", names: ["points", "curves", "placement"] },
   { file: "workspaces/design/src/document.ts", type: "SketchLineCurve", names: ["id", "kind", "start", "end", "construction"] },
   { file: "workspaces/design/src/document.ts", type: "SketchCircleCurve", names: ["id", "kind", "centre", "radius", "construction", "fit"] },

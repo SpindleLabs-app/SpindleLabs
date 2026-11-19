@@ -17,6 +17,8 @@ export function jg9yot(p0: any, p1: any, p2: any): any;
 
 export function jgu9kn(p0: number, p1: string): any;
 
+export function k3tq7e(p0: any, p1: any): any;
+
 export function k7vbqz(p0: Uint8Array, p1: number, p2: number, p3: number, p4: any, p5: string, p6: any, p7: any, p8: any, p9: Function | null): any;
 
 export function ld2gsx(p0: any, p1: number): any;
@@ -25,15 +27,21 @@ export function nwekzr(p0: number): any;
 
 export function p6rou1(p0: number): any;
 
+export function pjftzm(p0: number, p1: any, p2: any, p3: boolean): any;
+
 export function pprlx7(p0: number): any;
 
 export function q4m8zt(p0: string): string;
+
+export function q7nmxa(p0: number, p1: any, p2: number): any;
 
 export function qmdw4c(): string;
 
 export function qz3hmr(p0: Uint8Array): any;
 
 export function r7w2kx(p0: any, p1: any, p2: any): any;
+
+export function rbe1a4(p0: any): any;
 
 export function rk7wq2(p0: number, p1: any, p2: any): any;
 
@@ -47,6 +55,10 @@ export function uxyfpl(p0: number, p1: number, p2: number): any;
 
 export function vicdld(p0: number): void;
 
+export function vye52n(p0: any): any;
+
+export function w3hx8e(p0: number, p1: any, p2: Function | null): any;
+
 export function xqg0dt(p0: number, p1: number): any;
 
 export function zt5kqw(p0: any, p1: any): any;
@@ -55,30 +67,36 @@ export type InitInput = RequestInfo | URL | Response | BufferSource | WebAssembl
 
 export interface InitOutput {
     readonly memory: WebAssembly.Memory;
-    readonly at4a9p: (a: number, b: number) => number;
+    readonly at4a9p: (a: any) => number;
     readonly eds3ko: () => [number, number];
-    readonly f5l94l: (a: any, b: number, c: number) => [number, number, number];
+    readonly f5l94l: (a: any, b: any) => [number, number, number];
     readonly guf4qz: (a: any) => [number, number, number];
     readonly hb3mzd: (a: number) => [number, number];
     readonly hq3vzt: (a: number, b: any) => [number, number, number];
     readonly irk2fy: (a: number, b: number, c: number) => [number, number, number];
     readonly jg9yot: (a: any, b: any, c: any) => [number, number, number];
-    readonly jgu9kn: (a: number, b: number, c: number) => [number, number, number];
-    readonly k7vbqz: (a: number, b: number, c: number, d: number, e: number, f: any, g: number, h: number, i: any, j: any, k: any, l: number) => [number, number, number];
+    readonly jgu9kn: (a: number, b: any) => [number, number, number];
+    readonly k3tq7e: (a: any, b: any) => [number, number, number];
+    readonly k7vbqz: (a: number, b: number, c: number, d: number, e: number, f: any, g: any, h: any, i: any, j: any, k: number) => [number, number, number];
     readonly ld2gsx: (a: any, b: number) => [number, number, number];
     readonly nwekzr: (a: number) => [number, number, number];
     readonly p6rou1: (a: number) => [number, number, number];
+    readonly pjftzm: (a: number, b: any, c: any, d: number) => [number, number, number];
     readonly pprlx7: (a: number) => [number, number, number];
-    readonly q4m8zt: (a: number, b: number) => [number, number, number, number];
+    readonly q4m8zt: (a: any) => [number, number, number, number];
+    readonly q7nmxa: (a: number, b: any, c: number) => [number, number, number];
     readonly qmdw4c: () => [number, number];
     readonly qz3hmr: (a: number, b: number) => [number, number, number];
     readonly r7w2kx: (a: any, b: any, c: any) => [number, number, number];
+    readonly rbe1a4: (a: any) => [number, number, number];
     readonly rk7wq2: (a: number, b: any, c: any) => [number, number, number];
     readonly u3qr1f: (a: number, b: number, c: number) => [number, number, number];
     readonly uq4cun: (a: number, b: number, c: number, d: number, e: number, f: any, g: any, h: any, i: number) => [number, number, number];
     readonly urxw0w: () => number;
     readonly uxyfpl: (a: number, b: number, c: number) => [number, number, number];
     readonly vicdld: (a: number) => [number, number];
+    readonly vye52n: (a: any) => [number, number, number];
+    readonly w3hx8e: (a: number, b: any, c: number) => [number, number, number];
     readonly xqg0dt: (a: number, b: number) => [number, number, number];
     readonly zt5kqw: (a: any, b: any) => [number, number, number];
     readonly __wbindgen_malloc: (a: number, b: number) => number;

@@ -32,7 +32,7 @@ const unitOf = (field: TypedField, length: Unit): string => (field === "angle" |
 /** What a box's text means, in millimetres for a length: `unit` is the Settings choice. */
 const read = (field: TypedField, text: string, unit: Unit): Reading =>
   field === "angle" ? readAngle(text) : field === "sweep" ? readSweep(text) : field === "sides" ? readSides(text) : field === "diameter" ? readDiameterIn(text, unit) : readLengthIn(text, unit);
-/** A live size (millimetres, or degrees for the angles) as a box's placeholder: millimetres to 3 decimals as before. */
+/** A live size (millimetres, or degrees for the angles) as a box's placeholder: millimetres to 3 decimals, 5 under 0.01 mm (shownValue). */
 const placeholder = (field: TypedField, value: number, unit: Unit): string => (unitOf(field, unit) !== unit || unit === "mm" ? shownValue(value) : boxShown(value, unit));
 
 /** The boxes sit this far right of and below the point they are given (typed-entry.css translate). */

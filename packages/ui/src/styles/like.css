@@ -9,6 +9,6 @@
 .like .like-status { flex-basis: 100%; margin: 0; font-size: 13px; line-height: 1.45; color: var(--danger); }
 .like .like-status:empty { display: none; }
 .like[aria-busy="true"] .like-button { opacity: 0.6; pointer-events: none; }
-@media (max-width: 640px), (pointer: coarse) {
+@media (max-width: 640px), ((pointer: coarse) and (max-width: 1199px)) {
   .like .like-button { min-height: var(--look-target-touch); }
 }

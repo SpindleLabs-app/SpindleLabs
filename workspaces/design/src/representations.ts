@@ -6,11 +6,12 @@
 // profiles are one kind; sketches (step 21b) register as another type with
 // this same producer, so there is no sketch-only path.
 
-import type { BodyFaces, BodyReference, BodySpec, FaceFound, FaceReference, KernelCalls, Outline, Plane, Producible, Producer, Project, RepresentationRegistry, SourceLookup } from "@fission/core";
-import { bodyFeatures, designBodies } from "./browser.ts";
-import { bodyHidden, bodyIdOf, bodyItem, bodyNumbers, makesPieces, profileLabel, readDesignDocument, type DesignDocument } from "./document.ts";
+import type { BodyFaces, BodyReference, BodySpec, FaceFound, FaceReference, KernelCalls, LentBody, Outline, Plane, Producible, Producer, Project, RepresentationRegistry, SourceLookup } from "@fission/core";
+import { bodyFeatures, designBodies, failedIds } from "./browser.ts";
+import { bodyHidden, bodyIdOf, bodyItem, bodyNumbers, kernelHeld, profileLabel, readDesignDocument, type DesignDocument } from "./document.ts";
 import { endSpec, endStls } from "./move-tool.ts";
 import { BodyCache, rebuildTimeline } from "./rebuild.ts";
+import { bodyWords } from "./body-uses.ts";
 import { outline } from "./profiles.ts";
 import { bodyReference, readDesignReference, profileReference, readProfileReference } from "./references.ts";
 import { bodyOf, findInScene, joinBodies, sceneHit, shownBodies, shownReference, type Scene } from "./scene.ts";
@@ -45,8 +46,8 @@ export interface FeatureHandle extends Producible {
   body?: string;
 }
 
-/** Whether a design's bodies are handed over by body (35f1f2d): it holds an item that makes pieces. */
-const byBody = (document: DesignDocument) => document.timeline.features.some(makesPieces);
+/** Whether a design's bodies are handed over by body (35f1f2d): it holds an item that makes pieces, or a Chamfer (44a-app2). */
+const byBody = (document: DesignDocument) => document.timeline.features.some(kernelHeld);
 
 /**
  * Body `body` where the timeline ends it, from one rebuild on a body store
@@ -61,9 +62,10 @@ async function bodyNow(kernel: KernelCalls, document: DesignDocument, body: stri
   try {
     const build = await rebuildTimeline(document, cache, kernel);
     const built = build.bodies[body];
-    if (built === undefined) throw new Error(`${body} is not built`);
+    if (built === undefined) throw new Error(`${bodyWords(document, body)} is not built`);
     if (want === "spec") {
-      if (built.spec === null) throw new Error(`${body} is a Combine's result: only the kernel holds it, so it is handed over as a mesh, not as an exact solid`);
+      // Named as the timeline's messages name it, never by its raw id, and not only as a Combine's (a Chamfer, Shell or Pattern too): SL #820.
+      if (built.spec === null) throw new Error(`${bodyWords(document, body)} was shaped by a Combine or another tool, so only the kernel holds it: it is handed over as a mesh, not as an exact solid`);
       return built.spec;
     }
     const { mesh } = await cache.view(built.handle);
@@ -143,6 +145,15 @@ export function designLookup(document: DesignDocument, scene: Scene | null, kern
  * show (hidden, failed, deleted) is refused in words.
  */
 export async function bodyFaces(kernel: KernelCalls, project: Project, body: BodyReference, refs: readonly FaceReference[]): Promise<BodyFaces> {
+  return lendBody(kernel, project, body, refs, async (lent) => lent.faces);
+}
+
+/**
+ * Body `body` built now on a body store of its own, with its faces as `bodyFaces` gives them, lent to `use` (TestLab's
+ * Run, core's `withBody`): the handle is the one the faces were read from, so a face index found is the kernel's own
+ * on it. Every body the rebuild made is freed once `use` settles, however it ends.
+ */
+export async function lendBody<T>(kernel: KernelCalls, project: Project, body: BodyReference, refs: readonly FaceReference[], use: (lent: LentBody) => Promise<T>): Promise<T> {
   const document = readDesignDocument(project.workspaces.design);
   if (bodyItem(body.id) === null) throw new Error(`${JSON.stringify(body.id)} is not a body of the design`);
   if (bodyHidden(document, body.id)) throw new Error("it is hidden in Design: show it there to pick its faces");
@@ -151,7 +162,8 @@ export async function bodyFaces(kernel: KernelCalls, project: Project, body: Bod
     const build = await rebuildTimeline(document, cache, kernel);
     const scene = joinBodies(await shownBodies(document, build, cache), build);
     const b = scene.bodies.findIndex((x) => x.body === body.id);
-    if (b < 0) throw new Error("the design doesn't build it now");
+    const built = build.bodies[body.id];
+    if (b < 0 || built === undefined) throw new Error("the design doesn't build it now");
     const view = scene.bodies[b].view;
     const faces = Array.from({ length: view.faces }, (_, i) => shownReference(scene, b, "face", i) as FaceReference | null);
     const labels = faces.map((f, i) => (f === null ? `Face ${i + 1} (no name of its own)` : referenceLabel(f)));
@@ -164,7 +176,8 @@ export async function bodyFaces(kernel: KernelCalls, project: Project, body: Bod
       return { status: "found", face: hit.index };
     });
     const m = view.mesh;
-    return { mesh: { positions: [...m.positions], normals: [...m.normals], indices: [...m.indices], triangle_faces: [...m.triangle_faces], edge_lines: [...m.edge_lines], edge_line_edges: [...m.edge_line_edges] }, faces, labels, found, inputs: document.timeline.features.map((f) => f.id) };
+    const got: BodyFaces = { mesh: { positions: [...m.positions], normals: [...m.normals], indices: [...m.indices], triangle_faces: [...m.triangle_faces], edge_lines: [...m.edge_lines], edge_line_edges: [...m.edge_line_edges] }, faces, labels, found, inputs: document.timeline.features.map((f) => f.id) };
+    return await use({ handle: built.handle, faces: got });
   } finally {
     await cache.close();
   }
@@ -174,6 +187,24 @@ export async function bodyFaces(kernel: KernelCalls, project: Project, body: Bod
 export const DESIGN_OUTLINES = "design:outlines";
 
 /** Says what Design produces. `kernel` builds meshes. */
+/**
+ * What each design's last rebuild said (`failedIds`: the failed items, a mark for each body an Extrude Join left alone, the
+ * numbered pieces it did not make), by the project's own Design data. The lister and the STL producer read it, so other
+ * workspaces are handed the bodies Design shows (SL #761); data nobody has rebuilt yet is read from the data alone.
+ */
+const rebuilt = new WeakMap<object, ReadonlySet<string>>();
+/** The failed set the lister read for each design it listed, so that design's STL files are made for those bodies. */
+const listedWith = new WeakMap<DesignDocument, ReadonlySet<string>>();
+const NO_FAILED: ReadonlySet<string> = new Set();
+
+/** Design says what its rebuild of `data` (the design in the project) found: its failed set, as the workspace works it out. */
+export function noteRebuild(data: object, failed: ReadonlySet<string>): void {
+  rebuilt.set(data, failed);
+}
+
+/** The rebuild `settled` is making of each design no one had rebuilt, so two asks share it. */
+const settling = new WeakMap<object, Promise<void>>();
+
 export function registerDesign(registry: RepresentationRegistry, kernel: KernelCalls): void {
   registry.registerProducer("design.profile", "outline", outlineProducer);
   registry.registerProducer("design.sketch", "outline", outlineProducer);
@@ -193,16 +224,59 @@ export function registerDesign(registry: RepresentationRegistry, kernel: KernelC
     } catch {
       return []; // no Design data yet, or data that does not read: nothing to offer
     }
+    const failed = rebuilt.get(project.workspaces.design as object) ?? NO_FAILED;
+    listedWith.set(doc, failed);
     const numbers = bodyNumbers(doc);
     const seen = new Set<string>();
     // With a Combine, each body by itself (35f1f2d: a Combine's pieces share their item); else by its item, as before.
     const pieces = byBody(doc);
-    return designBodies(doc).flatMap(({ body, feature }) => {
+    return designBodies(doc, failed).flatMap(({ body, feature }) => {
       const key = pieces ? body : feature.id;
       if (bodyHidden(doc, body) || seen.has(key)) return [];
       seen.add(key);
       return [{ type: "design.feature", id: feature.id, document: doc, label: `Body ${numbers.get(body) ?? "?"}`, ref: bodyReference(body) as BodyReference, ...(pieces && { body }) }];
     });
+  });
+  // A design no one has rebuilt yet (a reload, an Open or an Undo while another workspace is on screen: app bug hunt
+  // 2026-11-18, C-1) is rebuilt here, on a body store of its own, and what it found noted as Design notes its own; an
+  // answer Design itself notes meanwhile is kept, never replaced. Data that does not read lists nothing anyway.
+  registry.registerSettler("design", (project) => {
+    const data = project.workspaces.design;
+    if (typeof data !== "object" || data === null || rebuilt.has(data)) return Promise.resolve();
+    let doc: DesignDocument;
+    try {
+      doc = readDesignDocument(data);
+    } catch {
+      return Promise.resolve();
+    }
+    const running = settling.get(data);
+    if (running) return running;
+    const work = (async () => {
+      const cache = new BodyCache(kernel);
+      try {
+        const build = await rebuildTimeline(doc, cache, kernel);
+        if (!rebuilt.has(data)) rebuilt.set(data, failedIds(doc, build.results, new Set(Object.keys(build.bodies))));
+      } finally {
+        settling.delete(data);
+        await cache.close();
+      }
+    })();
+    settling.set(data, work);
+    return work;
+  });
+  // What that list leaves out, for a workspace that takes it to say so (SL #761 follow-up): the timeline items the last
+  // rebuild failed, by their names in the timeline, and the built bodies their eyes hide, by their browser names.
+  registry.registerLeftOut("design", (project) => {
+    let doc: DesignDocument;
+    try {
+      doc = readDesignDocument(project.workspaces.design);
+    } catch {
+      return { failed: [], hidden: [] };
+    }
+    const failed = rebuilt.get(project.workspaces.design as object) ?? NO_FAILED;
+    const numbers = bodyNumbers(doc);
+    const hidden = designBodies(doc, failed).flatMap(({ body }) => (bodyHidden(doc, body) && numbers.has(body) ? [numbers.get(body)!] : [])).sort((a, b) => a - b);
+    return { failed: doc.timeline.features.filter((f) => failed.has(f.id)).map((f) => f.provenance.self.label), hidden: hidden.map((n) => `Body ${n}`) };
   });
   // What Laser (and any workspace that takes flat shapes) can list: every ready-made profile and every sketch with
   // curves that is not suppressed, by its name in the browser, as exact outlines (a sketch's found by the kernel when
@@ -232,17 +306,24 @@ export function registerDesign(registry: RepresentationRegistry, kernel: KernelC
   });
   // Where a body's faces are now, by name (TestLab's held and pushed faces).
   registry.registerFaceFinder("design", (project, body, refs) => bodyFaces(kernel, project, body, refs));
+  registry.registerBodyLender("design", (project, body, refs, use) => lendBody(kernel, project, body, refs, use));
   // A body's exact STL file from the kernel (the file the slicer reads, a Combine's pieces too), as data: the files of every
   // body shown are made together, once for the design as it stands, since a Combine's rebuild is the costly part.
-  const stlFiles = new WeakMap<DesignDocument, Promise<Map<string, Uint8Array>>>();
+  // Kept with the failed set they were made for: a list read again after a rebuild was noted (the same design) gets files
+  // for the bodies it lists, never the ones an earlier list guessed (C-1: every Slice then failed until an edit).
+  const stlFiles = new WeakMap<DesignDocument, { failed: ReadonlySet<string>; made: Promise<Map<string, Uint8Array>> }>();
   const stlOf = async (o: Producible): Promise<Uint8Array> => {
     const { document, body } = o as FeatureHandle;
-    let made = stlFiles.get(document);
+    const failed = listedWith.get(document) ?? NO_FAILED;
+    let made = stlFiles.get(document)?.failed === failed ? stlFiles.get(document)!.made : undefined;
     if (!made) {
-      const bodies = designBodies(document).filter((b) => !bodyHidden(document, b.body));
-      made = endStls(kernel, document, bodies.map((b) => ({ ...b, name: "body" }))).then((files) => new Map(bodies.map((b, i) => [b.body, files[i].bytes])));
-      stlFiles.set(document, made);
-      made.catch(() => stlFiles.delete(document)); // a failed build is tried again next time
+      const bodies = designBodies(document, failed).filter((b) => !bodyHidden(document, b.body));
+      const making = endStls(kernel, document, bodies.map((b) => ({ ...b, name: "body" }))).then((files) => new Map(bodies.map((b, i) => [b.body, files[i].bytes])));
+      made = making;
+      stlFiles.set(document, { failed, made: making });
+      making.catch(() => {
+        if (stlFiles.get(document)?.made === making) stlFiles.delete(document); // a failed build is tried again next time
+      });
     }
     const bytes = (await made).get(body ?? bodyIdOf(o.id));
     if (!bytes) throw new Error(`${body ?? o.id} is not a body of the design that is shown`);

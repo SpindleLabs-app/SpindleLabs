@@ -143,14 +143,14 @@ export interface PairRelation {
 /**
  * What a pair's answer means for the person, or null when there is nothing to say (the parts lie apart). `mark` is set
  * when both parts are marked on the bed: they overlap, or they are too close to tell a touch from an overlap. Parts
- * that only touch are said, not marked: their cuts would share a line, which is the person's to judge.
+ * that only touch are said, not marked: their cuts would meet (at a point, along a line or all but), which is the person's to judge.
  */
 export function pairWords(aLabel: string, bLabel: string, r: PartsRelation): { words: string; mark: boolean } | null {
   if (r.relation === "apart") return null;
   if (r.relation === "overlap") return { words: `${aLabel} and ${bLabel} overlap.`, mark: true };
-  if (r.relation === "touch") return { words: `${aLabel} and ${bLabel} touch: their cuts would share a line.`, mark: false };
+  if (r.relation === "touch") return { words: `${aLabel} and ${bLabel} touch: their cuts would meet.`, mark: false };
   if (r.meet) return { words: `${aLabel} and ${bLabel} touch or overlap: they are too close to tell which.`, mark: true };
-  return { words: `Couldn't check whether ${aLabel} and ${bLabel} overlap: ${r.why ?? "the kernel gave no answer"}.`, mark: false };
+  return { words: `Couldn't check whether ${aLabel} and ${bLabel} overlap: ${r.why ?? "no answer came back"}.`, mark: false };
 }
 
 /** The words under the bed: how many parts are on it, each one left off with why, and (given the bed) each one reaching past its edge and each pair that overlaps or touches. */
@@ -299,7 +299,7 @@ export function mountLaserPage(ctx: WorkspaceContext, save?: SaveText, relate?: 
 <div class="laser-page-turns"><button type="button" data-turn="90">Turn left</button><button type="button" data-turn="-90">Turn right</button><button type="button" data-flip>Flip</button><button type="button" data-rows>Back in the rows</button></div>
 </fieldset>
 <div class="laser-page-files"><button type="button" data-save="svg">Save SVG</button><button type="button" data-save="dxf">Save DXF</button></div>
-<p class="laser-page-note">Drag a part on the bed to move it; X and Y are its lower-left corner from the bed's. Sizes are exact, in mm, with arcs kept as arcs. Each part is cut, scored or engraved: in the files cut is red, score blue and engrave black, done in the order engrave, score, cut. A DXF can't hold a filled shape, so an engraving is its outline on the ENGRAVE layer: set that layer to fill in your laser program. Kerf, power and speed are set in your laser program for now.</p>`;
+<details class="laser-page-note"><summary>How parts and files work</summary><p>Drag a part on the bed to move it; X and Y are its lower-left corner from the bed's. Sizes are exact, in mm, with arcs kept as arcs. Each part is cut, scored or engraved: in the files cut is red, score blue and engrave black, done in the order engrave, score, cut. A DXF can't hold a filled shape, so an engraving is its outline on the ENGRAVE layer: set that layer to fill in your laser program. Kerf, power and speed are set in your laser program for now.</p></details>`;
   ctx.properties.append(panel);
   const input = (name: string) => panel.querySelector<HTMLInputElement>(`input[name="${name}"]`)!;
   const words = panel.querySelector<HTMLElement>(".laser-page-words")!;

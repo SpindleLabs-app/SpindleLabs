@@ -8,7 +8,7 @@
 // Image and Data are typed now and get their first producers with the
 // Image workspace and with parameters / analysis results.
 
-import type { BodySpec, DisplayMesh, Outline } from "../kernel/kernel-types.ts";
+import type { BodyHandle, BodySpec, DisplayMesh, Outline } from "../kernel/kernel-types.ts";
 import type { FileFormat, FileImporter } from "./files.ts";
 import type { Project } from "./project.ts";
 import type { BodyReference, FaceReference, GeometryReference } from "./references.ts";
@@ -117,6 +117,20 @@ export interface BodyFaces {
 /** Gives a body's faces and finds face references on it (`BodyFaces`); throws, in words, for a body its owner doesn't show now. */
 export type FaceFinder = (project: Project, body: BodyReference, refs: readonly FaceReference[]) => Promise<BodyFaces>;
 
+/**
+ * A body its owner builds now, lent to another workspace for as long as `use` runs (TestLab's Run hands it to the
+ * kernel's stress test): its kernel handle and its faces as `facesOf` gives them, from the same rebuild, so a face
+ * index found is the kernel's own on that handle. The owner lets the body go once `use` settles; nobody may keep the
+ * handle after.
+ */
+export interface LentBody {
+  handle: BodyHandle;
+  faces: BodyFaces;
+}
+
+/** Builds body `body` now, finds `refs` on it and hands both to `use`, letting the body go after; throws, in words, as a FaceFinder does. */
+export type BodyLender = <T>(project: Project, body: BodyReference, refs: readonly FaceReference[], use: (lent: LentBody) => Promise<T>) => Promise<T>;
+
 /** Lists what a workspace offers the others in `project` (read from the project's data, never from the workspace's screen). */
 export type Lister = (project: Project) => ListedObject[];
 
@@ -151,12 +165,24 @@ const nouns: Record<RepresentationKind, string> = {
   data: "data",
 };
 
+/** What a workspace's list leaves out, by the names its owner shows: items that failed to build, and bodies hidden by their eye. Each workspace words it itself. */
+export interface LeftOut {
+  readonly failed: readonly string[];
+  readonly hidden: readonly string[];
+}
+export type LeftOutOf = (project: Project) => LeftOut;
+/** Brings what a workspace's list says up to date with the project's data (a rebuild no one has made yet), for `settled`. */
+export type Settler = (project: Project) => Promise<void>;
+
 export class RepresentationRegistry {
+  private leftOuts = new Map<string, LeftOutOf>();
   private producers = new Map<string, Map<RepresentationKind, Producer>>();
   private converters: Converter[] = [];
   private listers = new Map<string, Lister>();
   private importers = new Map<FileFormat, FileImporter>();
   private finders = new Map<string, FaceFinder>();
+  private lenders = new Map<string, BodyLender>();
+  private settlers = new Map<string, Settler>();
 
   /** Says that objects of `type` can describe themselves as `kind`. */
   registerProducer(type: string, kind: RepresentationKind, producer: Producer): void {
@@ -170,6 +196,33 @@ export class RepresentationRegistry {
   registerLister(workspace: string, lister: Lister): void {
     if (this.listers.has(workspace)) throw new Error(`${workspace} already has a lister`);
     this.listers.set(workspace, lister);
+  }
+
+  /** Says what workspace `workspace`'s list leaves out in a project (failed items, hidden bodies), so a workspace that takes the list can say so; one per workspace. */
+  registerLeftOut(workspace: string, leftOut: LeftOutOf): void {
+    if (this.leftOuts.has(workspace)) throw new Error(`${workspace} already says what its list leaves out`);
+    this.leftOuts.set(workspace, leftOut);
+  }
+
+  /** What workspace `workspace`'s list leaves out in `project`: nothing when it says nothing. */
+  leftOutOf(workspace: string, project: Project): LeftOut {
+    return this.leftOuts.get(workspace)?.(project) ?? { failed: [], hidden: [] };
+  }
+
+  /** Says how to bring workspace `workspace`'s list up to date with a project's data; one per workspace. */
+  registerSettler(workspace: string, settler: Settler): void {
+    if (this.settlers.has(workspace)) throw new Error(`${workspace} already has a settler`);
+    this.settlers.set(workspace, settler);
+  }
+
+  /**
+   * Waits until `objectsOf(workspace, project)` and `leftOutOf` say what the workspace itself would show for the
+   * project's data as it is now (app bug hunt 2026-11-18, C-1: Design's list is right only once a rebuild of that very
+   * design has been made, and Design is not on screen after a reload, an Open or an Undo in another workspace). Ask it
+   * before listing; at once when the workspace has no settler.
+   */
+  async settled(workspace: string, project: Project): Promise<void> {
+    await this.settlers.get(workspace)?.(project);
   }
 
   /** What workspace `workspace` offers in `project`, in its own order; none when it lists nothing (or the project holds nothing of it). */
@@ -192,15 +245,23 @@ export class RepresentationRegistry {
   async facesOf(workspace: string, project: Project, body: BodyReference, refs: readonly FaceReference[]): Promise<BodyFaces> {
     const finder = this.finders.get(workspace);
     if (!finder) throw new Error(`${workspace} doesn't say where its faces are`);
-    const got = await finder(project, body, refs);
-    const n = got.faces.length;
-    const bad = (why: string) => new Error(`${workspace} gave ${body.id}'s faces ${why}`);
-    if (got.labels.length !== n) throw bad(`with ${got.labels.length} names for ${n} faces`);
-    if (got.mesh.indices.length !== 3 * got.mesh.triangle_faces.length) throw bad("with a mesh whose lists disagree in length");
-    if (got.mesh.triangle_faces.some((f) => !(Number.isInteger(f) && f >= 0 && f < n))) throw bad("with a triangle on a face it did not list");
-    if (got.found.length !== refs.length) throw bad(`with ${got.found.length} answers for ${refs.length} references`);
-    if (got.found.some((f) => f.status === "found" && !(Number.isInteger(f.face) && f.face >= 0 && f.face < n))) throw bad("with a reference found on a face it did not list");
-    return got;
+    return checkedFaces(workspace, body, refs, await finder(project, body, refs));
+  }
+
+  /** Says how workspace `workspace` (the owner of the geometry: Design) lends a body it builds now (`withBody`); one per workspace. */
+  registerBodyLender(workspace: string, lender: BodyLender): void {
+    if (this.lenders.has(workspace)) throw new Error(`${workspace} already lends its bodies`);
+    this.lenders.set(workspace, lender);
+  }
+
+  /**
+   * Body `body` of `project` built by workspace `workspace` now, its kernel handle and faces (checked as `facesOf`
+   * checks them) handed to `use`; the owner lets the body go once `use` settles. Refused in words as facesOf is.
+   */
+  async withBody<T>(workspace: string, project: Project, body: BodyReference, refs: readonly FaceReference[], use: (lent: LentBody) => Promise<T>): Promise<T> {
+    const lender = this.lenders.get(workspace);
+    if (!lender) throw new Error(`${workspace} doesn't lend its bodies`);
+    return lender(project, body, refs, (lent) => use({ handle: lent.handle, faces: checkedFaces(workspace, body, refs, lent.faces) }));
   }
 
   registerConverter(converter: Converter): void {
@@ -271,4 +332,16 @@ export class RepresentationRegistry {
         : null;
     return { representation, note };
   }
+}
+
+/** A face finder's answer checked: a mesh, face list or answer that doesn't fit together is refused, never handed on. */
+function checkedFaces(workspace: string, body: BodyReference, refs: readonly FaceReference[], got: BodyFaces): BodyFaces {
+  const n = got.faces.length;
+  const bad = (why: string) => new Error(`${workspace} gave ${body.id}'s faces ${why}`);
+  if (got.labels.length !== n) throw bad(`with ${got.labels.length} names for ${n} faces`);
+  if (got.mesh.indices.length !== 3 * got.mesh.triangle_faces.length) throw bad("with a mesh whose lists disagree in length");
+  if (got.mesh.triangle_faces.some((f) => !(Number.isInteger(f) && f >= 0 && f < n))) throw bad("with a triangle on a face it did not list");
+  if (got.found.length !== refs.length) throw bad(`with ${got.found.length} answers for ${refs.length} references`);
+  if (got.found.some((f) => f.status === "found" && !(Number.isInteger(f.face) && f.face >= 0 && f.face < n))) throw bad("with a reference found on a face it did not list");
+  return got;
 }

@@ -17,7 +17,7 @@ import assert from "node:assert/strict";
 import { existsSync, readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { preview } from "vite";
-import { launch } from "./browser.mjs";
+import { chosen, launch } from "./browser.mjs";
 import { chooseFile, insertPreset, startWithBox } from "./start.mjs";
 
 const DIST = process.env.E2E_DIST ? process.env.E2E_DIST.replace(/\/?$/, "/") : fileURLToPath(new URL("../dist/", import.meta.url));
@@ -31,7 +31,7 @@ const shots = process.env.SHOTS;
 const errors = [];
 let failed = 0;
 async function check(name, fn) {
-  if (process.env.ONLY && !name.includes(process.env.ONLY)) return;
+  if (!chosen(name)) return;
   try {
     await fn();
     console.log(`ok - ${name}`);
@@ -347,6 +347,43 @@ if (!WITH_TABS) {
     await settled(page);
     await saved(page);
     return { context, page, a, b: await keyOf(page), cyl: await vol(page) };
+  }
+
+  for (const [width, touch] of [[1280, false], [375, true]]) {
+    await check(`app bug hunt 11-18 D-4 (${width} px): a first visit's untouched design gives way to New project and to an opened file; one tab, also after a reload`, async () => {
+      // A first visit's empty design was kept at once (no other new design is kept before its first change), so New
+      // project on the home screen, or a file opened, left it as a second "Untitled" tab, stored and back after a reload.
+      const press = (sel) => (touch ? page.tap(sel) : page.click(sel));
+      const { context, page } = await newPage(width, touch);
+      await page.locator("#design-tabs").waitFor({ state: "attached" });
+      const home = (await page.$("#home")) !== null;
+      if (home) {
+        await page.locator("#home-new").waitFor({ state: "visible" });
+        await press("#home-new");
+        await page.locator("#home").waitFor({ state: "hidden" });
+        await page.locator("#start-hint").waitFor();
+        await page.waitForTimeout(800);
+        assert.equal(await page.$$eval(".design-tabs-tab", (t) => t.length), 1, "New project on a first visit: one tab");
+      }
+      await page.locator("#start-hint").waitFor();
+      await page.setInputFiles("#open-file", { name: "saved.spindle", mimeType: "application/json", buffer: readFileSync(new URL("./saved.spindle", import.meta.url)) });
+      await until(page, () => document.querySelector("#timeline li[data-item]") !== null, null, "the file open");
+      await settled(page);
+      await page.waitForTimeout(800);
+      assert.deepEqual((await tabsOf(page)).map((t) => [t.name, t.on]), [["saved", true]], "the opened file takes the untouched design's place");
+      await insertPreset(page, "box", touch); // a change, so the file is kept and its tab comes back after a reload
+      await saved(page);
+      await page.waitForTimeout(500);
+      await page.reload();
+      await reloaded(page);
+      assert.deepEqual((await tabsOf(page)).map((t) => [t.name, t.on]), [["saved", true]], "after a reload: the one tab");
+      if (home) {
+        await chooseFile(page, "file-home", touch);
+        await until(page, () => !document.getElementById("home").hidden && document.querySelectorAll("#home-items .home-row").length > 0, null, "the home screen");
+        assert.deepEqual(await page.$$eval("#home-items .home-row .home-row-name", (n) => n.map((x) => x.textContent)), ["saved"], "only the opened file is kept, no empty Untitled beside it");
+      }
+      await context.close();
+    });
   }
 
   await check("tabs hunt A1: Ctrl+Z pressed just after another tab is chosen never undoes the tab being left", async () => {

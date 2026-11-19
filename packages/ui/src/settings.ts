@@ -9,6 +9,7 @@ import { boxShown, parseLength, wordsInUnit, type Unit } from "@fission/core";
 import { MOUSE_PRESETS, type MousePreset } from "@fission/core";
 import { THEME_CHOICES, type ThemeChoice } from "./theme-choice.ts";
 import { UNIT_CHOICES } from "./unit-choice.ts";
+import type { MotionChoice } from "./home-backdrop.ts";
 
 export interface SettingsSection {
   id: string;
@@ -113,7 +114,21 @@ export interface SettingsParts {
   onReportBug?: () => void;
   /** Opens What's new (whats-new.ts), the public list of changes; the About card's row shows only when given. */
   onWhatsNew?: () => void;
+  /**
+   * How the home screen's background moves (home-backdrop.ts `MotionChoice`) and the way to change it; the row shows only
+   * when both are given (the shell gives them only when the home screen is built).
+   */
+  motion?: MotionChoice;
+  onMotion?: (choice: MotionChoice) => void;
 }
+
+/** Settings > General's choices for the home screen's background, each with what it does in a sentence. */
+export const MOTION_ROWS: readonly { id: MotionChoice; label: string; summary: string }[] = [
+  { id: "system", label: "Auto", summary: "As this computer asks: the full picture, or gentle motion when it is set to show less motion." },
+  { id: "full", label: "Full", summary: "The full picture, building, lighting up and turning, even when this computer is set to show less motion." },
+  { id: "gentle", label: "Gentle", summary: "A slow turn and soft fades, with no flashes or zooms." },
+  { id: "still", label: "Still", summary: "One still picture." },
+];
 
 /** Fill the dialog: a header with Close, then one card per section. */
 export function fillSettings(dialog: HTMLDialogElement, parts: SettingsParts): void {
@@ -201,6 +216,7 @@ export function fillSettings(dialog: HTMLDialogElement, parts: SettingsParts): v
         card.append(unitRow);
       }
       if (parts.mouse !== undefined && parts.onMouse) card.append(mouseBlock(el, parts.mouse, parts.onMouse));
+      if (parts.motion !== undefined && parts.onMotion) card.append(motionBlock(el, parts.motion, parts.onMotion));
       const row = el("div", "settings-row");
       const label = el("span", undefined, "Keyboard shortcuts");
       const open = el("button", "settings-action", "Show");
@@ -332,6 +348,35 @@ function mouseBlock(el: El, start: MousePreset, choose: (preset: MousePreset) =>
   }
   row.append(el("span", undefined, "Mouse"), group);
   block.append(row, summary, table);
+  show(start);
+  return block;
+}
+
+/** Settings > General's Home screen background row (Ben, 2026-11-16): Auto, Full, Gentle or Still, the chosen one's sentence under it. */
+function motionBlock(el: El, start: MotionChoice, choose: (choice: MotionChoice) => void): HTMLElement {
+  const block = el("div", "settings-motion");
+  const row = el("div", "settings-row");
+  const group = el("div", "settings-choices");
+  group.setAttribute("role", "radiogroup");
+  group.setAttribute("aria-label", "Home screen background");
+  const summary = el("p", "settings-motion-summary");
+  const show = (id: MotionChoice) => {
+    summary.textContent = MOTION_ROWS.find((m) => m.id === id)?.summary ?? "";
+    for (const other of group.children) other.setAttribute("aria-checked", String((other as HTMLElement).dataset.motion === id));
+  };
+  for (const m of MOTION_ROWS) {
+    const b = el("button", "settings-choice", m.label);
+    b.type = "button";
+    b.dataset.motion = m.id;
+    b.setAttribute("role", "radio");
+    b.addEventListener("click", () => {
+      choose(m.id);
+      show(m.id);
+    });
+    group.append(b);
+  }
+  row.append(el("span", undefined, "Home screen background"), group);
+  block.append(row, summary);
   show(start);
   return block;
 }

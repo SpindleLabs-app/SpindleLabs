@@ -3,7 +3,7 @@
 // end of the toolbar's sideways scroll, out of sight, so a beginner could not
 // find how to finish a sketch or an extrude. While a tool is open this bar
 // sits along the top of the view with what ends it: a big green Finish
-// (Finish Sketch, Finish Extrude, Finish Move, Finish Rotate, Finish Scale, Finish Combine, Finish Edit) and Cancel where the tool has
+// (Finish Sketch, Finish Extrude, Finish Move, Finish Rotate, Finish Scale, Finish Combine, Finish Chamfer, Finish Shell, Finish Edit) and Cancel where the tool has
 // one; while a sketch's plane is being picked, the words "Tap a plane or
 // face" with the three planes and Cancel, so the plane prompt no longer needs
 // the sheet that covered the view. Every button only presses the tool's own
@@ -42,6 +42,14 @@ export const ENDERS: readonly Ender[] = [
   { kind: "move", panel: "#move-panel", ok: "#move-ok", cancel: "#move-cancel", label: "Finish Move", errors: ["#move-error"], status: null },
   // Combine (#504): the sheet opens by itself once a tool is picked and shuts again by a tap on the view; the bar keeps Finish and Cancel in reach.
   { kind: "combine", panel: "#combine-panel", ok: "#combine-ok", cancel: "#combine-cancel", label: "Finish Combine", errors: ["#combine-error"], status: null },
+  // Chamfer (step 44a-app2): the edges are tapped on the view with the sheet shut, so Finish and Cancel stay in reach here.
+  { kind: "chamfer", panel: "#chamfer-panel", ok: "#chamfer-ok", cancel: "#chamfer-cancel", label: "Finish Chamfer", errors: ["#chamfer-error"], status: null },
+  // Shell (step 35h2c-app2): the faces are tapped on the view with the sheet shut, so Finish and Cancel stay in reach here.
+  { kind: "shell", panel: "#shell-panel", ok: "#shell-ok", cancel: "#shell-cancel", label: "Finish Shell", errors: ["#shell-error"], status: null },
+  // Pattern (step 61c): bodies are tapped on the view with the sheet shut, so Finish and Cancel stay in reach here.
+  { kind: "pattern", panel: "#pattern-panel", ok: "#pattern-ok", cancel: "#pattern-cancel", label: "Finish Pattern", errors: ["#pattern-error"], status: null },
+  // Construct (step 59a2): faces, edges and corners are tapped on the view with the sheet shut, so Finish and Cancel stay in reach here.
+  { kind: "construct", panel: "#construct-panel", ok: "#construct-ok", cancel: "#construct-cancel", label: "Finish Construct", errors: ["#construct-error"], status: null },
   { kind: "edit", panel: "#feature-edit", ok: "#feature-edit-ok", cancel: "#feature-edit-cancel", label: "Finish Edit", errors: ["#feature-edit-error"], status: null },
   // Extrude beside Finish Sketch (UI audit 2026-11-12): the sketch toolbar's Extrude sits past the screen's right edge at
   // phone width, so a box took Finish Sketch then Extrude along the main toolbar. It presses the toolbar's own Extrude,
@@ -51,6 +59,8 @@ export const ENDERS: readonly Ender[] = [
 
 /** The sketch's three planes, by the sketch panel's button ids. */
 const PLANES = ["XY", "XZ", "YZ"] as const;
+/** The sketch panel's construction plane buttons (59a3, behind ?construct), proxied after the three. */
+const CONSTRUCT_PLANES = "[id^='sketch-plane-construct-']";
 
 /** An element in the page and on show: connected (a sleeping workspace's slots are taken out) with no hidden ancestor. */
 function shown(el: Element | null): el is HTMLElement {
@@ -107,7 +117,9 @@ export function startPhoneFloat(workspace: HTMLElement, viewport: HTMLElement, c
     const okButton = state?.kind === "end" ? workspace.querySelector<HTMLButtonElement>(state.ender.ok) : null;
     // The key: what is shown and whether OK is on, so the bar is rebuilt only when that changes.
     const why = state?.kind === "end" ? floatWhy(workspace, state.ender, okButton?.disabled ?? false) : "";
-    const key = state === null ? "" : state.kind === "pick" ? "pick" : `${state.ender.kind}:${okButton?.disabled ? "off" : "on"}:${why}`;
+    // 59a3: the construction planes the panel offers too, each pressed by its own panel button (a plane may be off screen).
+    const constructs = state?.kind === "pick" ? [...workspace.querySelectorAll<HTMLButtonElement>(CONSTRUCT_PLANES)].filter(shown) : [];
+    const key = state === null ? "" : state.kind === "pick" ? `pick:${constructs.map((b) => `${b.id}=${b.textContent}`).join(",")}` : `${state.ender.kind}:${okButton?.disabled ? "off" : "on"}:${why}`;
     if (key === last) return;
     last = key;
     // A tool ended (Finish, OK, Cancel, Escape, Undo): the Properties sheet goes too, so the whole view is back.
@@ -119,6 +131,7 @@ export function startPhoneFloat(workspace: HTMLElement, viewport: HTMLElement, c
     if (state.kind === "pick") {
       const words = Object.assign(document.createElement("span"), { className: "phone-float-words", textContent: "Tap a plane or face" });
       const planes = PLANES.map((p) => proxy(`float-plane-${p}`, p, `#sketch-plane-${p}`, "phone-float-plane"));
+      for (const b of constructs) planes.push(proxy(`float-${b.id.slice("sketch-".length)}`, b.textContent ?? "", `#${CSS.escape(b.id)}`, "phone-float-plane"));
       return bar.replaceChildren(words, ...planes, proxy("float-cancel", "Cancel", "#sketch-cancel"));
     }
     const finish = withIcon(proxy("float-finish", state.ender.label, state.ender.ok, "phone-float-finish"), "finish");

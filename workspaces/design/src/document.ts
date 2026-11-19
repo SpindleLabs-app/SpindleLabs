@@ -16,10 +16,12 @@ import type { BodySpec, Feature, Plane } from "@fission/core";
 import { isFit, type Fit } from "@fission/print";
 import { NewerFormatError, XY_PLANE } from "@fission/core";
 import { faceFeature, isFacePlane, squared, worldFrame, type SketchFace, type SketchPlacement } from "./face-sketch.ts";
-import { isHeldDesignName } from "./design-edges.ts";
+import { isHeldDesignName, ruleFiveName } from "./design-edges.ts";
+import { answerProblem, constructPlaneItem, CONSTRUCT_ANGLE_MAX, CONSTRUCT_REF, CONSTRUCT_DISTANCE_MAX, CONSTRUCT_KINDS, constructInputs, isConstructKind, kindNumber, readConstructRef, type ConstructAnswer, type ConstructKind } from "./construct-data.ts";
 import type { SketchPin } from "./face-edges.ts";
 import type { SketchProjection } from "./projection.ts";
 import { outline, SHAPE_LABELS, type ProfileKind, type ShapeKind } from "./profiles.ts";
+import { patternParamsProblem, turnAxisItem } from "./pattern-values.ts";
 import { extrudeSketches, hasMoreProfiles, isMoreKeptKey, keptKey, MORE_PROFILES_LIMIT, profileParts, sameProfile, type ProfileRef } from "./extrude-profiles.ts";
 
 /** A ready-made outline on a plane (until the sketcher, step 21, adds sketches next to these). */
@@ -169,6 +171,15 @@ export interface Sketch {
   /** Only for a sketch on a face (step 26c). */
   face?: SketchFace;
   /**
+   * Only for a sketch on a construction plane (step 59a3): the frame it was
+   * drawn with, squared (face-sketch.ts `squared`). The rebuild lays it on
+   * the plane as the construction answers now (`frameNow`: its normal kept
+   * on the side drawn, x turned the shortest way, the origin the plane's
+   * nearest point to the world's origin), so the sketch never spins when
+   * the plane tilts.
+   */
+  drawn?: Plane;
+  /**
    * Its points pinned to a body's edges (face-edges.ts): to the face's
    * (step 26f), from 27c to any body's before it, on any plane; each point
    * once; left out when none are.
@@ -271,7 +282,7 @@ export type Marker = string;
 
 export interface DesignDocument {
   /** Version of this part of the project file (see docs/project-format.md). */
-  version: 22;
+  version: 29;
   /** The number the next new id gets. Ids are never reused, even after a delete (docs/document-model.md, section 2). */
   nextId: number;
   profiles: ReadyProfile[];
@@ -310,7 +321,7 @@ export const ORIGIN_AXES = ["origin-x", "origin-y", "origin-z"] as const;
 /** The origin's planes with an eye: hidden at first (Fusion's). */
 export const ORIGIN_PLANES = ["origin-xy", "origin-xz", "origin-yz"] as const;
 /** The browser's folders with an eye: shut, it hides every row in it (the Timeline lists items, not things drawn; the Profiles are drawn by nothing). */
-export const EYE_FOLDERS = { bodies: "folder-bodies", sketches: "folder-sketches", origin: "folder-origin" } as const;
+export const EYE_FOLDERS = { bodies: "folder-bodies", sketches: "folder-sketches", origin: "folder-origin", constructions: "folder-constructions" } as const;
 /** Every id `hidden` may list that is not a timeline item's, in the order it lists them. */
 export const EYE_ROWS: readonly string[] = [...ORIGIN_AXES, ...Object.values(EYE_FOLDERS)];
 
@@ -336,6 +347,8 @@ export function eyeOrder(doc: Pick<DesignDocument, "timeline" | "bodies">, shut:
   const listed = doc.timeline.features.flatMap((f) => [f.id, bodyIdOf(f.id), ...(pieces.get(f.id) ?? [])]);
   return [...listed, ...EYE_ROWS].filter((id) => shut.has(id));
 }
+/** Whether construction `id` is hidden (59a3): its own eye shut, or the Construction folder's. */
+export const constructHidden = (doc: Pick<DesignDocument, "hidden">, id: string): boolean => isHidden(doc, id) || isHidden(doc, EYE_FOLDERS.constructions);
 /** Whether sketch `id` is hidden: its own eye shut (an extrude of it shuts it, as Fusion does), or the Sketches folder's. */
 export const sketchHidden = (doc: Pick<DesignDocument, "hidden">, id: string): boolean => isHidden(doc, id) || isHidden(doc, EYE_FOLDERS.sketches);
 /** Whether an origin axis or plane is drawn: an axis unless its eye is shut, a plane only once its eye is opened; neither while the Origin folder's is shut. */
@@ -579,8 +592,103 @@ export type CombineOperation = (typeof COMBINE_OPERATIONS)[number];
 /** A Combine's parameters, all in every Combine. */
 export const COMBINE_PARAMS = ["target", "tools", "operation", "keepTools"] as const;
 
-/** Whether an item works on bodies other items made (a Move, a Combine), depending on those items, rather than making one of its own. */
-export const actsOnBodies = (f: Feature) => isMoveItem(f) || isCombineItem(f);
+/**
+ * A Chamfer (step 44a; Design data version 24): straight edges of one body
+ * made before it (`body`, by body id) cut back flat `distance` mm along
+ * both faces; with `second`, that far along the second face instead, or
+ * with `angle`, leaning that many degrees off the first face (never both);
+ * measured from the other face first when `flip`. Its
+ * `edges` are held by their design-wide names (rule 5, as a pin on a
+ * Combine's result holds one: design-edges.ts `heldEdgeName`), so they are
+ * found again however the body was made and whatever was edited before.
+ * The chamfered body keeps the body's id, as a Move's does; the new face of
+ * its k-th edge is `face:<the Chamfer>/chamfer:<k>` (counted from 1). It
+ * depends on the item that made its body, as a Move does, and makes no
+ * body of its own.
+ */
+export const isChamferItem = (f: Feature) => f.intent.type === "chamfer";
+
+/** A Chamfer's parameters in every Chamfer; at most one of `CHAMFER_SIZE_EXTRAS` may join them. */
+export const CHAMFER_PARAMS = ["body", "edges", "distance", "flip"] as const;
+
+/** A Chamfer's optional second size: `second` (two distances) or `angle` (a distance and an angle). */
+export const CHAMFER_SIZE_EXTRAS = ["second", "angle"] as const;
+
+/**
+ * A Chamfer's size in the kernel's own form (core's `ChamferSize`):
+ * `{ equal: d }` d back along both faces; `{ two: [d1, d2] }` d1 along the
+ * first face, d2 along the second; `{ angle: [d, degrees] }` d along the
+ * first face, leaning that many degrees off it. Millimetres and degrees.
+ */
+export type ChamferSizing = { equal: number } | { two: [number, number] } | { angle: [number, number] };
+
+/** The most a chamfer's distance can be (the kernel's model space, 1 km), in mm. */
+export const CHAMFER_MAX = 1_000_000;
+
+/** A Chamfer's body, held edge names, size and flip. */
+export function chamferOf(f: Feature): { body: string; edges: string[]; size: ChamferSizing; flip: boolean } {
+  const p = f.intent.parameters;
+  const d = p.distance as number;
+  const size: ChamferSizing = typeof p.second === "number" ? { two: [d, p.second] } : typeof p.angle === "number" ? { angle: [d, p.angle] } : { equal: d };
+  return { body: p.body as string, edges: [...(p.edges as string[])], size, flip: p.flip === true };
+}
+
+/**
+ * A Pattern (step 61; Design data version 25): copies of bodies made before
+ * it (`bodies`, by body id, in the order picked) in a row, a grid or round an
+ * axis (pattern-values.ts `PatternValues`; counts include the original). The
+ * bodies stay as they were; the copies are its pieces, `body:<the
+ * Pattern>/piece:<k>` (each body's copies in turn, in the kernel's order),
+ * numbered when first built. With `join`, each body's copies are joined to
+ * it as a Combine's Join does: the joined body keeps the body's id, a copy
+ * that meets nothing stays a piece. It depends on the items that made its
+ * bodies, as a Move does, and makes no body under its own id.
+ */
+export const isPatternItem = (f: Feature) => f.intent.type === "pattern";
+
+/**
+ * A Shell (step 35h2c; Design data version 27): one body made before it
+ * (`body`, by body id) hollowed out, walls `thickness` mm thick inside it,
+ * the `faces` named left open (none: a sealed hollow inside). Its faces are
+ * held by their design-wide names (each the name the screen shows the face
+ * by), so they are found again however the body was made and whatever was
+ * edited before. The shelled body keeps the body's id, as a Cut's target
+ * does; when the walls fall apart into several pieces (both caps of a
+ * prism open), the others are `body:<the Shell>/piece:<k>`, numbered and
+ * remembered as a Cut's pieces are. The inside wall moved in from the face
+ * named n is `face:<the Shell>/inside:<n escaped>`, so a sketch on it
+ * follows that face. It depends on the item that made its body, as a Move
+ * does, and makes no body of its own.
+ */
+export const isShellItem = (f: Feature) => f.intent.type === "shell";
+
+/** A Shell's parameters, all in every Shell. */
+export const SHELL_PARAMS = ["body", "faces", "thickness"] as const;
+
+/** The thinnest and thickest a Shell's walls can be (the kernel's MIN_FEATURE, 1 um, and model space, 1 km), in mm, both allowed. */
+export const SHELL_MIN = 0.001;
+export const SHELL_MAX = 1_000_000;
+
+/** A Shell's body, held open face names (in the order picked) and wall thickness. */
+export function shellOf(f: Feature): { body: string; faces: string[]; thickness: number } {
+  const p = f.intent.parameters;
+  return { body: p.body as string, faces: [...(p.faces as string[])], thickness: p.thickness as number };
+}
+
+/** The name of a Shell's inside wall moved in from the face named `face` (`isShellItem`). */
+export const insideWallName = (shell: string, face: string): string => `face:${encodeURIComponent(shell)}/inside:${encodeURIComponent(face)}`;
+
+/** Why a Shell's wall thickness can't be, in words, or null: a number from SHELL_MIN to SHELL_MAX mm. */
+export function shellThicknessProblem(t: unknown): string | null {
+  if (isFiniteNumber(t) && t >= SHELL_MIN && t <= SHELL_MAX) return null;
+  return `its wall thickness ${typeof t === "string" ? JSON.stringify(t) : shown(t)} is not from ${SHELL_MIN} to ${SHELL_MAX} mm`;
+}
+
+/** Whether an item leaves a body that only the kernel holds, with no spec to build it from (a Combine's or operation extrude's pieces, a Chamfer's body): its files are asked of the kernel by body. */
+export const kernelHeld = (f: Feature) => makesPieces(f) || isChamferItem(f);
+
+/** Whether an item works on bodies other items made (a Move, a Combine, a Chamfer, a Pattern, a Shell), depending on those items, rather than making one of its own. */
+export const actsOnBodies = (f: Feature) => isMoveItem(f) || isCombineItem(f) || isChamferItem(f) || isPatternItem(f) || isShellItem(f);
 
 /**
  * An extrude of a sketch with an operation (Fusion's Join, Cut and
@@ -611,8 +719,8 @@ export function extrudeOperation(f: Feature): { operation: CombineOperation; bod
 /** The items that made an operation extrude's bodies, each once, in the order picked. */
 export const operationMakers = (f: Feature): string[] => [...new Set((extrudeOperation(f)?.bodies ?? []).map((b) => bodyItem(b)!))];
 
-/** Whether an item can leave pieces (`body:<it>/piece:<k>`): a Combine, or an extrude with an operation. */
-export const makesPieces = (f: Feature) => isCombineItem(f) || isOperationExtrude(f) || (isSketchExtrude(f) && hasMoreProfiles(f));
+/** Whether an item can leave pieces (`body:<it>/piece:<k>`): a Combine, an extrude with an operation or of several profiles, a Pattern (its copies) or a Shell. */
+export const makesPieces = (f: Feature) => isCombineItem(f) || isPatternItem(f) || isShellItem(f) || isOperationExtrude(f) || (isSketchExtrude(f) && hasMoreProfiles(f));
 
 /** Whether an item is an Extrude Join (version 10), whose own body (version 16) is the piece of its result holding only the extrude. */
 export const isExtrudeJoin = (f: Feature) => isOperationExtrude(f) && f.intent.parameters.operation === "join";
@@ -625,11 +733,40 @@ export const isExtrudeJoin = (f: Feature) => isOperationExtrude(f) && f.intent.p
  */
 export const numberedWhenBuilt = (bodyId: string, item: Feature | undefined): boolean => isPiece(bodyId) || (item !== undefined && bodyId === bodyIdOf(item.id) && isExtrudeJoin(item));
 
-/** Whether an item makes a body of its own: anything but a sketch, a Move, a Combine or an extrude with an operation (a Duplicate's copy is its own body). */
-export const makesBody = (f: Feature) => !isSketchItem(f) && !actsOnBodies(f) && !isOperationExtrude(f);
+/**
+ * A construction plane, axis or point (step 59a1; Design data version 26):
+ * `make` a kind of construct-data.ts `CONSTRUCT_KINDS`, `inputs` what it is
+ * made from by slot, each a name (construct-data.ts: an origin plane, axis or
+ * point, a face, an edge, a corner or an earlier construction), the number
+ * its kind needs (`distance` in mm or `angle` in degrees), and `answer`, its
+ * last answer, where it is held when a name is lost (rebuild.ts
+ * `constructRun`; `followedDoc` keeps it up to date). It makes no body, and
+ * depends on exactly the items its names are named after (`constructInputs`).
+ */
+export const isConstructItem = (f: Feature) => f.intent.type === "construct";
 
-/** Whether an item's own faces can be named in the design (sketched on, pinned to, projected): one that makes a body, or an extrude with an operation (its faces carried onto the bodies it joined or cut). */
-export const hasOwnFaces = (f: Feature) => makesBody(f) || isOperationExtrude(f);
+/** A construction's kind, names by slot, number and last answer. */
+export function constructOf(f: Feature): { make: ConstructKind; inputs: Record<string, string>; distance?: number; angle?: number; answer: ConstructAnswer } {
+  const p = f.intent.parameters;
+  return { make: p.make as ConstructKind, inputs: { ...(p.inputs as unknown as Record<string, string>) }, ...(typeof p.distance === "number" && { distance: p.distance }), ...(typeof p.angle === "number" && { angle: p.angle }), answer: p.answer as unknown as ConstructAnswer };
+}
+
+/** A construction's parameters: always these, and the number its kind needs (`distance` or `angle`). */
+export const CONSTRUCT_PARAMS = ["make", "inputs", "answer"] as const;
+
+/** Whether an item makes a body of its own: anything but a sketch, a construction, a Move, a Combine or an extrude with an operation (a Duplicate's copy is its own body). */
+export const makesBody = (f: Feature) => !isSketchItem(f) && !isConstructItem(f) && !actsOnBodies(f) && !isOperationExtrude(f);
+
+/** Whether an item's own faces can be named in the design (pinned to, projected): one that makes a body, or an extrude with an operation (its faces carried onto the bodies it joined or cut). */
+const namesOwnBodyFaces = (f: Feature) => makesBody(f) || isOperationExtrude(f);
+
+/**
+ * Whether a sketch can go on a face named after this item: one whose own faces are named (`namesOwnBodyFaces`), or
+ * (Ben 2026-11-16) a Chamfer, whose new faces are `face:<the Chamfer>/chamfer:<k>` on the body it cut (rebuild.ts
+ * `chamferRun`), found again by that name across the design as any face is.
+ */
+export const hasOwnFaces = (f: Feature) => namesOwnBodyFaces(f) || isChamferItem(f) || isShellItem(f);
+// A Shell's inside walls are `face:<the Shell>/inside:<n>` (step 35h2c), sketched on as a Chamfer's faces are.
 
 /**
  * A Duplicate (step 35e2): a copy of one body made before it (its `body`,
@@ -1198,6 +1335,24 @@ function checkFaceSketch(f: Feature, content: Sketch, byId: ReadonlyMap<string, 
 }
 
 /**
+ * A sketch on a construction plane, checked (step 59a3): the frame it was
+ * drawn with and no face's; its construction a plane made before it in the
+ * timeline (or gone: deleted, the sketch is held where it was drawn, as a
+ * face sketch with its face lost), and depended on.
+ */
+function checkConstructSketch(f: Feature, content: Sketch, byId: ReadonlyMap<string, { item: Feature; at: number }>): void {
+  const at = `Design sketch ${f.id}`;
+  const item = constructPlaneItem(f.intent.parameters.plane)!;
+  if (Object.hasOwn(content, "face")) throw new Error(`${at} is on a construction plane but keeps a face's frame`);
+  if (!Object.hasOwn(content, "drawn")) throw new Error(`${at} is on a construction plane but has no frame it was drawn with`);
+  checkPlane(content.drawn, `${at}'s frame`);
+  const there = byId.get(item);
+  if (there === undefined ? !ID_SHAPE.test(item) : there.at > byId.get(f.id)!.at || !isConstructItem(there.item) || CONSTRUCT_KINDS[there.item.intent.parameters.make as ConstructKind]?.makes !== "plane")
+    throw new Error(`${at} is on ${JSON.stringify(f.intent.parameters.plane)}, which is not a construction plane before it in the timeline`);
+  if (!Array.isArray(f.dependsOn) || !f.dependsOn.includes(item)) throw new Error(`${at} is on construction ${item} but does not depend on it`);
+}
+
+/**
  * A sketch's pins, checked (step 26f; on any sketch from 27c): a list of
  * at least one, each one of the sketch's points (each point once), what on
  * the edge (an endpoint, a middle or a centre), a name (a vertex's for an
@@ -1209,7 +1364,7 @@ function checkFaceSketch(f: Feature, content: Sketch, byId: ReadonlyMap<string, 
  * on.
  */
 /** Whether a pin or projection named `name` can be on item `item`'s body: one with its own faces, or (35f1f2b, version 15) a Combine, by a name its result gives (design-edges.ts). */
-export const pinnable = (item: Feature, name: string): boolean => hasOwnFaces(item) || (isCombineItem(item) && isHeldDesignName(name));
+export const pinnable = (item: Feature, name: string): boolean => namesOwnBodyFaces(item) || ((isCombineItem(item) || isShellItem(item)) && isHeldDesignName(name));
 
 /** Whether an item's body can be a Combine's result whose edges pins hold by their design names (35f1f2b): a Combine, (35f1f2c) a Duplicate of one, or (Combine hunt 2) an extrude that joins, cuts or intersects, by which snapping to a body it changed names it; or (SL #611, broken-solids hunt D5) an extrude of several profiles, whose bodies are a join's result. */
 const holdsDesignNames = (item: Feature): boolean => isCombineItem(item) || isDuplicateItem(item) || makesPieces(item);
@@ -1409,10 +1564,13 @@ export function withRuledNames(doc: DesignDocument): DesignDocument {
   const kindOf = presetKinds(doc);
   const base = (f: Feature): string => {
     if (isSketchItem(f)) return "Sketch";
+    if (isConstructItem(f)) return constructBase(f);
     if (isMoveItem(f)) return "Move";
     if (isCombineItem(f)) return "Combine";
+    if (isPatternItem(f)) return "Pattern";
     if (isDuplicateItem(f)) return "Copy";
     if (isSketchExtrude(f)) return "Extrude";
+    if (isChamferItem(f)) return "Chamfer";
     const kind = kindOf(f);
     return kind === null ? "Item" : SHAPE_LABELS[kind];
   };
@@ -1548,15 +1706,196 @@ function checkDuplicate(d: Partial<DesignDocument>, f: Feature, byId: ReadonlyMa
   const at = `Design duplicate ${f.id}`;
   const p = f.intent.parameters;
   for (const key of Object.keys(p)) if (key !== "body" && key !== "mirror") throw new Error(`${at} has a parameter ${JSON.stringify(key)} a duplicate doesn't have`);
-  // Mirror body (step 35e2): the origin plane its copy is mirrored across, when it is a Mirror.
-  if (Object.hasOwn(p, "mirror") && !(SKETCH_PLANES as readonly unknown[]).includes(p.mirror)) throw new Error(`${at} mirrors across ${typeof p.mirror === "string" ? JSON.stringify(p.mirror) : shown(p.mirror)}, which is not an origin plane (XY, XZ or YZ)`);
+  // Mirror body (step 35e2): the origin plane its copy is mirrored across, when it is a Mirror; from 59a3 a construction
+  // plane's name, a plane made before it in the timeline (or deleted since: the rebuild fails it in words), depended on after
+  // the body's item.
+  const across = Object.hasOwn(p, "mirror") ? constructPlaneItem(p.mirror) : null;
+  if (Object.hasOwn(p, "mirror") && across === null && !(SKETCH_PLANES as readonly unknown[]).includes(p.mirror)) throw new Error(`${at} mirrors across ${typeof p.mirror === "string" ? JSON.stringify(p.mirror) : shown(p.mirror)}, which is not an origin plane (XY, XZ or YZ) or a construction plane`);
+  if (across !== null) {
+    const there = byId.get(across);
+    if (there === undefined ? !ID_SHAPE.test(across) : there.at >= byId.get(f.id)!.at || !isConstructItem(there.item) || CONSTRUCT_KINDS[there.item.intent.parameters.make as ConstructKind]?.makes !== "plane")
+      throw new Error(`${at} mirrors across ${JSON.stringify(p.mirror)}, which is not a construction plane before it in the timeline`);
+  }
   const id: unknown = p.body;
   const maker = typeof id === "string" ? bodyItem(id) : null;
   const there = maker === null ? undefined : byId.get(maker);
   // A piece of a Combine deleted since is allowed too, as a Move's or a Combine's pick of one (Combine bug hunt 11-08: the file would not open).
   const deleted = maker !== null && there === undefined && ID_SHAPE.test(maker);
   if (!deleted && (there === undefined || there.at >= byId.get(f.id)!.at || !isBodyOf(d, byId, id as string))) throw new Error(`${at} copies ${shown(id)}, which is not a body made before it in the timeline`);
-  if (f.dependsOn.length !== 1 || f.dependsOn[0] !== maker) throw new Error(`${at} must depend on exactly the item that made the body it copies (${maker})`);
+  if (across !== null) {
+    if (f.dependsOn.length !== 2 || f.dependsOn[0] !== maker || f.dependsOn[1] !== across) throw new Error(`${at} must depend on exactly the item that made the body it mirrors (${maker}), then the construction it mirrors across (${across})`);
+  } else if (f.dependsOn.length !== 1 || f.dependsOn[0] !== maker) throw new Error(`${at} must depend on exactly the item that made the body it copies (${maker})`);
+}
+
+/**
+ * Why a chamfer's size can't be, in words, or null (step 44a): `distance`
+ * above 0 and at most CHAMFER_MAX mm; `second`, when there, the same;
+ * `angle`, when there, strictly between 0° and 90°; never both.
+ */
+export function chamferSizeProblem(p: Readonly<Record<string, unknown>>): string | null {
+  const distance = (d: unknown) => isFiniteNumber(d) && d > 0 && d <= CHAMFER_MAX;
+  // Text quoted, so "2" (text) never reads as the 2 it is not.
+  const said = (v: unknown) => (typeof v === "string" ? JSON.stringify(v) : shown(v));
+  if (!distance(p.distance)) return `its distance ${said(p.distance)} is not above 0 and at most ${CHAMFER_MAX} mm`;
+  if (Object.hasOwn(p, "second") && Object.hasOwn(p, "angle")) return "it has both a second distance and an angle, which a chamfer never has together";
+  if (Object.hasOwn(p, "second") && !distance(p.second)) return `its second distance ${said(p.second)} is not above 0 and at most ${CHAMFER_MAX} mm`;
+  if (Object.hasOwn(p, "angle") && !(isFiniteNumber(p.angle) && p.angle > 0 && p.angle < 90)) return `its angle ${said(p.angle)} is not between 0 and 90 degrees`;
+  return null;
+}
+
+/**
+ * A Chamfer, checked (step 44a): its parameters exactly `CHAMFER_PARAMS`;
+ * its body one made before it (by body id, as a Move's; one deleted since
+ * is allowed, the rebuild fails the Chamfer naming it); one or more edges,
+ * each a held design-wide edge name (design-edges.ts), none twice; its
+ * distance and any second distance or angle (`chamferSizeProblem`); flip
+ * true or false; and `dependsOn` exactly the
+ * item that made its body.
+ */
+function checkChamfer(d: Partial<DesignDocument>, f: Feature, byId: ReadonlyMap<string, { item: Feature; at: number }>): void {
+  const at = `Design chamfer ${f.id}`;
+  const p = f.intent.parameters;
+  for (const key of Object.keys(p)) if (!(CHAMFER_PARAMS as readonly string[]).includes(key) && !(CHAMFER_SIZE_EXTRAS as readonly string[]).includes(key)) throw new Error(`${at} has a parameter ${JSON.stringify(key)} a chamfer doesn't have`);
+  const id: unknown = p.body;
+  const maker = typeof id === "string" ? bodyItem(id) : null;
+  const there = maker === null ? undefined : byId.get(maker);
+  const deleted = maker !== null && there === undefined && ID_SHAPE.test(maker);
+  if (!deleted && (there === undefined || there.at >= byId.get(f.id)!.at || !isBodyOf(d, byId, id as string))) throw new Error(`${at} chamfers ${shown(id)}, which is not a body made before it in the timeline`);
+  if (!Array.isArray(p.edges) || p.edges.length === 0) throw new Error(`${at} has no edges`);
+  notTooMany(p.edges.length, DESIGN_LIMITS.items, `${at} names`, "edges");
+  const once = new Set<unknown>();
+  for (const e of p.edges as unknown[]) {
+    if (typeof e !== "string" || ruleFiveName(e) === null) throw new Error(`${at}'s edge ${shown(e)} is not an edge's name`);
+    if (once.has(e)) throw new Error(`${at} names edge ${e} twice`);
+    once.add(e);
+  }
+  const problem = chamferSizeProblem(p);
+  if (problem !== null) throw new Error(`${at}'s size: ${problem}`);
+  if (typeof p.flip !== "boolean") throw new Error(`${at}'s flip ${typeof p.flip === "string" ? JSON.stringify(p.flip) : shown(p.flip)} is not true or false`);
+  if (f.dependsOn.length !== 1 || f.dependsOn[0] !== maker) throw new Error(`${at} must depend on exactly the item that made the body it chamfers (${maker})`);
+}
+
+/** A construction's base name: "Plane", "Axis" or "Point" by what its kind makes ("Plane 1"). */
+export function constructBase(f: Feature): string {
+  const make = f.intent.parameters.make;
+  if (!isConstructKind(make)) return "Item";
+  return { plane: "Plane", axis: "Axis", point: "Point" }[CONSTRUCT_KINDS[make].makes];
+}
+
+/** Why a construction's number can't be, in words, or null: a distance at most CONSTRUCT_DISTANCE_MAX mm either way, an angle at most CONSTRUCT_ANGLE_MAX degrees either way. */
+export function constructNumberProblem(kind: ConstructKind, p: Readonly<Record<string, unknown>>): string | null {
+  const need = kindNumber(kind);
+  const said = (v: unknown) => (typeof v === "string" ? JSON.stringify(v) : shown(v));
+  for (const k of ["distance", "angle"] as const) if (k !== need && Object.hasOwn(p, k)) return `it has ${k === "distance" ? "a distance" : "an angle"}, which ${kind} doesn't take`;
+  if (need === "distance" && !(isFiniteNumber(p.distance) && Math.abs(p.distance) <= CONSTRUCT_DISTANCE_MAX)) return `its distance ${said(p.distance)} is not a number of mm up to ${CONSTRUCT_DISTANCE_MAX} either way`;
+  if (need === "angle" && !(isFiniteNumber(p.angle) && Math.abs(p.angle) <= CONSTRUCT_ANGLE_MAX)) return `its angle ${said(p.angle)} is not a number of degrees up to ${CONSTRUCT_ANGLE_MAX} either way`;
+  return null;
+}
+
+/**
+ * A construction, checked (step 59a1): its parameters `CONSTRUCT_PARAMS` and
+ * its kind's number; a kind the kernel makes; exactly its kind's slots, each
+ * a name construct-data.ts reads, an earlier construction one before it (or
+ * deleted since: the item is then held at its last answer); its number
+ * (`constructNumberProblem`); its last answer one of what its kind makes;
+ * and `dependsOn` exactly `constructInputs`.
+ */
+function checkConstruct(f: Feature, byId: ReadonlyMap<string, { item: Feature; at: number }>): void {
+  const at = `Design construction ${f.id}`;
+  const p = f.intent.parameters;
+  for (const key of Object.keys(p)) if (!(CONSTRUCT_PARAMS as readonly string[]).includes(key) && key !== "distance" && key !== "angle") throw new Error(`${at} has a parameter ${JSON.stringify(key)} a construction doesn't have`);
+  const make: unknown = p.make;
+  if (!isConstructKind(make)) throw new Error(`${at} makes ${typeof make === "string" ? JSON.stringify(make) : shown(make)}, which is not a construction this SpindleLabs makes`);
+  if (!isRecord(p.inputs)) throw new Error(`${at} has no inputs`);
+  const given: Record<string, unknown> = p.inputs;
+  const slots: readonly string[] = CONSTRUCT_KINDS[make].slots;
+  for (const key of Object.keys(given)) if (!slots.includes(key)) throw new Error(`${at} has an input ${JSON.stringify(key)}, which ${make} doesn't take`);
+  const here = byId.get(f.id)!.at;
+  for (const slot of slots) {
+    const name: unknown = given[slot];
+    if (!Object.hasOwn(given, slot)) throw new Error(`${at} has no ${slot}`);
+    const ref = readConstructRef(name);
+    if (ref === null) throw new Error(`${at}'s ${slot} ${typeof name === "string" ? JSON.stringify(name) : shown(name)} is not a name of a plane, axis, point, face, edge or corner`);
+    if (ref.kind !== "construct") continue;
+    const there = byId.get(ref.item);
+    if (there === undefined ? !ID_SHAPE.test(ref.item) : there.at >= here || !isConstructItem(there.item)) throw new Error(`${at}'s ${slot} names ${ref.item}, which is not a construction before it in the timeline`);
+  }
+  const problem = constructNumberProblem(make, p);
+  if (problem !== null) throw new Error(`${at}: ${problem}`);
+  const wrong = answerProblem(p.answer, CONSTRUCT_KINDS[make].makes);
+  if (wrong !== null) throw new Error(`${at}'s last answer: ${wrong}`);
+  const inputs = constructInputs(given, make);
+  if (f.dependsOn.length !== inputs.length || inputs.some((id, k) => f.dependsOn[k] !== id)) throw new Error(`${at} must depend on exactly the items it is made from (${inputs.length === 0 ? "none" : inputs.join(", ")})`);
+}
+
+/**
+ * A Pattern, checked (step 61): its values (pattern-values.ts
+ * `patternParamsProblem`: exactly its kind's keys, every limit the tool
+ * keeps); at least one body, each once, each a body made before it (one
+ * deleted since is allowed, as a Move's: the rebuild fails or warns naming
+ * it); and `dependsOn` exactly the items that made them, each once, in the
+ * order first picked.
+ */
+function checkPattern(d: Partial<DesignDocument>, f: Feature, byId: ReadonlyMap<string, { item: Feature; at: number }>): void {
+  const at = `Design pattern ${f.id}`;
+  const p = f.intent.parameters;
+  const problem = patternParamsProblem(p);
+  if (problem !== null) throw new Error(`${at}: ${problem}`);
+  const bodies: unknown = p.bodies;
+  if (!Array.isArray(bodies) || bodies.length === 0) throw new Error(`${at} patterns no body`);
+  notTooMany(bodies.length, DESIGN_LIMITS.items, `${at} names`, "bodies");
+  const once = new Set<unknown>();
+  const makers: string[] = [];
+  for (const id of bodies as unknown[]) {
+    const maker = typeof id === "string" ? bodyItem(id) : null;
+    const there = maker === null ? undefined : byId.get(maker);
+    const deleted = maker !== null && there === undefined && ID_SHAPE.test(maker);
+    if (!deleted && (there === undefined || there.at >= byId.get(f.id)!.at || !isBodyOf(d, byId, id as string))) throw new Error(`${at} patterns ${shown(id)}, which is not a body made before it in the timeline`);
+    if (once.has(id)) throw new Error(`${at} patterns ${id} twice`);
+    once.add(id);
+    if (!makers.includes(maker!)) makers.push(maker!);
+  }
+  // Round a construction axis (step 59a3b): an axis made before it in the timeline (or deleted since: the rebuild fails it in
+  // words), depended on after the bodies' items.
+  const axis = p.kind === "circular" ? turnAxisItem(p.axis) : null;
+  if (axis !== null) {
+    const there = byId.get(axis);
+    if (there === undefined ? !ID_SHAPE.test(axis) : there.at >= byId.get(f.id)!.at || !isConstructItem(there.item) || CONSTRUCT_KINDS[there.item.intent.parameters.make as ConstructKind]?.makes !== "axis")
+      throw new Error(`${at} turns round ${JSON.stringify(p.axis)}, which is not a construction axis before it in the timeline`);
+  }
+  const want = axis === null ? makers : [...makers, axis];
+  if (f.dependsOn.length !== want.length || f.dependsOn.some((x, i) => x !== want[i]))
+    throw new Error(axis === null ? `${at} must depend on exactly the items that made the bodies it patterns (${makers.join(", ")}), in that order` : `${at} must depend on exactly the items that made the bodies it patterns (${makers.join(", ")}), in that order, then the construction it turns round (${axis})`);
+}
+
+/**
+ * A Shell, checked (step 35h2c): its parameters exactly `SHELL_PARAMS`;
+ * its body one made before it (by body id, as a Chamfer's; one deleted
+ * since is allowed, the rebuild fails the Shell naming it); its open faces
+ * a list (empty: sealed) of face names, none twice; its wall thickness
+ * (`shellThicknessProblem`); and `dependsOn` exactly the item that made
+ * its body.
+ */
+function checkShell(d: Partial<DesignDocument>, f: Feature, byId: ReadonlyMap<string, { item: Feature; at: number }>): void {
+  const at = `Design shell ${f.id}`;
+  const p = f.intent.parameters;
+  for (const key of Object.keys(p)) if (!(SHELL_PARAMS as readonly string[]).includes(key)) throw new Error(`${at} has a parameter ${JSON.stringify(key)} a shell doesn't have`);
+  const id: unknown = p.body;
+  const maker = typeof id === "string" ? bodyItem(id) : null;
+  const there = maker === null ? undefined : byId.get(maker);
+  const deleted = maker !== null && there === undefined && ID_SHAPE.test(maker);
+  if (!deleted && (there === undefined || there.at >= byId.get(f.id)!.at || !isBodyOf(d, byId, id as string))) throw new Error(`${at} hollows ${shown(id)}, which is not a body made before it in the timeline`);
+  if (!Array.isArray(p.faces)) throw new Error(`${at} has no list of open faces`);
+  notTooMany(p.faces.length, DESIGN_LIMITS.items, `${at} names`, "open faces");
+  const once = new Set<unknown>();
+  for (const face of p.faces as unknown[]) {
+    if (typeof face !== "string" || !isFacePlane(face) || faceFeature(face) === null) throw new Error(`${at}'s open face ${shown(face)} is not a face's name`);
+    if (once.has(face)) throw new Error(`${at} names open face ${face} twice`);
+    once.add(face);
+  }
+  const problem = shellThicknessProblem(p.thickness);
+  if (problem !== null) throw new Error(`${at}'s ${problem.slice("its ".length)}`);
+  if (f.dependsOn.length !== 1 || f.dependsOn[0] !== maker) throw new Error(`${at} must depend on exactly the item that made the body it hollows (${maker})`);
 }
 
 function isBodyOf(d: Partial<DesignDocument>, byId: ReadonlyMap<string, { item: Feature }>, id: string): boolean {
@@ -1673,6 +2012,64 @@ function hasVersion19Fields(d: Record<string, unknown>): boolean {
 function hasVersion21Fields(d: Record<string, unknown>): boolean {
   const features = isRecord(d.timeline) && Array.isArray(d.timeline.features) ? d.timeline.features : [];
   return features.some((f) => isRecord(f) && isRecord(f.intent) && isRecord(f.intent.parameters) && Object.hasOwn(f.intent.parameters, "symmetric"));
+}
+
+/** Whether version 22 data has a Through all extrude (Ben 2026-11-14), which only version 23 holds. */
+/** Whether version 25 data has a construction (step 59a1), which only version 26 brought. */
+function hasVersion26Fields(d: Record<string, unknown>): boolean {
+  const features = isRecord(d.timeline) && Array.isArray(d.timeline.features) ? d.timeline.features : [];
+  return features.some((f) => isRecord(f) && isRecord(f.intent) && f.intent.type === "construct");
+}
+
+/** Whether version 24 data has a Pattern (step 61), which only version 25 brought. */
+function hasVersion25Fields(d: Record<string, unknown>): boolean {
+  const features = isRecord(d.timeline) && Array.isArray(d.timeline.features) ? d.timeline.features : [];
+  return features.some((f) => isRecord(f) && isRecord(f.intent) && f.intent.type === "pattern");
+}
+
+/** Whether version 23 data has a Chamfer (step 44a), which only version 24 brought. */
+function hasVersion24Fields(d: Record<string, unknown>): boolean {
+  const features = isRecord(d.timeline) && Array.isArray(d.timeline.features) ? d.timeline.features : [];
+  return features.some((f) => isRecord(f) && isRecord(f.intent) && f.intent.type === "chamfer");
+}
+
+/** Whether version 26 data has a Shell (step 35h2c), which only version 27 brought. */
+function hasVersion27Fields(d: Record<string, unknown>): boolean {
+  const features = isRecord(d.timeline) && Array.isArray(d.timeline.features) ? d.timeline.features : [];
+  return features.some((f) => isRecord(f) && isRecord(f.intent) && f.intent.type === "shell");
+}
+
+/**
+ * Whether version 27 data uses a construction (step 59a3), which only version
+ * 28 brought: a sketch on a construction plane (its plane `construct:<id>`,
+ * or a sketch keeping the frame `drawn`), a Duplicate mirroring across one, or
+ * a construction's eye or the Construction folder's in the hidden list.
+ */
+function hasVersion28Fields(d: Record<string, unknown>): boolean {
+  const features = isRecord(d.timeline) && Array.isArray(d.timeline.features) ? d.timeline.features : [];
+  const onConstruct = (v: unknown) => typeof v === "string" && v.startsWith(CONSTRUCT_REF);
+  const constructs = new Set<unknown>();
+  for (const f of features) {
+    if (!isRecord(f) || !isRecord(f.intent)) continue;
+    if (f.intent.type === "construct") constructs.add(f.id);
+    const p = f.intent.parameters;
+    if (!isRecord(p)) continue;
+    if (f.intent.type === "sketch" && onConstruct(p.plane)) return true;
+    if (f.intent.type === "duplicate" && onConstruct(p.mirror)) return true;
+  }
+  if ((Array.isArray(d.sketches) ? d.sketches : []).some((s) => isRecord(s) && Object.hasOwn(s, "drawn"))) return true;
+  return (Array.isArray(d.hidden) ? d.hidden : []).some((id) => id === EYE_FOLDERS.constructions || constructs.has(id));
+}
+
+/** Whether version 28 data has a Pattern round a construction axis (step 59a3b), which only version 29 brought. */
+function hasVersion29Fields(d: Record<string, unknown>): boolean {
+  const features = isRecord(d.timeline) && Array.isArray(d.timeline.features) ? d.timeline.features : [];
+  return features.some((f) => isRecord(f) && isRecord(f.intent) && f.intent.type === "pattern" && isRecord(f.intent.parameters) && typeof f.intent.parameters.axis === "string" && f.intent.parameters.axis.startsWith(CONSTRUCT_REF));
+}
+
+function hasVersion23Fields(d: Record<string, unknown>): boolean {
+  const features = isRecord(d.timeline) && Array.isArray(d.timeline.features) ? d.timeline.features : [];
+  return features.some((f) => isRecord(f) && isRecord(f.intent) && isRecord(f.intent.parameters) && Object.hasOwn(f.intent.parameters, "through"));
 }
 
 /** Whether version 21 data has a face sketch marked as drawn before version 22 (SL #707), which only version 22 marks. */
@@ -1870,7 +2267,7 @@ function checkMore(more: unknown, f: Feature, i: number, byId: ReadonlyMap<strin
 }
 
 /** The Design data version this SpindleLabs writes; readDesignDocument upgrades older data to it. */
-export const DESIGN_VERSION = 22;
+export const DESIGN_VERSION = 29;
 
 export function readDesignDocument(data: unknown): DesignDocument {
   if (!isRecord(data)) throw new Error("Design data is missing");
@@ -1948,10 +2345,34 @@ export function readDesignDocument(data: unknown): DesignDocument {
   // Version 22 (SL #707): a face sketch's `body` is the frame of the input face its name names; one from before recorded
   // the first input's of the face it was drawn on, and is marked so (`first`, `migrateDesignV21`), carried as before.
   if (v21.version === 21 && hasVersion22Fields(v21)) throw new Error(`Design data says version ${shown(given)} but has a sketch marked as drawn before version 22, which only version 22 marks`);
-  const d = (v21.version === 21 ? migrateDesignV21(v21) : v21) as Partial<DesignDocument>;
+  const v22 = v21.version === 21 ? migrateDesignV21(v21) : v21;
+  // Version 23 (Ben 2026-11-14) lets a Cut or Intersect extrude go through all its bodies (`through`), which version 22
+  // never held (a version 22 reader would stop it at the distance last typed); other version 22 data is read as it is.
+  if (v22.version === 22 && hasVersion23Fields(v22)) throw new Error(`Design data says version ${shown(given)} but has a Through all extrude, which version 23 brought`);
+  const v23 = v22.version === 22 ? { ...v22, version: 23 } : v22;
+  // Version 24 (step 44a) brings the Chamfer, which no version 23 reader builds; other version 23 data is read as it is.
+  if (v23.version === 23 && hasVersion24Fields(v23)) throw new Error(`Design data says version ${shown(given)} but has a Chamfer, which version 24 brought`);
+  const v24 = v23.version === 23 ? { ...v23, version: 24 } : v23;
+  // Version 25 (step 61) brings the Pattern, which no version 24 reader builds; other version 24 data is read as it is.
+  if (v24.version === 24 && hasVersion25Fields(v24)) throw new Error(`Design data says version ${shown(given)} but has a Pattern, which version 25 brought`);
+  const v25 = v24.version === 24 ? { ...v24, version: 25 } : v24;
+  // Version 26 (step 59a1) brings construction planes, axes and points, which no version 25 reader builds; other version 25 data is read as it is.
+  if (v25.version === 25 && hasVersion26Fields(v25)) throw new Error(`Design data says version ${shown(given)} but has a construction plane, axis or point, which version 26 brought`);
+  const v26 = v25.version === 25 ? { ...v25, version: 26 } : v25;
+  // Version 27 (step 35h2c) brings the Shell, which no version 26 reader builds; other version 26 data is read as it is.
+  if (v26.version === 26 && hasVersion27Fields(v26)) throw new Error(`Design data says version ${shown(given)} but has a Shell, which version 27 brought`);
+  const v27 = v26.version === 26 ? { ...v26, version: 27 } : v26;
+  // Version 28 (step 59a3) lets a sketch sit on a construction plane, a Mirror go across one, and an eye hide one or the
+  // Construction folder, which no version 27 reader holds; other version 27 data is read as it is.
+  if (v27.version === 27 && hasVersion28Fields(v27)) throw new Error(`Design data says version ${shown(given)} but uses a construction plane or its eye, which version 28 brought`);
+  const v28 = v27.version === 27 ? { ...v27, version: 28 } : v27;
+  // Version 29 (step 59a3b) lets a Pattern turn round a construction axis, which no version 28 reader holds; other
+  // version 28 data is read as it is.
+  if (v28.version === 28 && hasVersion29Fields(v28)) throw new Error(`Design data says version ${shown(given)} but has a Pattern round a construction axis, which version 29 brought`);
+  const d = (v28.version === 28 ? { ...v28, version: 29 } : v28) as Partial<DesignDocument>;
   // Text quoted, so "5" (text) never reads as the 5 it is not (app sweep, finding 25).
   // A whole number above DESIGN_VERSION is from a newer SpindleLabs (kept by the unsaved-changes journal for it); anything else is wrong.
-  if (d.version !== DESIGN_VERSION) throw new (Number.isSafeInteger(d.version) && d.version! > DESIGN_VERSION ? NewerFormatError : Error)(`Design data version ${typeof d.version === "string" ? JSON.stringify(d.version) : shown(d.version)} is not one this SpindleLabs reads (1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21 or 22)`);
+  if (d.version !== DESIGN_VERSION) throw new (Number.isSafeInteger(d.version) && d.version! > DESIGN_VERSION ? NewerFormatError : Error)(`Design data version ${typeof d.version === "string" ? JSON.stringify(d.version) : shown(d.version)} is not one this SpindleLabs reads (1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28 or 29)`);
   // An empty timeline is an empty design (24f4: everything deleted), shown with no body.
   if (!Array.isArray(d.profiles) || !Array.isArray(d.timeline?.features)) throw new Error("Design data has no timeline");
   if (!Array.isArray(d.sketches)) throw new Error("Design data has no sketches list");
@@ -2001,9 +2422,11 @@ export function readDesignDocument(data: unknown): DesignDocument {
   for (const f of items) {
     const content = sketchIds.get(f.id);
     if (content === undefined) throw new Error(`Design timeline item ${f.id} is a sketch with no content in the sketches list`);
-    if (isFacePlane(f.intent.parameters.plane)) checkFaceSketch(f, content, byId);
+    if (constructPlaneItem(f.intent.parameters.plane) !== null) checkConstructSketch(f, content, byId);
+    else if (Object.hasOwn(content, "drawn")) throw new Error(`Design sketch ${f.id} is on ${typeof f.intent.parameters.plane === "string" ? JSON.stringify(f.intent.parameters.plane) : shown(f.intent.parameters.plane)} but keeps a construction plane's frame`);
+    else if (isFacePlane(f.intent.parameters.plane)) checkFaceSketch(f, content, byId);
     else if (Object.hasOwn(content, "face")) throw new Error(`Design sketch ${f.id} is on the ${shown(f.intent.parameters.plane)} plane but keeps a face's frame`);
-    else if (!(SKETCH_PLANES as readonly unknown[]).includes(f.intent.parameters.plane)) throw new Error(`Design sketch ${f.id} is on ${shown(f.intent.parameters.plane)}, not a plane this SpindleLabs knows (XY, XZ, YZ or a face)`);
+    else if (!(SKETCH_PLANES as readonly unknown[]).includes(f.intent.parameters.plane)) throw new Error(`Design sketch ${f.id} is on ${shown(f.intent.parameters.plane)}, not a plane this SpindleLabs knows (XY, XZ, YZ, a face or a construction plane)`);
     // Any sketch's points may be pinned to an earlier body's edges (27c), checked once its plane is.
     if (Object.hasOwn(content, "pins")) checkPins(f, content, byId);
     // And its projections (27d).
@@ -2037,6 +2460,10 @@ export function readDesignDocument(data: unknown): DesignDocument {
     // Symmetric (version 21): true or left out, and never with Flip, which a body going both ways can't have.
     if (Object.hasOwn(p, "symmetric") && p.symmetric !== true) throw new Error(`Design feature ${f.id}: symmetric must be true or left out, not ${shown(p.symmetric)}`);
     if (p.symmetric === true && Object.hasOwn(p, "flip")) throw new Error(`Design feature ${f.id} is symmetric and flipped: a symmetric extrude goes both ways, so it has no Flip`);
+    // Through all (version 23): true or left out, only on a Cut or Intersect, never symmetric.
+    if (Object.hasOwn(p, "through") && p.through !== true) throw new Error(`Design feature ${f.id}: through must be true or left out, not ${shown(p.through)}`);
+    if (p.through === true && p.operation !== "cut" && p.operation !== "intersect") throw new Error(`Design feature ${f.id} goes through all but is not a Cut or Intersect: only those have bodies to go through`);
+    if (p.through === true && p.symmetric === true) throw new Error(`Design feature ${f.id} goes through all and is symmetric: Through all goes one way from its sketch`);
     if (Object.hasOwn(p, "region")) checkRegion(p.region, f.id);
   }
   if (Object.hasOwn(d, "kept")) {
@@ -2051,14 +2478,14 @@ export function readDesignDocument(data: unknown): DesignDocument {
       notTooMany(content, DESIGN_LIMITS.content, "Design data's sketches and kept shapes have at least", "points and curves together");
     }
   }
-  // What the eyes hide (U0f3): each a body of the design by its body id (version 6), a sketch in the timeline, an origin axis or a folder, once.
+  // What the eyes hide (U0f3): each a body of the design by its body id (version 6), a sketch (or from 59a3 a construction) in the timeline, an origin axis or a folder, once.
   if (Object.hasOwn(d, "hidden")) {
     const hidden: unknown = (d as { hidden?: unknown }).hidden;
     if (!Array.isArray(hidden) || hidden.length === 0) throw new Error("Design data's hidden list is not a list of ids (left out when everything shows)");
     const once = new Set<string>();
     for (const id of hidden) {
       const at = byId.get(id as string);
-      if (typeof id !== "string" || !((at && isSketchItem(at.item)) || EYE_ROWS.includes(id) || isBodyOf(d, byId, id))) throw new Error(`Design data hides ${shown(id)}, which is not a body (by its body id), a sketch in the timeline, an origin axis or a folder`);
+      if (typeof id !== "string" || !((at && (isSketchItem(at.item) || isConstructItem(at.item))) || EYE_ROWS.includes(id) || isBodyOf(d, byId, id))) throw new Error(`Design data hides ${shown(id)}, which is not a body (by its body id), a sketch or construction in the timeline, an origin axis or a folder`);
       if (once.has(id)) throw new Error(`Design data hides ${id} twice`);
       once.add(id);
     }
@@ -2083,8 +2510,8 @@ export function readDesignDocument(data: unknown): DesignDocument {
     ...d.sketches.flatMap((s) => [...s.points.map((p) => p.id), ...s.curves.map((c) => c.id), ...(s.projected ?? []).map((p) => p.id), ...s.constraints.map((c) => c.id)]),
   ];
   // A kept shape holds a sketch's old ids (some may still be in the sketch): never repeated by a new id, so the counter is above them too.
-  // So does a move's deleted body, so no new body takes its id and is moved by it.
-  const kept = [...Object.values(d.kept ?? {}).flatMap((k) => [...k.points.map((p) => p.id), ...k.curves.map((c) => c.id)]), ...d.timeline.features.filter((f) => actsOnBodies(f) || isOperationExtrude(f)).flatMap((f) => f.dependsOn)];
+  // So does a move's deleted body, so no new body takes its id and is moved by it, and a construction's deleted input (step 59a1).
+  const kept = [...Object.values(d.kept ?? {}).flatMap((k) => [...k.points.map((p) => p.id), ...k.curves.map((c) => c.id)]), ...d.timeline.features.filter((f) => actsOnBodies(f) || isOperationExtrude(f) || isConstructItem(f)).flatMap((f) => f.dependsOn)];
   for (const id of kept) {
     const n = idNumber(id);
     if (n !== null && n >= d.nextId!) throw new Error(`Design data's nextId ${d.nextId} is not above ${id}, so a new id could repeat it`);
@@ -2116,8 +2543,14 @@ export function readDesignDocument(data: unknown): DesignDocument {
   for (const f of d.timeline.features) if (isMoveItem(f)) checkMove(d, f, byId);
   // A Combine's bodies and operation (step 35f1).
   for (const f of d.timeline.features) if (isCombineItem(f)) checkCombine(d, f, byId);
-  // A Duplicate's body (step 35e2).
-  for (const f of d.timeline.features) if (isDuplicateItem(f)) checkDuplicate(d, f, byId);
+  // A Duplicate's body (step 35e2), and a Chamfer's body, edges and size (step 44a), in one pass over the timeline.
+  for (const f of d.timeline.features) {
+    if (isDuplicateItem(f)) checkDuplicate(d, f, byId);
+    else if (isChamferItem(f)) checkChamfer(d, f, byId);
+    else if (isConstructItem(f)) checkConstruct(f, byId);
+    else if (isPatternItem(f)) checkPattern(d, f, byId);
+    else if (isShellItem(f)) checkShell(d, f, byId);
+  }
   // An extrude's operation and its bodies (Design data version 10).
   for (const f of d.timeline.features) if (isOperationExtrude(f)) checkOperation(d, f, byId);
   // Each dependency an id (after the Move's own check, which says what a move's should be).
@@ -2138,13 +2571,13 @@ export function readDesignDocument(data: unknown): DesignDocument {
 
 /**
  * What a sketch is built on, by id, each once: the feature whose face it is
- * drawn on (26c), then each feature its points are pinned to (27c, the
+ * drawn on (26c) or the construction whose plane it is on (59a3), then each feature its points are pinned to (27c, the
  * naming model's rule 13), then each an edge is projected from (27d); none
  * on an origin plane with no pins or projections.
  */
 export function sketchInputs(f: Feature, content: Pick<Sketch, "pins" | "projected"> | undefined): string[] {
   const plane = f.intent.parameters.plane;
-  const face = isFacePlane(plane) ? faceFeature(plane) : null;
+  const face = isFacePlane(plane) ? faceFeature(plane) : constructPlaneItem(plane);
   return [...new Set([...(face === null ? [] : [face]), ...(content?.pins ?? []).flatMap((p) => p.feature ?? []), ...(content?.projected ?? []).map((p) => p.feature)])];
 }
 
@@ -2182,6 +2615,8 @@ function asking(document: DesignDocument): Asked {
 /** What an item is built on, of the items in the timeline: a sketch's (`sketchInputs`); an extrude of a sketch, the sketch, then (with an operation) the items that made its bodies; else nothing. */
 function inputsOf(a: Asked, f: Feature): Feature[] {
   if (isSketchItem(f)) return sketchInputs(f, a.contents.get(f.id)).flatMap((id) => a.byId.get(id) ?? []);
+  // A construction is greyed by what it is made from, as a sketch by its face; it builds, followed or held, as a sketch does.
+  if (isConstructItem(f)) return f.dependsOn.flatMap((id) => a.byId.get(id) ?? []);
   if (onBodies(f)) return f.dependsOn.flatMap((id) => a.byId.get(id) ?? []);
   // Every sketch it extrudes a profile of (version 18: several), the first profile's first.
   const sketches = isSketchExtrude(f) ? extrudeSketches(f).flatMap((id) => a.sketches.get(id) ?? []) : [];
@@ -2275,7 +2710,7 @@ function walk(document: DesignDocument): { building: Set<Feature>; greyed: Map<F
     // An extrude's sketches: one per profile's sketch, each once (version 18), the first profile's first.
     const extruded = isSketchExtrude(f) ? extrudeSketches(f) : [];
     const own = extruded.flatMap((id) => sketches.get(id) ?? []);
-    const inputs = isSketchItem(f) ? sketchInputs(f, contents.get(f.id)).flatMap((id) => byId.get(id) ?? []) : onBodies(f) ? f.dependsOn.flatMap((id) => byId.get(id) ?? []) : [...own, ...makersOf(byId, f)];
+    const inputs = isSketchItem(f) ? sketchInputs(f, contents.get(f.id)).flatMap((id) => byId.get(id) ?? []) : onBodies(f) || isConstructItem(f) ? f.dependsOn.flatMap((id) => byId.get(id) ?? []) : [...own, ...makersOf(byId, f)];
     // Each profile's sketch, or its own kept shape when the sketch is gone (version 20: one per profile, `profileParts`).
     const partBuilds = (part: Feature) => {
       const input = sketches.get(part.intent.parameters.sketch);

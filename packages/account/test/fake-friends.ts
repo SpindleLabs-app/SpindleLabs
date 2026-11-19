@@ -23,6 +23,8 @@ export interface FakeFriends {
   /** Display names by user; a person with none can't turn Friends on. */
   names: Map<string, string>;
   held: Set<string>;
+  /** Friends not open to this person yet (the testers migration's "not-yet"): turning on is refused. */
+  closed: boolean;
   codes: Map<string, string>;
   requests: Request[];
   friendships: { id: string; a: string; b: string; since: number }[];
@@ -54,6 +56,7 @@ export function fakeFriends(seed = 1): FakeFriends {
   const s: FakeFriends = {
     names: new Map(),
     held: new Set(),
+    closed: false,
     codes: new Map(),
     requests: [],
     friendships: [],
@@ -107,6 +110,7 @@ export function fakeFriends(seed = 1): FakeFriends {
             return "off";
           }
           if (s.codes.has(me)) return "on";
+          if (s.closed) return "not-yet";
           if (s.held.has(me)) return "held";
           if (!s.names.has(me)) return "no-name";
           give(me);

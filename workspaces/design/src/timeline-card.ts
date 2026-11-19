@@ -18,6 +18,7 @@
 
 import { boxShown, summaryInUnit, type Feature, type Unit } from "@fission/core";
 import { currentUnit } from "@fission/ui";
+import { CONSTRUCT_KINDS, isConstructKind } from "./construct-data.ts";
 import { bodyIdOf, isSketchExtrude, type DesignDocument, type Sketch, type SketchPoint } from "./document.ts";
 import { isFlipped } from "./extrude.ts";
 import { moveKindOf, MOVE_VERBS } from "./move.ts";
@@ -94,6 +95,23 @@ export function cardFacts(doc: DesignDocument, f: Feature, item: TimelineBarItem
     // Mirror body (35e2) is a Duplicate across a plane.
     kind = mirrorOf(f) === undefined ? "Duplicate" : "Mirror body";
     details = [summary, "A new body, following its source's sizes"];
+  } else if (type === "pattern") {
+    // "3 of Box 1 in a row along X, 10 mm apart": its summary, the copies being new bodies (step 61b).
+    kind = "Pattern";
+    details = [summary];
+  } else if (type === "construct") {
+    // "Offset plane, 5 mm": its summary; the kind says what it makes (step 59a2).
+    const makes = isConstructKind(p.make) ? CONSTRUCT_KINDS[p.make].makes : null;
+    kind = makes === null ? "Construction" : { plane: "Construction plane", axis: "Construction axis", point: "Construction point" }[makes];
+    details = [summary];
+  } else if (type === "chamfer") {
+    // "1 edge of Box 1, 2 mm": its summary without the verb the kind says (44a-app3).
+    kind = "Chamfer";
+    details = [summary.replace(/^Chamfer /, "")];
+  } else if (type === "shell") {
+    // "Box 1, 1 mm walls, 1 face open": its summary without the verb the kind says (35h2c-app2).
+    kind = "Shell";
+    details = [summary.replace(/^Shell /, "")];
   } else if (type === "combine") {
     const op = p.operation;
     kind = op === "cut" ? "Combine: cut" : op === "join" ? "Combine: join" : op === "intersect" ? "Combine: intersect" : "Combine";
@@ -103,7 +121,7 @@ export function cardFacts(doc: DesignDocument, f: Feature, item: TimelineBarItem
   if (item.suppressed) status = { words: "Suppressed: not built", tone: "off" };
   else if (item.rolledBack) status = { words: "After the rollback marker: not built yet", tone: "off" };
   else if (item.greyed !== null) status = { words: `Not built: ${item.greyed} is suppressed`, tone: "off" };
-  else if (item.failed) status = { words: slow.has(f.id) ? "Failed: took the kernel too long" : item.reason !== null ? `Failed: ${item.reason}` : "Failed to build", tone: "bad" };
+  else if (item.failed) status = { words: slow.has(f.id) ? "Failed: this took too long to build" : item.reason !== null ? `Failed: ${item.reason}` : "Failed to build", tone: "bad" };
   else if (item.warning !== null) status = { words: `Warning: ${item.warning}`, tone: "bad" };
   return { name, number: index + 1, kind, details, status };
 }
@@ -405,7 +423,13 @@ export function ownBodies(scene: Scene, f: Feature): Set<number> {
   if (f.intent.type === "move") {
     const ids = Array.isArray(f.intent.parameters.bodies) ? (f.intent.parameters.bodies as string[]) : f.dependsOn.map(bodyIdOf);
     wanted = (b) => ids.includes(b.body);
-  } else if (f.intent.type === "sketch") return own;
+  } else if (f.intent.type === "chamfer") {
+    // A Chamfer's own body is the one it cuts back (44a-app3), made by another item.
+    wanted = (b) => b.body === f.intent.parameters.body;
+  } else if (f.intent.type === "shell") {
+    // A Shell's own bodies are the one it hollows (made by another item) and any pieces its walls fell apart into.
+    wanted = (b) => b.body === f.intent.parameters.body || b.feature === f.id;
+  } else if (f.intent.type === "sketch" || f.intent.type === "construct") return own; // a construction has no body
   scene.bodies.forEach((b, i) => wanted(b) && own.add(i));
   return own;
 }
@@ -576,7 +600,13 @@ function placeCard(card: HTMLElement, anchor: HTMLElement) {
   const b = card.getBoundingClientRect();
   // Above the whole row, not just the item: at phone width the row is taller than its items.
   const row = anchor.closest(".timeline-bar")?.getBoundingClientRect();
-  let top = Math.min(r.top, row?.top ?? r.top) - CARD_GAP - b.height;
+  // A warning note over the row (a refused drop, a failed item's words) stays readable: the card goes above it, never over it.
+  let rowTop = Math.min(r.top, row?.top ?? r.top);
+  for (const n of anchor.ownerDocument.querySelectorAll(".timeline-reorder-note, .timeline-bar-note")) {
+    const nr = n.getBoundingClientRect();
+    if (nr.width > 0 && nr.height > 0 && nr.top < rowTop) rowTop = nr.top;
+  }
+  let top = rowTop - CARD_GAP - b.height;
   if (top < CARD_EDGE) top = r.bottom + CARD_GAP;
   const left = Math.min(Math.max(CARD_EDGE, r.left + r.width / 2 - b.width / 2), Math.max(CARD_EDGE, vw - CARD_EDGE - b.width));
   card.style.left = `${Math.round(left)}px`;

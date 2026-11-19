@@ -34,6 +34,12 @@
 #       copies to stdout only the lines the kernel's ci scripts may print in
 #       public: RESULT, count, shards and missed lines; drops everything else
 #
+#   kernel_ci.sh save-sealed ROOT PRIVATE.pem OUT
+#       opens every downloaded sealed-NAME artifact and saves it as NAME
+#   kernel_ci.sh open-sealed ROOT PRIVATE.pem OUT
+#       the same, opening each into OUT/NAME without saving it
+#   kernel_ci.sh fetch FOLDER OUT
+#       copies a folder of kernel-results into OUT (RESULTS_WRITE key)
 #   kernel_ci.sh keygen DIR | seal DIR OUT PUBLIC.pem | unseal IN OUT PRIVATE.pem
 #       a keyless job seals the files it made so only the keyed job opens
 #       them (seal.py: openssl hybrid encryption, safe extraction)
@@ -107,6 +113,65 @@ save)
   why=$(grep -oE 'GH001|GH013|exceeds|secrets|rejected|non-fast-forward|fetch first|lost|denied|403|timed out|Could not resolve|Internal Server Error|cannot lock ref' "$work/push" | sort -u | paste -sd, - || true)
   echo "could not save $job (${why:-no reason given})"; exit 1
   ;;
+fetch)
+  # fetch FOLDER OUT: copies FOLDER of kernel-results (RESULTS_WRITE key) into
+  # OUT, printing nothing: the per-run private key a keyed job unseals with.
+  folder=$2 out=$3
+  [[ $folder =~ ^[A-Za-z0-9._][A-Za-z0-9._/-]*$ && $folder != *..* ]] || { echo "bad folder"; exit 1; }
+  work=$(mktemp -d)
+  git clone -q --depth 1 --filter=blob:none --sparse "${RESULTS_REPO:-https://x-access-token:$RESULTS_WRITE@github.com/SpindleLabs-app/kernel-results.git}" "$work/r" >/dev/null 2>&1 &&
+    git -C "$work/r" sparse-checkout set "$folder" >/dev/null 2>&1 &&
+    [ -d "$work/r/$folder" ] || { echo "could not fetch $folder"; exit 1; }
+  mkdir -p "$out" && cp -R "$work/r/$folder/." "$out/"
+  rm -rf "$work"
+  ;;
+save-sealed)
+  # save-sealed ROOT PRIVATE.pem OUT: every ROOT/sealed-NAME folder (a
+  # downloaded artifact) is opened into OUT/NAME and saved to kernel-results
+  # as NAME. One that cannot be opened (changed, unsafe) is named, in words,
+  # and makes the exit code 1 after the others are done.
+  root=$2 key=$3 out=$4 bad=0
+  # download-artifact unpacks a pattern matching only one artifact straight
+  # into ROOT, without its sealed-NAME folder: files with no such folder are a
+  # lost artifact, never "nothing to open" (18 Nov 2026: a night's findings).
+  if [ -d "$root" ] && [ -n "$(ls -A "$root")" ] && ! compgen -G "$root/sealed-*/" >/dev/null; then
+    echo "found files but no sealed-NAME folder (one artifact downloaded flat?)"; exit 1
+  fi
+  for d in "$root"/sealed-*/; do
+    [ -d "$d" ] || continue
+    name=$(basename "$d"); name=${name#sealed-}
+    [[ $name =~ ^[A-Za-z0-9._-]+$ ]] || { echo "skipped a folder with an odd name"; bad=1; continue; }
+    if python3 "$(dirname "${BASH_SOURCE[0]}")/seal.py" unseal "$d" "$out/$name" "$key" 2>/dev/null; then
+      "${BASH_SOURCE[0]}" save "$name" "$out/$name" || bad=1
+    else
+      echo "could not open $name"; bad=1
+    fi
+  done
+  exit $bad
+  ;;
+open-sealed)
+  # open-sealed ROOT PRIVATE.pem OUT: as save-sealed, but only opens each
+  # ROOT/sealed-NAME into OUT/NAME, so the caller saves them all in one push
+  # (random testing's and fuzzing's collect jobs: twenty folders a run).
+  root=$2 key=$3 out=$4 bad=0
+  # download-artifact unpacks a pattern matching only one artifact straight
+  # into ROOT, without its sealed-NAME folder: files with no such folder are a
+  # lost artifact, never "nothing to open" (18 Nov 2026: a night's findings).
+  if [ -d "$root" ] && [ -n "$(ls -A "$root")" ] && ! compgen -G "$root/sealed-*/" >/dev/null; then
+    echo "found files but no sealed-NAME folder (one artifact downloaded flat?)"; exit 1
+  fi
+  for d in "$root"/sealed-*/; do
+    [ -d "$d" ] || continue
+    name=$(basename "$d"); name=${name#sealed-}
+    [[ $name =~ ^[A-Za-z0-9._-]+$ ]] || { echo "skipped a folder with an odd name"; bad=1; continue; }
+    if python3 "$(dirname "${BASH_SOURCE[0]}")/seal.py" unseal "$d" "$out/$name" "$key" 2>/dev/null; then
+      echo "opened $name"
+    else
+      echo "could not open $name"; bad=1
+    fi
+  done
+  exit $bad
+  ;;
 run)
   name=$2 dir=$3
   shift 3
@@ -153,7 +218,7 @@ describe)
   if [ -n "$failing" ]; then echo "Failed: $failing"; else echo "$3"; fi
   ;;
 filter)
-  grep -E '^(RESULT [a-z0-9-]+ (PASS|FAIL) [0-9]+|count ([0-9]+|error)|shards \[[0-9,]*\]|missed [0-9]+)$' || true
+  grep -E '^(RESULT [a-z0-9-]+ (PASS|FAIL) [0-9]+|count ([0-9]+|error)|shards \[[0-9,]*\]|missed [0-9]+|crates (none|(kernel|slice|fea)(,(kernel|slice|fea))*))$' || true
   ;;
 keygen|seal|seal-tar|unseal)
   exec python3 "$(dirname "${BASH_SOURCE[0]}")/seal.py" "$@"

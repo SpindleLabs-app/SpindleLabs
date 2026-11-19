@@ -226,13 +226,15 @@ test("tabs hunt E6: a tab chosen by keyboard keeps the focus when the strip is d
 test("tabs hunt E2: the stylesheet shows the phone switcher by the very query the code names (touch and short windows too)", () => {
   const css = readFileSync(new URL("../src/styles/design-tabs.css", import.meta.url), "utf8");
   const queries = [...css.matchAll(/@media\s*([^{]+)\{/g)].map((m) => m[1].trim());
-  assert.deepEqual(queries, [TABS_PHONE_QUERY]);
+  // The first is the strip's own 44 px tap size on touch screens wide enough for it; the phone query decides strip or list.
+  assert.deepEqual(queries, ["(pointer: coarse) and (max-width: 1199px)", TABS_PHONE_QUERY]);
   // The top bar's count button (T3a) shows by the same query; the two after it only make room in the bar on the
   // narrowest phones, both inside 640 px, so the phone query alone decides button or strip.
   const bar = readFileSync(new URL("../src/styles/design-tabs-bar.css", import.meta.url), "utf8");
   assert.deepEqual([...bar.matchAll(/@media\s*([^{]+)\{/g)].map((m) => m[1].trim()), [TABS_PHONE_QUERY, "(max-width: 420px)", "(max-width: 360px)"]);
-  // A phone held sideways is 667 x 375 or 852 x 393 with a coarse pointer: each part of the query alone catches one.
-  assert.match(TABS_PHONE_QUERY, /\(pointer: coarse\)/);
+  // A phone held sideways is 667 x 375 or 852 x 393: each part of the query alone catches one. A wide touch screen is not
+  // a phone: it gets the strip (one skinny row), not the two-row list.
+  assert.doesNotMatch(TABS_PHONE_QUERY, /coarse/);
   assert.match(TABS_PHONE_QUERY, /\(max-height: 500px\)/);
   assert.match(TABS_PHONE_QUERY, /\(max-width: 640px\)/);
 });
@@ -251,4 +253,24 @@ test("tabs hunt E3: the open phone list is capped at half the 3D view (worked: a
   assert.equal(menu.style.getPropertyValue("--design-tabs-view-half"), "44px"); // 60 / 2 = 30, raised to one row
   const css = readFileSync(new URL("../src/styles/design-tabs.css", import.meta.url), "utf8");
   assert.match(css, /max-height: min\(40dvh, calc\(5\.5 \* 44px\), var\(--design-tabs-view-half\)\)/);
+});
+
+test("the strip marks the tab on screen while its changes are not stored (mark): a flag for the stylesheet's dot, and the words for a screen reader", () => {
+  const { s } = strip();
+  s.render({ tabs: [t("a", "design", "Bracket"), t("b", "slice", "Job")], active: "b" });
+  const label = (key: string) => s.element.querySelector(`[data-key="${key}"] .design-tabs-main`)!.getAttribute("aria-label");
+  // Nothing waits: no flag, the plain words.
+  assert.equal(s.element.dataset.unsaved, undefined);
+  assert.equal(label("b"), "Job, Slice");
+  s.mark(true);
+  assert.equal(s.element.dataset.unsaved, "true");
+  assert.equal(label("b"), "Job, Slice, changes not stored yet"); // only the tab on screen
+  assert.equal(label("a"), "Bracket, Design");
+  assert.ok(s.element.querySelector('[data-key="b"] .design-tabs-main')!.getAttribute("title")!.endsWith("changes not stored yet"));
+  // Drawn again (another change of name), the mark stays; choosing the other tab moves it to that one's words only.
+  s.render({ tabs: [t("a", "design", "Bracket"), t("b", "slice", "Job 2")], active: "b" });
+  assert.equal(label("b"), "Job 2, Slice, changes not stored yet");
+  s.mark(false);
+  assert.equal(s.element.dataset.unsaved, "false");
+  assert.equal(label("b"), "Job 2, Slice");
 });

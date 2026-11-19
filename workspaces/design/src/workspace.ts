@@ -2,17 +2,18 @@
 // Until the sketcher (steps 21–33) it builds primitives and ready-made
 // outlines; every other workspace will refer to its bodies, faces and edges.
 
-import { chordLabel, parseChord, summaryInUnit, wordsInUnit, latestOnly, NO_HIGHLIGHT, playback, ORIGIN_AT_FIRST, type AnalysisOverlay, type BodyHandle, type BodySpec, type MoveKind, type BodyView, type ExtrudeArrow, type OfferedProfile, type SketchPointer, type SketchXY, type Command, type Feature, type Framing, type Plane, type GeometryReference, type MountedWorkspace, type Selected, type SharedViewport, type WorkspaceContext, type WorkspaceId, type WorkspacePlugin, type HistoryStep, withWorkspaceDocument } from "@fission/core";
+import { KernelError, chordLabel, parseChord, summaryInUnit, wordsInUnit, latestOnly, NO_HIGHLIGHT, playback, ORIGIN_AT_FIRST, type AnalysisOverlay, type OriginPlane, type BodyHandle, type BodySpec, type ChamferSize, type MoveKind, type BodyView, type ExtrudeArrow, type OfferedProfile, type SketchPointer, type SketchXY, type Command, type Feature, type Framing, type Plane, type GeometryReference, type MountedWorkspace, type Selected, type SharedViewport, type WorkspaceContext, type WorkspaceId, type WorkspacePlugin, type HistoryStep, withWorkspaceDocument, type DisplayMesh } from "@fission/core";
 import { needsRefit, printView, snapDistance } from "@fission/viewport";
 import type { ShapeKind } from "./profiles.ts";
-import { bodyHidden, bodyIdOf, bodyItem, bodyNumbers, combineBodies, EYE_FOLDERS, isCombineItem, extrudeOperation, insertAt, isHidden, isMoveItem, isOperationExtrude, isPiece, isSketchExtrude, numberPieces, isSketchItem, ORIGIN_AXES, ORIGIN_PLANES as EYE_PLANES, builds, ownShape, originDrawn, partFeature, partOf, readDesignDocument, shapeOf, withPartAt, SKETCH_PLANES, type DesignDocument, type MoveParam, type PartKind } from "./document.ts";
-import { alreadyPicked, arrowOf, DEFAULT_DISTANCE, distanceRefused, DISTANCE_STEP, extrudeSketch, NO_SKETCH, NO_USABLE_SKETCH, PICK_PROFILE_STATUS, extrudeStep, featureBuild, featureSpec, previewSpec, setExtrudeDistance, setExtrudeOperation, setExtrudeSymmetric, signedDistance, symmetricDrag, ZERO_OK } from "./extrude.ts";
+import { bodyHidden, constructOf, isConstructItem, bodyIdOf, bodyItem, bodyNumbers, combineBodies, EYE_FOLDERS, CHAMFER_MAX, isChamferItem, isShellItem, shellOf, isCombineItem, extrudeOperation, insertAt, isHidden, isMoveItem, isOperationExtrude, isPiece, isSketchExtrude, numberPieces, isSketchItem, ORIGIN_AXES, ORIGIN_PLANES as EYE_PLANES, builds, ownShape, originDrawn, partFeature, partOf, readDesignDocument, shapeOf, withPartAt, SKETCH_PLANES, type ChamferSizing, type DesignDocument, type MoveParam, type PartKind, isPatternItem } from "./document.ts";
+import { alreadyPicked, arrowOf, DEFAULT_DISTANCE, distanceRefused, DISTANCE_STEP, extrudeSketch, NO_SKETCH, NO_USABLE_SKETCH, PICK_PROFILE_STATUS, extrudeStep, featureBuild, featureSpec, previewSpec, setExtrudeDistance, setExtrudeOperation, setExtrudeSymmetric, setExtrudeThrough, signedDistance, symmetricDrag, ZERO_OK } from "./extrude.ts";
 import { extrudePanel } from "./extrude-panel.ts";
+import { throughDistance, throughWords } from "./extrude-through.ts";
 import { FACE_ALONE, joinedView, ONE_PROFILE_OPERATION, pickedWords, severalWords, togglePick, type PickedProfile } from "./extrude-picks.ts";
 import { bodyChoices, operationNote, tickedBodies, touchingOnly, type BodyChoice, type Bounds, type ExtrudeOperation, type ListedBody } from "./extrude-operation.ts";
 import { CHANGED_WHILE_CHECKING, editableFeature, editFeature, editStep, readTyped, refusedSizes } from "./feature-edit.ts";
 import { featureEditPanel } from "./feature-edit-panel.ts";
-import { copiedText, copiesOf, DUPLICATE_STEP, insertDuplicates, MIRROR_STEP, pastedBodies } from "./duplicate.ts";
+import { copiedText, copiesOf, DUPLICATE_STEP, insertDuplicates, MIRROR_STEP, mirrorPlaneProblem, pastedBodies, type MirrorPlane } from "./duplicate.ts";
 import { changedMove, factorOf, insertMove, MOVE_STEP, MOVE_VERBS, moveKindOf, movedBodies, moveValues, NO_MOVE, ROTATE_STEP, SCALE_STEP, type MoveBox, type MoveValues } from "./move.ts";
 import { EXPLODE_DEFAULT, explodedMesh, readSpread } from "./explode.ts";
 import { draggedValues, editedBodies, editedMoveMesh, handlesCentre, heldBefore, MOVE_BOX_WORDS, movedMesh, pickedBodies, previewable, readMoveBoxes, refusedMove, startPivot, boxCentre } from "./move-tool.ts";
@@ -22,9 +23,31 @@ import { combineDoneWords, combineHintWords, combinePanel } from "./combine-pane
 import { askWords, bodyNamer, checkedItem, cutAsk, type Checked } from "./cut-ask.ts";
 import type { Miss } from "./misses.ts";
 import { combineShown } from "./combine-flag.ts";
+import { chamferShown } from "./chamfer-flag.ts";
+import { shellShown } from "./shell-flag.ts";
+import { shellPanel } from "./shell-panel.ts";
+import { heldFaceNames, INSIDE_WALL, NO_NAME as SHELL_NO_NAME, NO_PICKS, picksFrom as shellPicksFrom, readThickness, shellHintWords, togglePick as toggleFace, type ShellPicks } from "./shell-tool.ts";
+import { changedShell, editableShell, insertShell, SHELL_STEP } from "./shell.ts";
+import { drawnShell, editPreviewInput as shellEditInput, previewShell, previewVolume, shellPickAt, type ShellPreview } from "./shell-preview.ts";
+import { chamferPanel } from "./chamfer-panel.ts";
+import { chamferHintWords, heldNamesOf, NO_NAME, picksFrom, readChamferSize, togglePick as toggleEdge, type PickedEdge } from "./chamfer-tool.ts";
+import { CHAMFER_STEP, changedChamfer, editableChamfer, EDIT_EDGES_NOTE, insertChamfer } from "./chamfer.ts";
+import { cutAt, editPreviewInput, pickableView, previewChamfer, previewedMesh } from "./chamfer-preview.ts";
+import { chamferArrow, refusedEdges, snapChamfer, wedgeMesh } from "./chamfer-arrow.ts";
+import { patternShown } from "./pattern-flag.ts";
+import { patternPanel } from "./pattern-panel.ts";
+import { copiesMesh, editPreviewOff, patternHintWords, readPatternBoxes, refusalWords, startSpacing } from "./pattern-tool.ts";
+import { changedPattern, editablePattern, insertPattern, PATTERN_STEP, patternProblem, patternRequest, turnAxes, turnAxisItem, turnAxisProblem } from "./pattern.ts";
+import { constructShown } from "./construct-flag.ts";
+import { constructView } from "./construct-view.ts";
+import { KIND_GROUPS, kindTitle } from "./construct-tool.ts";
+import { KIND_WORDS as CONSTRUCT_WORDS } from "./construct.ts";
+import { CONSTRUCT_OVERLAY, constructOverlay, constructPlanes, drawnConstructs } from "./construct-draw.ts";
+import { constructSnapPoints } from "./construct-snap.ts";
+import { CONSTRUCT_REF, type ConstructAnswer, type ConstructKind } from "./construct-data.ts";
 import { snapEnds, snappedValues, snapPart, type SnapPart } from "./move-snap.ts";
 import { PART_VIEW, syncGraph } from "./graph.ts";
-import { registerDesign } from "./representations.ts";
+import { noteRebuild, registerDesign } from "./representations.ts";
 import { DESIGN_COMMANDS, documentFor, DRAW_OPS, DRAW_STEPS, drawingFor, drawRefused, EXTRUDE_OP, commandDistance, extrudeTarget, RENAME_OP, renameTarget } from "./commands.ts";
 import { buildSpec } from "./spec.ts";
 import { SHAPE_LABELS, toolbarGroups, type ToolButton } from "./toolbar.ts";
@@ -33,7 +56,7 @@ import { comingItems, type ComingGroup } from "./coming-soon.ts";
 import { INSERT_SIZES, INSERT_TITLE, inserted, insertSections, insertStep } from "./insert.ts";
 import { startHint } from "./start-hint.ts";
 import { SOLID_OVERLAY, solidBadge } from "./solid-badge.ts";
-import { bodyLabel, bodyRows, combineRowTags, browserTree, eyeId, failedIds, rowItem, rowReferences, type BrowserNode } from "./browser.ts";
+import { bodyLabel, CONSTRUCTION_ROW, bodyRows, combineRowTags, browserTree, eyeId, failedIds, rowItem, rowReferences, type BrowserNode } from "./browser.ts";
 import { callOffDrag, editOff, showTimelineBar, timelineBarItems, type MenuEntry } from "./timeline-bar.ts";
 import { DEFAULT_SIZES, followUnit, panelSizeRefused, parameterRows, propertiesPanel, revertedNote, SIZE_KEYS, type SizeKey } from "./properties.ts";
 import { FOLDED_AT_START, panelShown, propertiesFold, readPinned, type FoldState, type PropertiesFold } from "./properties-fold.ts";
@@ -56,12 +79,12 @@ import { showAllBodies, showOnlyBody } from "./show-only.ts";
 import { applyChange, pickChange } from "./picking.ts";
 import { DESIGN_SHORTCUTS, designShortcut, sketchToolKey, typedSizeKey } from "./shortcuts.ts";
 import { sketchPlaceScene } from "./sketch-place.ts";
-import { BodyCache, builtPieceFaces, followedDoc, keptUnsettled, missesMessage, placedOnBodies, rebuildTimeline, settleKept, SlowItems, tookTooLong, unitedViews, type CurveIds, type TimelineBuild } from "./rebuild.ts";
+import { BodyCache, builtPieceFaces, followedDoc, keptUnsettled, missesMessage, placedOnBodies, rebuildTimeline, settleKept, SlowItems, tookTooLong, unitedViews, type BuiltBody, type CurveIds, type TimelineBuild } from "./rebuild.ts";
 import { droppedNote, followedNote, highlightOf, panelFocus, panelPart, selectionRows, survivors } from "./selection.ts";
 import { measureView } from "./measure-view.ts";
-import { bodyOf, joinBodies, sceneHit, shownBodies, type Scene, type ShownBody } from "./scene.ts";
+import { bodyOf, findInScene, joinBodies, sceneHit, shownBodies, shownReference, type Scene, type ShownBody } from "./scene.ts";
 import { bodyReference, readProfileReference } from "./references.ts";
-import { addFaceSketch, addSketch, askOutline, outlineSourceOf, pinNewPoints, planeOf, projectEdges, setCircleFit, SKETCH_STEPS, sketchCurves, sketchItem, sketchPlane, sketchSide } from "./sketch.ts";
+import { addConstructSketch, addFaceSketch, addSketch, askOutline, outlineSourceOf, pinNewPoints, planeOf, projectEdges, setCircleFit, SKETCH_STEPS, sketchCurves, sketchItem, sketchPlane, sketchSide } from "./sketch.ts";
 import { fitPicker } from "./fit-tag.ts";
 import { dragTo, grabProblem } from "./point-drag.ts";
 import { PROJECT_AGAIN, projectedOpen, projectPick, sketchEdgeCurves } from "./projection.ts";
@@ -69,7 +92,7 @@ import { sketchEdgeTargets, sketchPlaneCorners } from "./face-edges.ts";
 import { sketchableFaces, sketchSpot, type SketchSpot } from "./face-pick.ts";
 import { FACE_NEW_BODY, faceOpen, faceProfile, faceRegion, type FaceProfile } from "./face-extrude.ts";
 import { editRegionWords, offerOf, pickRegionWords, regionChosenWords, regionOffers, regionRefusedWords, type RegionOffer } from "./extrude-regions.ts";
-import type { RegionRef } from "./regions.ts";
+import { sketchRegions, type RegionRef } from "./regions.ts";
 import { rounding, SNAP_PIXELS, snapOnSketch, snapsNow, withSnap, type BodySnaps, type Snap } from "./snap.ts";
 import { aimOf, anchorOf, lengthRefused, liveValues, NO_AIM, typedFields, withLocks, type Locks } from "./typed-entry.ts";
 import { isShapeTool } from "./sketch-shapes.ts";
@@ -78,7 +101,8 @@ import { hintOf, pointerHint } from "./pointer-hint.ts";
 import { clickAt, CONSTRAINT_MARK_PIXELS, curveCount, hoverTool, DEFAULT_GRID_SNAP, drawStep, GRID_ATE_RADIUS, NO_RADIUS, ORIGIN_PLANES, originPlanes, sketchDrawings, startTool, switchTool, toolBusy, unfinishedWords, type SketchTool, type ToolKind } from "./sketch-tool.ts";
 import { sketchPanel } from "./sketch-panel.ts";
 import { sketchToolbar } from "./sketch-toolbar.ts";
-import { PICK_PIXELS, deleteCurves, deleteStep, pickCurve, selectStatus, stillPicked } from "./sketch-select.ts";
+import { PICK_PIXELS, deleteCurves, deleteStep, labelPicks, pickCurve, selectStatus, stillPicked } from "./sketch-select.ts";
+import { addsToSelection } from "./select-keys.ts";
 import { changeDimensionTool, clickConstraint, constraintPickAt, constraintStep, dimensionLine, isConstraintTool, selectAt } from "./constraint-tool.ts";
 import { addConstraint, changeDimension, type NewConstraint } from "./constraints.ts";
 import { toggleConstruction } from "./construction.ts";
@@ -177,14 +201,16 @@ interface Duplicating {
   run(): void;
   /** Why it can't be chosen now (nothing picked), or null: Mirror body's too. */
   off(): string | null;
-  /** Mirror body: a mirrored copy of each picked body across origin plane `plane`. */
-  mirror(plane: SketchPlane): void;
+  /** Mirror body: a mirrored copy of each picked body across `plane`, an origin plane or (59a3) a construction plane's name. */
+  mirror(plane: MirrorPlane): void;
+  /** The construction planes a new Mirror can use (59a3, behind ?construct): before the marker and not suppressed, in timeline order. */
+  planes(): { plane: MirrorPlane; label: string }[];
   /** Scale: opens the Move panel as Scale. */
   scale(): void;
 }
 
 const SCALE_TITLE = "Scale: make bodies bigger or smaller by a factor you type (2 doubles every size), about a pivot. Pick the bodies, then OK. A Scale in the timeline, at the marker.";
-const mirrorTitle = (plane: SketchPlane) => `Mirror body: a mirror image of the picked bodies across the ${plane} plane, as new bodies. A Mirror in the timeline, at the marker.`;
+const mirrorTitle = (plane: string) => `Mirror body: a mirror image of the picked bodies across ${(SKETCH_PLANES as readonly string[]).includes(plane) ? `the ${plane} plane` : plane}, as new bodies. A Mirror in the timeline, at the marker.`;
 
 const DUPLICATE_TITLE = "Duplicate: copy the picked bodies where they are, then move the copies. A copy follows its body's sizes. A Duplicate in the timeline, at the marker.";
 
@@ -206,7 +232,7 @@ const NO_FACTS = "Nothing built yet: insert a preset or extrude a sketch, and it
  * each command button with its element, the Insert menu and the Body facts
  * button.
  */
-function toolbar(slot: HTMLElement, onClick: (b: ToolButton) => void, onSketch: () => void, onExtrude: () => void, onMove: () => void, onRotate: () => void, onCombine: () => void, onInsert: (kind: ShapeKind) => void, inspect: Inspecting, duplicate: Duplicating): { made: [ToolButton, HTMLButtonElement][]; insert: MenuButton; facts: HTMLButtonElement; printCheck: HTMLButtonElement; explode: HTMLButtonElement; measure: HTMLButtonElement; commands: () => SearchCommand[] } {
+function toolbar(slot: HTMLElement, onClick: (b: ToolButton) => void, onSketch: () => void, onExtrude: () => void, onMove: () => void, onRotate: () => void, onCombine: () => void, onChamfer: () => void, onPattern: () => void, onShell: () => void, onConstruct: (kind: ConstructKind) => void, onInsert: (kind: ShapeKind) => void, inspect: Inspecting, duplicate: Duplicating): { made: [ToolButton, HTMLButtonElement][]; insert: MenuButton; facts: HTMLButtonElement; printCheck: HTMLButtonElement; explode: HTMLButtonElement; measure: HTMLButtonElement; search: HTMLButtonElement; commands: () => SearchCommand[] } {
   const made: [ToolButton, HTMLButtonElement][] = [];
   const document = slot.ownerDocument; // the slot's own page, not a global one
   const button = (id: string, words: string, title: string, run: () => void) => {
@@ -225,14 +251,17 @@ function toolbar(slot: HTMLElement, onClick: (b: ToolButton) => void, onSketch: 
   const create = button("create-sketch", "Create sketch", sketchTitle, onSketch);
   create.dataset.modelling = ""; // hidden while a sketch is edited (SF3b): the sketch's toolbar stands in
   const extrude = button("extrude", "Extrude", extrudeTitle, onExtrude);
+  const patterning = patternShown();
   const createSections = (): MenuSection[] => [
     {
       items: [
         { id: "create-menu-sketch", label: "Create sketch", icon: "sketch", title: sketchTitle, run: onSketch },
         { id: "create-menu-extrude", label: "Extrude", icon: "extrude", key: "E", title: extrudeTitle, run: onExtrude },
+        // Pattern (step 61c): only with ?pattern or ?all (pattern-flag.ts) until it goes public; else greyed as coming soon.
+        ...(patterning ? [{ id: "create-menu-pattern", label: "Pattern", icon: "pattern" as const, title: PATTERN_TITLE, run: onPattern }] : []),
       ],
     },
-    { items: comingItems("Create") },
+    { items: comingItems("Create").filter((i) => !(patterning && i.id === "coming-pattern")) },
   ];
   const creating = toolGroup(document, { name: "Create", menu: { id: "create-menu", title: "Every way to make a solid, by name", sections: createSections } });
   creating.add([create, "sketch"], [extrude, "extrude"]);
@@ -293,6 +322,8 @@ function toolbar(slot: HTMLElement, onClick: (b: ToolButton) => void, onSketch: 
   const combineTitle = "Combine: join bodies into one, cut tools from a body, or keep only where they overlap. Pick the target body, then the tools, then OK. A Combine in the timeline, at the marker.";
   const combining = combineShown();
   const combine = button("combine", "Combine", combineTitle, onCombine);
+  const chamfering = chamferShown();
+  const shelling = shellShown();
   const modifySections = (): MenuSection[] => [
     {
       items: [
@@ -301,18 +332,44 @@ function toolbar(slot: HTMLElement, onClick: (b: ToolButton) => void, onSketch: 
         { id: "modify-menu-scale", label: "Scale", icon: "scale", title: SCALE_TITLE, run: duplicate.scale },
         { id: "modify-menu-duplicate", label: "Duplicate", icon: "duplicate", key: chordLabel(parseChord("Mod+D"), /Mac|iPhone|iPad/.test(document.defaultView?.navigator.platform ?? "")), title: DUPLICATE_TITLE, off: duplicate.off() ?? undefined, run: duplicate.run },
         ...(combining ? [{ id: "modify-menu-combine", label: "Combine", icon: "combine" as const, title: combineTitle, run: onCombine }] : []),
+        // Chamfer (step 44a-app2): only with ?chamfer or ?all (chamfer-flag.ts) until it goes public; else greyed as coming soon.
+        ...(chamfering ? [{ id: "modify-menu-chamfer", label: "Chamfer", icon: "chamfer" as const, title: CHAMFER_TITLE, run: onChamfer }] : []),
+        // Shell (step 35h2c-app2): only with ?shell or ?all (shell-flag.ts) until it goes public; else greyed as coming soon.
+        ...(shelling ? [{ id: "modify-menu-shell", label: "Shell", icon: "shell" as const, title: SHELL_TITLE, run: onShell }] : []),
       ],
     },
-    // Mirror body (step 35e2): across an origin plane for now; a face of the body as the plane comes with construction planes.
-    { heading: "Mirror body", items: SKETCH_PLANES.map((plane) => ({ id: `modify-menu-mirror-${plane.toLowerCase()}`, label: `Across ${plane}`, icon: "mirror" as const, title: mirrorTitle(plane), off: duplicate.off()?.replace("Duplicate", "Mirror") ?? undefined, run: () => duplicate.mirror(plane) })) },
-    { items: comingItems("Modify").filter((i) => !combining || i.id !== "coming-combine") },
+    // Mirror body (step 35e2): across an origin plane, or (59a3, behind ?construct) a construction plane by its name.
+    {
+      heading: "Mirror body",
+      items: [
+        ...SKETCH_PLANES.map((plane) => ({ id: `modify-menu-mirror-${plane.toLowerCase()}`, label: `Across ${plane}`, icon: "mirror" as const, title: mirrorTitle(plane), off: duplicate.off()?.replace("Duplicate", "Mirror") ?? undefined, run: () => duplicate.mirror(plane) })),
+        ...(constructShown() ? duplicate.planes() : []).map(({ plane, label }) => ({ id: `modify-menu-mirror-${plane.replace(":", "-")}`, label: `Across ${label}`, icon: "mirror" as const, title: mirrorTitle(label), off: duplicate.off()?.replace("Duplicate", "Mirror") ?? undefined, run: () => duplicate.mirror(plane) })),
+      ],
+    },
+    { items: comingItems("Modify").filter((i) => !(combining && i.id === "coming-combine") && !(chamfering && i.id === "coming-chamfer") && !(shelling && i.id === "coming-shell")) },
   ];
   const modifying = toolGroup(document, { name: "Modify", menu: { id: "modify-menu", title: "Every way to change bodies, by name", sections: modifySections } });
   modifying.add([move, "move"], [rotate, "rotate"], ...(combining ? [[combine, "combine"] as [HTMLButtonElement, IconName]] : []));
   modifying.element.dataset.modelling = "";
-  const constructing = coming("Construct", "construct-menu", "plane", "Construct: planes, axes and points to build on. Coming soon: open to see what is on the way.");
+  // Construct ▾ (step 59a2): only with ?construct or ?all (construct-flag.ts) until it goes public; else every item greyed as coming soon.
+  const constructOn = constructShown();
+  const constructSections = (): MenuSection[] => KIND_GROUPS.map((g) => ({ heading: g.heading, items: g.kinds.map((k) => ({ id: `construct-menu-${k.replaceAll("_", "-")}`, label: CONSTRUCT_WORDS[k], icon: g.shape as IconName, title: kindTitle(k), run: () => onConstruct(k) })) }));
+  const constructing = constructOn
+    ? (() => {
+        const g = toolGroup(document, { name: "Construct", solo: "plane", menu: { id: "construct-menu", title: "Planes, axes and points to build on, by name", sections: constructSections } });
+        g.element.dataset.modelling = "";
+        return g;
+      })()
+    : coming("Construct", "construct-menu", "plane", "Construct: planes, axes and points to build on. Expected late 2027: open to see what is on the way.");
   // Fusion's order: Create, Modify, Construct, Inspect, Insert, then the exports.
-  slot.append(creating.element, modifying.element, constructing.element, inspecting.element, inserting.element);
+  // The command search button (the S key's box for a touch screen, which has no S): first in the row so a phone's scroll never hides it.
+  const search = button("command-search-button", "Search commands", "Search commands: find a command by name (key S), type a few letters, then pick the one you want.", () => {});
+  search.dataset.modelling = ""; // like the S key, not while a sketch is edited
+  const searching = toolGroup(document, { name: "Search" });
+  searching.element.classList.add("command-search-button");
+  searching.element.dataset.modelling = "";
+  searching.add([search, "search"]);
+  slot.append(searching.element, creating.element, modifying.element, constructing.element, inspecting.element, inserting.element);
   /** The toolbar's own buttons as the command search names them: the group's name, then the button's ("Export STL"). */
   const named: [string, HTMLButtonElement][] = [];
   for (const group of toolbarGroups()) {
@@ -332,10 +389,10 @@ function toolbar(slot: HTMLElement, onClick: (b: ToolButton) => void, onSketch: 
   // with its reason exactly when its menu item is; the mirror rows named with their heading ("Mirror body: Across XY").
   // Export STL is File ▾'s, with File ▾'s reason when off, listed by the shell with Undo and Save (issue #523).
   const commands = (): SearchCommand[] => {
-    const items = [createSections(), modifySections(), [{ items: comingItems("Construct") }], inspectSections(), insertSections(onInsert)].flatMap((ss) => ss.flatMap((sec) => sec.items.map((i) => (sec.heading === "Mirror body" ? { ...i, label: `${sec.heading}: ${i.label}` } : i))));
+    const items = [createSections(), modifySections(), constructOn ? constructSections() : [{ items: comingItems("Construct") }], inspectSections(), insertSections(onInsert)].flatMap((ss) => ss.flatMap((sec) => sec.items.map((i) => (sec.heading === "Mirror body" ? { ...i, label: `${sec.heading}: ${i.label}` } : i))));
     return items.map((i) => ({ id: i.id, label: i.label, key: i.key, off: i.off, run: i.run }));
   };
-  return { made, insert: inserting.menu!, facts, printCheck, explode, measure, commands };
+  return { made, insert: inserting.menu!, facts, printCheck, explode, measure, search, commands };
 }
 
 /** A browser row's icon (U0f3): 16 px, before its words, hidden from screen readers. */
@@ -352,8 +409,20 @@ const sameIds = (a: ReadonlySet<string>, b: ReadonlySet<string>) => a.size === b
 const folding = new Map<string, boolean>();
 const isOpen = (n: { id: string; startsFolded?: boolean }) => folding.get(n.id) ?? !n.startsFolded;
 
+/** Chamfer's tooltip (step 44a-app2). */
+const CHAMFER_TITLE = "Chamfer: cut straight edges back to a sloped flat face. Pick the edges of one body, type the size, then OK. A Chamfer in the timeline, at the marker.";
+/** Shell's tooltip (step 35h2c-app2). */
+const SHELL_TITLE = "Shell: hollow a body out, leaving walls of one thickness inside it. Pick the faces to leave open (none for a sealed hollow), type the thickness, then OK. A Shell in the timeline, at the marker.";
+/** A Shell already in the file while Shell is switched off: it builds, its Edit is greyed. */
+const SHELL_OFF = "Shell is switched off, so this can't be edited.";
 /** Why a Combine in the file can't be edited while Combine is switched off (#507). */
 const COMBINE_OFF = "Combine is switched off, so this can't be edited.";
+/** Pattern's tooltip (step 61c). */
+const PATTERN_TITLE = "Pattern: repeat bodies in a row, a grid or round an axis. Pick the bodies, choose how many and how far apart, then OK. A Pattern in the timeline, at the marker.";
+/** The same for a Pattern already in the file while Pattern is switched off: it builds, its Edit is greyed. */
+const PATTERN_OFF = "Pattern is switched off, so this can't be edited.";
+/** The same for a Chamfer already in the file while Chamfer is switched off (44a-app3): it builds, its Edit is greyed. */
+const CHAMFER_OFF = "Chamfer is switched off, so this can't be edited.";
 /** How long the line over the view after a Combine's OK stays (ms): long enough to read two short sentences. */
 const COMBINE_DONE_MS = 8000;
 
@@ -462,8 +531,8 @@ function browser(slot: HTMLElement, doc: DesignDocument, failed: ReadonlySet<str
         row.dataset.label = n.label;
         row.dataset.tip = row.title;
         row.dataset.node = n.id;
-        if (ref) row.addEventListener("click", (e) => onSelect(ref, (e as MouseEvent).shiftKey));
-        if (items.has(n.id) || n.id.startsWith("sketches/") || n.id.startsWith("body-")) {
+        if (ref) row.addEventListener("click", (e) => onSelect(ref, addsToSelection(e as MouseEvent))); // Shift, Ctrl or Cmd adds (SL #524)
+        if (items.has(n.id) || n.id.startsWith("sketches/") || n.id.startsWith(CONSTRUCTION_ROW) || n.id.startsWith("body-")) {
           row.addEventListener("dblclick", () => onOpen(n.id));
           // The row's menu: a right-click at the pointer, or the ⋯ button under itself.
           row.addEventListener("contextmenu", (e) => {
@@ -607,15 +676,16 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
     exploded: () => explodeSpread !== null,
     noExplode: () => ((lastScene?.bodies.length ?? 0) >= 2 ? null : NO_EXPLODE),
   };
-  const { insert: insertMenu, facts: factsButton, printCheck: printCheckButton, explode: explodeButton, measure: measureButton, commands } = toolbar(ctx.toolbar, (b) => run(b.command), () => startSketch(), () => startExtrude(), () => startMove(), () => startMove(null, "rotate"), () => startCombine(), (kind) => afterOk(() => void insertBody(kind)), inspecting, { run: () => void duplicateBodies(), off: duplicateOff, mirror: (plane) => void duplicateBodies(undefined, plane), scale: () => startMove(null, "scale") });
+  const { insert: insertMenu, facts: factsButton, printCheck: printCheckButton, explode: explodeButton, measure: measureButton, search: searchButton, commands } = toolbar(ctx.toolbar, (b) => run(b.command), () => startSketch(), () => startExtrude(), () => startMove(), () => startMove(null, "rotate"), () => startCombine(), () => startChamfer(), () => startPattern(), () => startShell(), (kind) => startConstruct(kind), (kind) => afterOk(() => void insertBody(kind)), inspecting, { run: () => void duplicateBodies(), off: duplicateOff, mirror: (plane) => void duplicateBodies(undefined, plane), planes: mirrorPlanes, scale: () => startMove(null, "scale") });
   // S: the command search box over the page (Ben's keys 10-29), listing what the toolbar offers now.
   const searchBox = commandSearch(ctx.toolbar.ownerDocument, commands);
+  searchButton.addEventListener("click", () => searchBox.open());
   // File ▾ Export 3MF or OBJ… (step 77): the format asked, then every body shown, as the whole design's STL takes them.
   const meshChoice = exportChoice(ctx.toolbar, async (format) => {
     if (!(await exportReady(`Export ${format.name}`))) return;
     const doc = ctx.project.workspaces.design as DesignDocument | undefined;
     const bodies = doc ? shownBodyRefs(doc, failedNow) : [];
-    if (bodies.length === 0) return panel.showActionNote(doc ? noBodyWords(doc, failedNow) : NO_BODY_STL, true);
+    if (bodies.length === 0) return panel.showActionNote(doc ? noBodyWords(doc, failedNow) : NO_BODY_STL, true, true);
     void runAction(format.action, bodies, hiddenStlNote(doc!, failedNow).replace(/\bSTL\b/g, format.name));
   });
   // A Cut or Join whose tools change nothing asks before OK records it (Ben, 11 Nov).
@@ -744,6 +814,7 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
     const doc = designDoc();
     drawBrowser(doc);
     showBar(doc);
+    if (mode.kind === "edit") drawSketches(); // the dimension labels' values (SL #519 item 1)
     return true;
   };
   followUnit(ctx.properties.ownerDocument, unitWatch);
@@ -753,10 +824,23 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
     area = buildAreaOn && !isHidden(doc, EYE_FOLDERS.origin) && lastScene !== null ? buildArea([lastScene.mesh], P1S_AREA, printExtras ?? { warmUp: rememberedWarmUp(storage), betterGrip: rememberedBetterGrip(storage) }) : null;
     viewport.showOrigin({
       axes: [originDrawn(doc, ORIGIN_AXES[0]), originDrawn(doc, ORIGIN_AXES[1]), originDrawn(doc, ORIGIN_AXES[2])],
-      planes: EYE_PLANES.filter((id) => originDrawn(doc, id)).map((id) => ({ id, plane: planeOf(id.slice("origin-".length).toUpperCase() as SketchPlane) })),
+      planes: [...EYE_PLANES.filter((id) => originDrawn(doc, id)).map((id) => ({ id, plane: planeOf(id.slice("origin-".length).toUpperCase() as SketchPlane) })), ...constructPlanes(drawnConstructs(doc, constructPreview))],
       ...(area && { buildArea: { lo: area.lo, hi: area.hi, strip: area.strip, corner: area.corner, outside: area.outside !== null } }),
     });
+    // The constructions' axes (dashed) and points (dots) as one overlay; their planes went in with the origin's (step 59a2).
+    const drawn = constructOverlay(drawnConstructs(doc, constructPreview), constructReach());
+    if (drawn === null) viewport.clearOverlay(CONSTRUCT_OVERLAY);
+    else viewport.setOverlay(drawn);
     showBuildAreaWords();
+  }
+  /** The answer asked for the picks now, drawn before OK (null: none); see construct-view.ts. */
+  let constructPreview: ConstructAnswer | null = null;
+  /** How far an axis is drawn each way: the bodies' size, at least 60 mm. */
+  function constructReach(): number {
+    const p = lastScene?.mesh.positions ?? [];
+    let far = 0;
+    for (const x of p) far = Math.max(far, Math.abs(x));
+    return Math.max(60, 1.5 * far);
   }
 
   /**
@@ -878,9 +962,11 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
       }),
     );
     followSelection(doc);
-    viewport.showSelection(highlightOf(items, lastScene));
+    // While Shell's preview is drawn the mesh is numbered as the preview, not the scene: no face is lit (the open faces show as openings).
+    viewport.showSelection(shellDrawn !== null ? NO_HIGHLIGHT : highlightOf(items, lastScene));
     lightRows(ctx.browser, doc, failedNow, items);
     fold?.update({ selected: items.length > 0 });
+    panel.clearPassingNote();
     panel.showSelection(selectionRows(items, lastScene, doc));
     // The Feature and Body sections describe the selected feature (else the part), with the browser's number for its body.
     const focus = panelFocus(items, lastScene, doc);
@@ -903,6 +989,9 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
         extrude: extruding !== null || extrudeBox.shown,
         edit: editBox.editing,
         combine: combineBox.shown ? { editing: combineBox.editing } : null,
+        chamfer: chamferBox.shown ? { editing: chamferBox.editing } : null,
+        pattern: patternBox.shown ? { editing: patternBox.editing } : null,
+        shell: shellBox.shown ? { editing: shellBox.editing } : null,
         sketch: mode.kind === "pick" ? { kind: "pick" } : mode.kind === "edit" ? { kind: "edit", id: editingSketch?.id ?? null } : null,
       },
       (id) => {
@@ -920,7 +1009,7 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
     const open = toolOpen();
     const words = openToolRefusal(open, verb);
     if (open === null || words === null) return false;
-    const say = { move: moveBox.showError, extrude: extrudeBox.showError, edit: editBox.showError, combine: combineBox.showError, sketch: sketchBox.showError, pick: (w: string) => panel.showActionNote(w, true) }[open.tool];
+    const say = { move: moveBox.showError, extrude: extrudeBox.showError, edit: editBox.showError, combine: combineBox.showError, chamfer: chamferBox.showError, pattern: patternBox.showError, shell: shellBox.showError, sketch: sketchBox.showError, pick: (w: string) => panel.showActionNote(w, true, true) }[open.tool];
     say(words);
     if (open.tool !== "sketch") ctx.properties.dispatchEvent(new Event("properties-reveal", { bubbles: true })); // a sketch's words show by the pointer
     return true;
@@ -945,7 +1034,7 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
   async function exportReady(verb: string): Promise<boolean> {
     if (exportWaits(verb)) return false;
     if (await builtNow()) return !exportWaits(verb); // a tool opened while it waited
-    if (shown) panel.showActionNote(stillRebuilding(verb), true);
+    if (shown) panel.showActionNote(stillRebuilding(verb), true, true);
     return false;
   }
 
@@ -963,7 +1052,7 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
       solidCard.show(outcome.solid, (outcome as DesignOutcome).notes);
       solidFor = ctx.project.workspaces.design as DesignDocument | undefined;
     }
-    if (shown) panel.showActionNote([outcome.message, note].filter(Boolean).join(" "), outcome.bad);
+    if (shown) panel.showActionNote([outcome.message, note].filter(Boolean).join(" "), outcome.bad, !outcome.bad);
   }
 
   // The body is built from the part's feature intent (document.ts); an extrude of a sketch asks the kernel for the outline (extrude.ts).
@@ -1051,11 +1140,14 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
     }));
     // 35f1: a Combine's numbered piece this rebuild didn't make counts as failed, so no row or STL offers it.
     failedNow = failedIds(doc, build.results, new Set(Object.keys(build.bodies)));
+    noteRebuild(doc, failedNow); // what other workspaces are handed (SL #761)
     builtFor = doc;
+    builtBodies = new Set(Object.keys(build.bodies));
     slowNow = new Set(Object.keys(build.results).filter((id) => { const r = build.results[id]; return r.status === "failed" && r.cause === "timed-out"; }));
     resultsNow = build.results;
     reasonsNow = new Map(Object.entries(build.results).flatMap(([id, r]) => (r.status === "failed" && r.message ? [[id, r.message] as const] : [])));
     handlesNow = Object.fromEntries(Object.entries(build.bodies).map(([id, b]) => [id, b.handle]));
+    bodiesNow = build.bodies; // Chamfer's edges are named over them (chamfer-tool.ts `heldNamesOf`)
     // Where each sketch on a face was placed (26c), so it is drawn there.
     placedNow = new Map(Object.entries(build.results).flatMap(([id, r]) => (r.status === "built" && r.placement ? [[id, r.placement.plane] as const] : [])));
     // A part whose body a later Combine used up did not fail (part-failure.ts).
@@ -1087,6 +1179,8 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
       if (r.constraints) out.push({ item: f.id, rows: [f.id], sketch: f.id, words: `${r.constraints.message}.` });
       // A Combine whose numbered pieces changed with an earlier edit (hunt 11-06): on its row, never a silent switch.
       if (r.pieces) out.push({ item: f.id, rows: [f.id], sketch: f.id, words: `${r.pieces.message}.` });
+      // A construction whose name is lost or ambiguous stays where it was (step 59a1): said on its row and card, never a silent jump.
+      if (r.held) out.push({ item: f.id, rows: [f.id], sketch: f.id, words: `${r.held.message}.` });
       // SL #506 item 4: a Move that moves only some of its bodies says which it can't move, never a silent jump.
       if (r.missing) out.push({ item: f.id, rows: [f.id], sketch: f.id, words: `${r.missing.message}.` });
       // A Cut or Join whose tools change nothing (Ben 11 Nov): OK asked first; an earlier edit since can't ask, so the row says it.
@@ -1186,11 +1280,22 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
     if (!(await exportReady("Export STL"))) return;
     const doc = ctx.project.workspaces.design as DesignDocument | undefined;
     const bodies = doc ? shownBodyRefs(doc, failedNow) : [];
-    if (bodies.length === 0) return panel.showActionNote(doc ? noBodyWords(doc, failedNow) : NO_BODY_STL, true);
+    if (bodies.length === 0) return panel.showActionNote(doc ? noBodyWords(doc, failedNow) : NO_BODY_STL, true, true);
     // Hidden bodies are left out, as in Fusion; the note says which (beginner play-test 2026-10-28).
     return runAction(DOWNLOAD_STL, bodies, hiddenStlNote(doc!, failedNow));
   }
-  function run(command: Command) {
+  function run(command: Command): ReturnType<typeof runNow> | Promise<void> {
+    // SL #819 B-2: an assistant's command waits for an OK the kernel is still checking, as Insert and the menus do.
+    if (okChecks.size === 0) return runNow(command);
+    return new Promise((resolve, reject) => afterOk(() => {
+      try {
+        void Promise.resolve(runNow(command)).then(() => resolve(), reject);
+      } catch (err) {
+        reject(err);
+      }
+    }));
+  }
+  function runNow(command: Command) {
     // The whole design's STL, every body shown in one file (25c1): the same verb selected bodies offer, from the registry.
     if (command.op === "export_stl") return exportShown();
     if (command.op === "create_sketch") return aiSketch(String(command.on));
@@ -1350,7 +1455,7 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
     await made;
     const body = bodyIdOf(added.id);
     const built = (lastScene?.bodies ?? []).some((b) => b.body === body);
-    if (!built || designDoc() !== added.doc || mode.kind !== "none" || extruding || extrudeBox.shown || editBox.editing !== null || moveBox.shown || combineBox.shown || deleting.open !== null) return;
+    if (!built || designDoc() !== added.doc || mode.kind !== "none" || extruding || extrudeBox.shown || editBox.editing !== null || moveBox.shown || combineBox.shown || chamferBox.shown || patternBox.shown || shellBox.shown || deleting.open !== null) return;
     ctx.selection.set([bodyReference(body)]);
     startMove();
     moveFromInsert = true;
@@ -1362,6 +1467,15 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
   if (!ctx.history.restoring()) designToken = Math.floor(Math.random() * 2 ** 48).toString(36);
 
   /** Why Duplicate is off: no body picked (a face or edge picks its body). */
+  /** The construction planes a new Mirror can use (59a3): before the marker, not suppressed, in timeline order. */
+  function mirrorPlanes(): { plane: MirrorPlane; label: string }[] {
+    const doc = designDoc();
+    return doc.timeline.features.flatMap((f): { plane: MirrorPlane; label: string }[] => {
+      const plane: MirrorPlane = `${CONSTRUCT_REF}${f.id}`;
+      return isConstructItem(f) && mirrorPlaneProblem(doc, plane) === null ? [{ plane, label: f.provenance.self.label }] : [];
+    });
+  }
+
   function duplicateOff(): string | null {
     return pickedBodies(ctx.selection.items, lastScene).length === 0 ? "Pick one or more bodies first, then Duplicate." : null;
   }
@@ -1374,8 +1488,19 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
    * With `mirror` (Mirror body) each copy is mirrored across that origin
    * plane, already away from its body, so the copies are only picked.
    */
-  async function duplicateBodies(bodies?: readonly string[], mirror?: SketchPlane) {
-    const picked = bodies ?? pickedBodies(ctx.selection.items, lastScene);
+  async function duplicateBodies(bodies?: readonly string[], mirror?: MirrorPlane) {
+    // SL #760 item 5: an OK being checked goes first (it shuts the panels below), and what is selected is read after it,
+    // as when pressed slowly.
+    if (okChecks.size > 0) return afterOk(() => void duplicateBodies(bodies, mirror));
+    let picked = bodies ?? pickedBodies(ctx.selection.items, lastScene);
+    if (bodies !== undefined) {
+      // SL #820 B-4: a pasted body a later Combine used up is no longer built, so it pastes nothing, as a deleted one
+      // (`pastedBodies`); read from the design as built now, once a rebuild under way (an OK's) has ended.
+      const now = designDoc();
+      if (!(await builtNow()) || designDoc() !== now) return;
+      picked = bodies.filter((b) => builtBodies.has(b));
+      if (okChecks.size > 0) return afterOk(() => void duplicateBodies(bodies, mirror));
+    }
     if (picked.length === 0) return;
     leaveExtrude();
     leaveEdit();
@@ -1392,7 +1517,7 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
     await update(mirror === undefined ? DUPLICATE_STEP : MIRROR_STEP, undefined, added.doc);
     const shownNow = new Set((lastScene?.bodies ?? []).map((b) => b.body));
     const copies = copiesOf(added.ids).filter((b) => shownNow.has(b));
-    if (copies.length === 0 || designDoc() !== added.doc || mode.kind !== "none" || extruding || extrudeBox.shown || editBox.editing !== null || moveBox.shown || combineBox.shown || deleting.open !== null) return;
+    if (copies.length === 0 || designDoc() !== added.doc || mode.kind !== "none" || extruding || extrudeBox.shown || editBox.editing !== null || moveBox.shown || combineBox.shown || chamferBox.shown || patternBox.shown || shellBox.shown || deleting.open !== null) return;
     ctx.selection.set(copies.map(bodyReference));
     if (mirror === undefined) {
       startMove();
@@ -1406,6 +1531,8 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
   let failedNow: ReadonlySet<string> = new Set();
   /** The design `failedNow` was last worked out for (the same design with its points followed counts, `takeIn`): an export reads nothing until it is the design as it is now (`builtNow`). */
   let builtFor: DesignDocument | null = null;
+  /** The bodies the rebuild of `builtFor` made: a paste copies only these (SL #820 B-4). */
+  let builtBodies: ReadonlySet<string> = new Set();
   /** show() calls not yet ended, and who waits for the last to end (`builtNow`). */
   let showsRunning = 0;
   const showsDone: (() => void)[] = [];
@@ -1421,9 +1548,11 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
   /** What the last rebuild made of each item (built, failed, greyed…): an edited Move's preview starts from it (35e2c). */
   /** #505: why each failed item failed, in the rebuild's words (its title, card, Properties and Edit panel). */
   let reasonsNow: ReadonlyMap<string, string> = new Map();
-  let resultsNow: Readonly<Record<string, { status: string; holds?: readonly number[]; pieces?: { renumbered: readonly string[] } }>> = {};
+  let resultsNow: Readonly<Record<string, { status: string; holds?: readonly number[]; pieces?: { renumbered: readonly string[] }; chamfered?: { edges: readonly number[]; body: number } }>> = {};
   /** Each built body's handle in the kernel's store, by body id, from the last rebuild: Measure (35e2l2) asks the kernel about them. */
   let handlesNow: Readonly<Record<string, BodyHandle>> = {};
+  /** Every body the last rebuild built, by body id (step 44a-app2: a Chamfer's picked edges are named over them, as its rebuild names them). */
+  let bodiesNow: Readonly<Record<string, BuiltBody>> = {};
   /** The last sketchPlaceScene worked out, and what from: worked again only when one of them changes. */
   let placeMemo: { scene: Scene; features: unknown; results: unknown; id: string; out: Scene } | null = null;
   /**
@@ -1451,7 +1580,8 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
   const bodySnaps = (id: string): BodySnaps => {
     const plane = sketchPlane(designDoc(), id, placedNow);
     const scene = sceneFor(id);
-    return { curves: sketchEdgeCurves(designDoc(), id, scene, plane), corners: sketchPlaneCorners(designDoc(), id, scene, plane) };
+    // 59a3b2: every construction point drawn (showOrigin draws them, flag or not) and made before the sketch.
+    return { curves: sketchEdgeCurves(designDoc(), id, scene, plane), corners: sketchPlaneCorners(designDoc(), id, scene, plane), constructs: constructSnapPoints(designDoc(), id, plane) };
   };
   /** Ctrl (Cmd on a Mac) held over the view: snapping and the grid are off while it is (snap.ts `snapsNow`). */
   let modHeld = false;
@@ -1470,10 +1600,17 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
   }
   let lastSelectedFeature: string | null = null;
   /** The timeline bar for `doc`, wired to the item menu. */
+  /**
+   * A bar action's refusal that waited for an OK (SL #819 B-2), shown beside the bar while the design is the one it
+   * was refused on: the OK's rebuild draws the bar again after it, which would otherwise take the words away.
+   */
+  let waitedRefusal: { doc: DesignDocument; words: string } | null = null;
   function showBar(doc: DesignDocument) {
     if (!ctx.timeline) return;
     showFailureNote(lastSelectedFeature);
+    if (waitedRefusal !== null && waitedRefusal.doc !== doc) waitedRefusal = null;
     showTimelineBar(ctx.timeline, doc, {
+      note: waitedRefusal?.words ?? null,
       describe: (summary) => summaryInUnit(summary, currentUnit(ctx.timeline!.ownerDocument)),
       failed: failedNow,
       slow: slowNow,
@@ -1494,13 +1631,25 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
       // A refusal goes to the error line and back to the bar, which shows it beside itself (timeline hunt, finding 4).
       onAction: (a) => {
         if (a.kind === "menu") return;
-        let refused: string | undefined;
-        try {
-          chooseBarAction({ ...menuHost, refuse: (message) => (menuHost.refuse(message), (refused = message)) }, a, editingId());
-        } catch (err) {
-          panel.showError(err instanceof Error ? err.message : String(err));
-        }
-        return refused;
+        const act = () => {
+          let refused: string | undefined;
+          try {
+            chooseBarAction({ ...menuHost, refuse: (message) => (menuHost.refuse(message), (refused = message)) }, a, editingId());
+          } catch (err) {
+            panel.showError(err instanceof Error ? err.message : String(err));
+          }
+          return refused;
+        };
+        // SL #819 B-2: an OK the kernel is still checking goes first, as for the menus; the bar's action then runs on the
+        // design the OK left (a refusal drawn beside the bar then), never shutting the OK's panel under it.
+        if (okChecks.size === 0) return act();
+        afterOk(() => {
+          const refused = act();
+          if (refused === undefined) return;
+          waitedRefusal = { doc: designDoc(), words: refused };
+          showBar(designDoc());
+        });
+        return undefined;
       },
     });
   }
@@ -1603,7 +1752,7 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
     // A Body row's menu starts with Show only this body and Show all bodies (its eye is the row's Hide).
     const shows = row === undefined ? [] : showEntries(doc, row, failedNow).map((e) => ({ ...e, run: () => showFrom(e.action as "show-only" | "show-all", row) }));
     // Ben 2026-11-11 (#507): with Combine switched off, a Combine already in the file builds but can't be edited: Edit is greyed out, saying why.
-    const switchedOff = (e: MenuEntry): MenuEntry => (e.action === "edit" && isCombineItem(item) && !combineShown() ? { ...e, off: COMBINE_OFF } : e);
+    const switchedOff = (e: MenuEntry): MenuEntry => (e.action === "edit" && isCombineItem(item) && !combineShown() ? { ...e, off: COMBINE_OFF } : e.action === "edit" && isChamferItem(item) && !chamferShown() ? { ...e, off: CHAMFER_OFF } : e.action === "edit" && isPatternItem(item) && !patternShown() ? { ...e, off: PATTERN_OFF } : e.action === "edit" && isShellItem(item) && !shellShown() ? { ...e, off: SHELL_OFF } : e);
     const entries = [...shows, ...menuEntries(doc, id, editing).map(switchedOff).map((e) => ({ ...e, run: () => afterOk(() => void chooseEntry(menuHost, id, e.action, editingId()).catch((err) => panel.showError(err instanceof Error ? err.message : String(err)))) }))];
     menuAt = at;
     deleting.menu(itemName(item), at, entries);
@@ -1617,7 +1766,7 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
    */
   function openViewMenu(pick: Parameters<NonNullable<SharedViewport["onMenu"]>>[0], at: { x: number; y: number }): boolean {
     const doc = ctx.project.workspaces.design as DesignDocument | undefined;
-    if (!doc || mode.kind !== "none" || extruding || moveBox.shown || combineBox.shown || deleting.open !== null) return false;
+    if (!doc || mode.kind !== "none" || extruding || moveBox.shown || combineBox.shown || chamferBox.shown || patternBox.shown || shellBox.shown || deleting.open !== null) return false;
     const target = viewMenuTarget(doc, lastScene, pick, failedNow);
     const item = doc.timeline.features.find((f) => f.id === target?.feature);
     if (!target || !item) return false;
@@ -1648,7 +1797,7 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
    */
   function deleteKey(): boolean {
     const doc = ctx.project.workspaces.design as DesignDocument | undefined;
-    if (!doc || extruding || moveBox.shown || combineBox.shown || deleting.open !== null) return false;
+    if (!doc || extruding || moveBox.shown || combineBox.shown || chamferBox.shown || patternBox.shown || shellBox.shown || deleting.open !== null) return false;
     const on = document.activeElement;
     const barItem = on instanceof HTMLElement ? on.closest<HTMLElement>("[data-item]") : null;
     const row = on instanceof HTMLElement && ctx.browser.contains(on) ? on.closest<HTMLElement>("[data-node], [data-more]") : null;
@@ -1721,6 +1870,8 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
   /** Shows a document the project now holds and builds its part: the browser, sketches, selection, then the body or the reason it failed. */
   /** The design last shown and built: a sketch left after edits to it differs, and is rebuilt (25a3). */
   let shownDoc: DesignDocument | null = null;
+  /** The design the line after a Combine's OK speaks of (`sayCombineDone`), null while it is not shown. */
+  let combineDoneFor: DesignDocument | null = null;
   /** Counts show() calls: one overtaken while its settle waited on the kernel draws nothing (app hunt 2026-11-04). */
   let showing = 0;
   /** Set once unmounted: a show() still waiting on the kernel then draws nothing. */
@@ -1739,6 +1890,7 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
     return ctx.history.hold(work.finally(told), true); // nothing recorded yet: leaving now asks first (SL #708 item 1)
   }
   async function show(doc: DesignDocument, kind: PartKind) {
+    if (combineDoneFor !== null && doc !== combineDoneFor) sayCombineDone(null); // Undo, Redo or any later step: the Combine's line no longer holds (SL #820 D-8)
     shownDoc = doc;
     const n = ++showing;
     const view = viewport.element;
@@ -1832,7 +1984,10 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
     ctx.project.workspaces.design = next;
     if (saved?.doc === doc) saved = { ...saved, doc: next };
     if (shownDoc === doc) shownDoc = next;
-    if (builtFor === doc) builtFor = next;
+    if (builtFor === doc) {
+      builtFor = next;
+      noteRebuild(next, failedNow);
+    }
     ctx.history.amend(true);
   }
   async function showBuilt(doc: DesignDocument, kind: PartKind) {
@@ -1842,6 +1997,12 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
     if (moveBox.editing !== null && !doc.timeline.features.some((f) => f.id === moveBox.editing)) leaveMove();
     // And the Combine panel's Combine (35f1c).
     if (combineBox.editing !== null && !doc.timeline.features.some((f) => f.id === combineBox.editing)) leaveCombine();
+    // And the Chamfer panel's Chamfer (44a-app3).
+    if (chamferBox.editing !== null && !doc.timeline.features.some((f) => f.id === chamferBox.editing)) leaveChamfer();
+    // And the Pattern panel's Pattern (61c).
+    if (patternBox.editing !== null && !doc.timeline.features.some((f) => f.id === patternBox.editing)) leavePattern();
+    // And the Shell panel's Shell (35h2c-app2).
+    if (shellBox.editing !== null && !doc.timeline.features.some((f) => f.id === shellBox.editing)) leaveShell();
     drawBrowser(doc);
     showOrigin(doc);
     showStart();
@@ -1897,7 +2058,9 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
         const newPart = kind !== framedKind && !keepCamera;
         keepCamera = false;
         if (!empty && (newPart || needsRefit(framed, viewport.bodyFraming()))) {
-          framed = viewport.fit();
+          // A new part is framed from the home view; a part that outgrew the view keeps the angle the person looks
+          // from, as the Fit button does (SL #819 D-10: a person working in Top was spun round).
+          framed = newPart || viewport.fitKeepAngle === undefined ? viewport.fit() : viewport.fitKeepAngle();
           viewport.element.dataset.framedRadius = String(framed?.radius); // read by the e2e test
           viewport.element.dataset.fits = String(++fits);
         }
@@ -1911,6 +2074,7 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
       const { kept, dropped, shared, followed } = survivors(ctx.selection.items, scene, outlines, (id) => doc.timeline.features.some((f) => f.id === id), (b) => bodyHidden(doc, b));
       lastScene = scene;
       measureBox.rebuilt(); // the bodies picked may have changed
+      constructBox.rebuilt(); // so may Construct's
       if (buildAreaOn) showOrigin(doc);
       showPrintCheck();
       // A snap's "from" was read off the bodies as they were: picked again on these (35e2d).
@@ -1918,9 +2082,12 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
       // A new Move's preview drawn again on the bodies as now built (a body it picked that no longer shows is let go); an edited one's too (35e2c).
       if (picksBodies()) pickBodies();
       else if (moveBox.shown) previewMove();
+      if (chamferBox.shown) syncChamferPicks(); // the edges picked, found again on the bodies as now built
+      if (patternBox.shown && patternBox.editing !== null) void refreshPatternPreview(); // an edited Pattern's preview drawn on the bodies as now built (a new one's comes through pickBodies)
+      if (shellBox.shown) syncShellPicks(); // the faces picked, found again on the bodies as now built
       factsButton.disabled = inspecting.none() !== null;
       explodeButton.disabled = explodeSpread === null && inspecting.noExplode() !== null; // on, it can always be turned off
-      if (mode.kind === "pick") viewport.showPlanes(originPlanes(), sketchableFaces(scene)); // the faces offered are this scene's
+      if (mode.kind === "pick") viewport.showPlanes(offeredPlanes(), sketchableFaces(scene)); // the faces offered are this scene's
       // Extrude opened before this build landed (a slow kernel, a file just opened, an Undo) offered the faces of the scene
       // before it, or none: they are offered again from this one, so a face is never missing or where the body was.
       if (extruding && designDoc() === doc) void offerProfiles(doc, [...extruding.usable]);
@@ -1953,6 +2120,7 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
   let mode: Mode = { kind: "none" };
   const sketchPanelBox = sketchPanel(ctx.properties, {
     pickPlane: (id) => pickPlane(id),
+    pickConstruct: (item) => pickConstruct(item),
     cancel: () => leaveSketch(),
     grid: (typed) => void setGrid(typed),
     gridSnap: (on) => setGridSnap(on),
@@ -1976,7 +2144,7 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
       if (mode.kind === "edit") drawSketches();
     },
     // A panel shown afresh has no note, and neither has the pointer.
-    showPick: () => ((sketchNote = ""), sketchPanelBox.showPick()),
+    showPick: (constructs) => ((sketchNote = ""), sketchPanelBox.showPick(constructs)),
     showEditing: (...args) => ((sketchNote = ""), sketchPanelBox.showEditing(...args)),
     hide: () => ((sketchNote = ""), sketchPanelBox.hide()),
   };
@@ -2058,6 +2226,7 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
   function modelling(on: boolean) {
     for (const el of ctx.toolbar.querySelectorAll<HTMLElement>("[data-modelling]")) el.hidden = !on;
     for (const el of ctx.toolbar.querySelectorAll<HTMLElement>("[data-sketching]")) el.hidden = on;
+    ctx.toolbar.scrollLeft = 0; // a different row of buttons: start from its left end, not where the last one was scrolled to
   }
   const designDoc = () => ctx.project.workspaces.design as DesignDocument;
   /** Counts tool changes (a tool chosen, Escape, the sketch entered again): a click the kernel was still snapping across one is dropped. */
@@ -2100,7 +2269,7 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
     // Marks and dimension labels are sized in screen pixels at the camera as it is now, never at the pointer's last move: a camera
     // that moved since left them sized for the old view, and the next click jumped a label from under the pointer (47e, Firefox).
     const pixel = editing ? (pixelNow(editing.pointer) ?? editing.pixel) : undefined;
-    viewport.showSketches(withSnap(sketchDrawings(doc, editing && { ...editing, pixel, tool: withLocks(editing.tool, locks, editing.pointer), pointer: aim, gridSnap }, placedNow, lostSketches()), locked ? null : (editing?.snap ?? null), editing?.pixel));
+    viewport.showSketches(withSnap(sketchDrawings(doc, editing && { ...editing, pixel, tool: withLocks(editing.tool, locks, editing.pointer), pointer: aim, gridSnap, unit: currentUnit(ctx.properties.ownerDocument) }, placedNow, lostSketches()), locked ? null : (editing?.snap ?? null), editing?.pixel));
     const anchor = editing && anchorOf(doc, editing.tool);
     sketchBar.showPicked(editing?.tool.kind === "select" ? stillPicked(doc.sketches.find((s) => s.id === editing.tool.sketch), editing.tool.picked).length : 0);
     if (!editing) return (typed.hide(), sketchBar.showType(false), hint.hide());
@@ -2158,8 +2327,43 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
     mode = { kind: "pick" };
     toolsChanged();
     showStart();
-    viewport.showPlanes(originPlanes(), sketchableFaces(lastScene));
-    sketchBox.showPick();
+    viewport.showPlanes(offeredPlanes(), sketchableFaces(lastScene));
+    sketchBox.showPick(offeredConstructs());
+  }
+
+  /** The construction planes Create sketch offers as panel buttons (59a3): the same ones as the view's, named as the timeline names them. */
+  function offeredConstructs(): { item: string; label: string }[] {
+    if (!constructShown()) return [];
+    const doc = designDoc();
+    return drawnConstructs(doc, null).flatMap((d) => {
+      const f = doc.timeline.features.find((g) => g.id === d.item);
+      return d.answer.kind === "plane" && f !== undefined ? [{ item: d.item, label: f.provenance.self.label }] : [];
+    });
+  }
+
+  /**
+   * The planes Create sketch offers: the origin's, then (59a3, behind
+   * ?construct) every construction plane before the marker that is on and
+   * shown, by its name ("construct:feature-7"), drawn round where the
+   * construction itself is drawn.
+   */
+  function offeredPlanes(): OriginPlane[] {
+    if (!constructShown()) return originPlanes();
+    const doc = designDoc();
+    const planes = constructPlanes(drawnConstructs(doc, null));
+    return [...originPlanes(), ...planes.map((p) => ({ id: `${CONSTRUCT_REF}${p.id.slice("construct-".length)}`, plane: p.plane, offered: true, centred: true }))];
+  }
+
+  /** A construction plane picked (59a3): the new sketch on it (one undo step), looked at straight down; refused in the panel's words. */
+  function pickConstruct(item: string) {
+    if (mode.kind !== "pick") return;
+    let made: ReturnType<typeof addConstructSketch>;
+    try {
+      made = addConstructSketch(designDoc(), item);
+    } catch (e) {
+      return sketchBox.showError(e instanceof Error ? e.message : String(e));
+    }
+    startNewSketch(made);
   }
 
   /** A plane picked: the new sketch (one undo step), looked at straight down, ready to draw on. */
@@ -2487,7 +2691,14 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
 
   /** Says what the edited sketch holds and whether it makes one closed outline, or the kernel's reason it doesn't. */
   // Every answer goes through one latestOnly, those needing no kernel too, so an older ask answered later never shows over a newer one.
-  const outlineOf = latestOnly(async (sketch: Sketch) => (sketch.curves.length === 0 ? null : (projectedOpen(sketch) ?? (await askOutline(kernel, sketchCurves(sketch))))));
+  const outlineOf = latestOnly(async (sketch: Sketch) => {
+    if (sketch.curves.length === 0) return null;
+    const out = projectedOpen(sketch) ?? (await askOutline(kernel, sketchCurves(sketch)));
+    // Separate closed loops are not one outline, but Extrude offers each region since step 48: said as such (SL #820 D-5).
+    if (typeof out === "string" || "closed" in out || !/separate loops/.test(out.open)) return out;
+    const regions = (await sketchRegions(kernel, sketch)).regions.filter((r) => r.extrudes).length;
+    return regions === 0 ? out : { regions };
+  });
   async function showOutline() {
     if (mode.kind !== "edit") return;
     const id = mode.tool.sketch;
@@ -2496,7 +2707,7 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
     const n = curveCount(sketch);
     try {
       const { current, value } = await outlineOf(sketch);
-      if (current) outlineWords = value === null ? `${n}.` : typeof value === "string" ? `${n}, not closed: ${value}.` : "closed" in value ? `${n}, a closed outline.` : `${n}, not closed: ${value.open}.`;
+      if (current) outlineWords = value === null ? `${n}.` : typeof value === "string" ? `${n}, not closed: ${value}.` : "closed" in value ? `${n}, a closed outline.` : "regions" in value ? `${n}, closed: ${value.regions} ${value.regions === 1 ? "region" : "regions"} to extrude.` : `${n}, not closed: ${value.open}.`;
     } catch (e) {
       outlineWords = `${n}: ${e instanceof Error ? e.message : String(e)}`;
     }
@@ -2756,6 +2967,16 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
   const onLabelClick = (e: MouseEvent) => {
     const label = e.target instanceof Element ? e.target.closest<HTMLElement>(".sketch-label") : null;
     if (label?.dataset.dimension && mode.kind === "edit" && mode.tool.kind === "dimension") editDimension(label.dataset.dimension);
+    // With Select a click on a dimension's number picks the dimension, as a click on its line does (SL #524 item 4).
+    if (label?.dataset.dimension && mode.kind === "edit" && mode.tool.kind === "select") {
+      const tool = mode.tool;
+      const picked = labelPicks(designDoc().sketches.find((s) => s.id === tool.sketch), tool.picked, label.dataset.dimension, e.shiftKey);
+      if (picked === null) return;
+      mode.tool = { ...tool, picked, hover: null };
+      sketchBox.showError("");
+      showSketchStatus();
+      drawSketches();
+    }
   };
 
   function constrain(sketchId: string, add: NewConstraint, refused: () => void = () => {}) {
@@ -2911,6 +3132,11 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
       if (extruding) extruding.distance = null; // a distance the same as before still builds afresh
       extrudeDistance(signedDistance(typed));
     },
+    // Through all (version 23): the preview as long as the bodies ticked reach, built afresh; the arrow is put away meanwhile.
+    through: (_on, typed) => {
+      if (extruding) extruding.distance = null;
+      extrudeDistance(signedDistance(typed));
+    },
     clear: () => chooseProfile(null),
     ok: (typed) => void holdAsked(finishExtrude(typed)),
     cancel: () => (okChecks.clear(), leaveExtrude()),
@@ -2926,6 +3152,8 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
       if (on) extruding.unticked.delete(body);
       else extruding.unticked.add(body);
       showOperationBodies();
+      // Through all: as long as the bodies ticked now reach.
+      if (extrudeBox.through) refreshPreview();
     },
     several: (on) => {
       if (extruding) extruding.pickMany = on;
@@ -2990,6 +3218,7 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
 
   /** A tool's panel opened or closed: the shell's Undo and Redo say what they would do now (`openTool`), once this change is done. */
   function toolsChanged() {
+    panel.clearPassingNote(); // a refusal naming a tool that has closed (or another opened) no longer applies
     queueMicrotask(() => {
       if (!putAway) ctx.toolChanged?.();
     });
@@ -3006,7 +3235,11 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
     if (editBox.editing !== null) return { name: "Edit feature", cancel: () => leaveEdit() };
     if (moveBox.shown && !moveAfterStep) return { name: moveBox.editing !== null ? "Edit feature" : MOVE_VERBS[moveBox.kind], cancel: () => leaveMove() };
     if (combineBox.shown) return { name: combineBox.editing !== null ? "Edit feature" : "Combine", cancel: () => leaveCombine() };
+    if (chamferBox.shown) return { name: chamferBox.editing !== null ? "Edit feature" : "Chamfer", cancel: () => leaveChamfer() };
+    if (patternBox.shown) return { name: patternBox.editing !== null ? "Edit feature" : "Pattern", cancel: () => leavePattern() };
+    if (shellBox.shown) return { name: shellBox.editing !== null ? "Edit feature" : "Shell", cancel: () => leaveShell() };
     if (measureBox.shown) return { name: "Measure", cancel: () => measureBox.close() };
+    if (constructBox.shown) return { name: "Construct", cancel: () => constructBox.close() };
     return null;
   }
 
@@ -3027,7 +3260,10 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
     const e = extruding;
     // Edit feature's regions (48d4) stay drawn while it is open.
     if (!e) return editRegions !== null ? showEditRegions() : viewport.showExtrude(null);
-    const arrow = e.arrow && e.distance !== null ? { ...e.arrow, distance: e.distance } : null;
+    // Symmetric (53a1): the arrow is half the thickness long, its tip on the end cap, as `arrowOf` and `symmetricDrag` have it
+    // (app-wide hunt 2026-11-14, R-2: at the whole thickness each grab of the arrow doubled the distance).
+    // Through all (version 23): no length to drag, so no arrow.
+    const arrow = e.arrow && e.distance !== null && !extrudeBox.through ? { ...e.arrow, distance: extrudeBox.symmetric ? Math.abs(e.distance) / 2 : e.distance } : null;
     viewport.showExtrude({ profiles: e.offered, chosen: e.offer ?? e.sketch, ...(e.more.length > 0 ? { alsoChosen: e.more.map((m) => m.id) } : {}), preview: e.preview?.mesh ?? null, arrow, ...(e.operation === "cut" ? { cut: true } : {}) });
     // Read by the tests: the sketches it can use, the one chosen (and its region picked), and the volume of the body OK would make, as the kernel worked it out.
     const box = ctx.properties.querySelector<HTMLElement>("#extrude-panel");
@@ -3161,6 +3397,8 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
   // The pointer while Extrude is shown (UX1b): a click on an offered outline chooses it (one on
   // none keeps the choice, as Fusion does); the arrow dragged sets the distance in whole mm.
   const onExtrudePointer: SharedViewport["onExtrudePointer"] = (pointer) => {
+    // Chamfer's arrow (Ben, 2026-11-16): its drag sets the distance; its clicks pick edges through onPick.
+    if (chamferBox.shown && chamferShowing) return void (pointer.kind === "drag" && chamferDrag(pointer.distance, pointer.done));
     if (!extruding) {
       if (editRegions !== null && pointer.kind === "pick" && pointer.profile !== null) pickEditRegion(pointer.profile);
       return;
@@ -3175,6 +3413,8 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
       if (why) extrudeBox.showError(why);
       return;
     }
+    // Through all has no arrow (a drag begun before it was pressed changes nothing).
+    if (extrudeBox.through) return;
     extrudeBox.dragging(!pointer.done); // the distance box glows while the arrow is held
     // Symmetric (53a1): the arrow is half the thickness long, so its tip at s is a distance of 2s.
     const d = extrudeBox.symmetric ? symmetricDrag(pointer.distance, snapDistance) : snapDistance(pointer.distance);
@@ -3219,12 +3459,38 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
         e.base = { doc, sketch: id, region, spec, ...(curves ? { curves } : {}) };
       }
       // At 0 mm (where Extrude starts) nothing is drawn, but the arrow still stands on the profile: it is found from a 1 mm build.
-      const at = d === 0 ? 1 : d;
+      let at = d === 0 ? 1 : d;
       const both = extrudeBox.symmetric;
+      const through = extrudeBox.through;
       const viewOf = async (spec: BodySpec) => {
         const handle = await kernel.call("body_build", previewSpec(spec, at, both));
         return await kernel.call("body_view", handle).finally(() => void bodies.release(handle));
       };
+      // Through all (version 23), the rebuild's own rule (rebuild.ts `throughNow`) on the bodies on screen: first as long as
+      // every body not unticked reaches, to find the bodies listed; then as long as those listed and ticked reach.
+      let reached: BodyView | null = null;
+      if (through) {
+        const sign = at < 0 ? -1 : 1;
+        const listed = (lastScene?.bodies ?? []).map((b) => ({ body: b.body, label: `Body ${b.place}`, bounds: b.view.bounds }));
+        const length = (boxes: readonly Bounds[]) => throughDistance(previewSpec(e.base!.spec, sign), boxes);
+        const first = length(listed.filter((b) => !e.unticked.has(b.body)).map((b) => b.bounds));
+        if (typeof first !== "number") {
+          if (extruding !== e || extrudeBox.through !== through) return;
+          e.preview = null;
+          extrudeBox.showError(throughWords("The extrude", first));
+          showOperationBodies();
+          return void showExtrudeView();
+        }
+        at = sign * first;
+        reached = await viewOf(e.base.spec);
+        const ticked = new Set(tickedBodies(bodyChoices(reached.bounds, listed, e.unticked)));
+        const then = length(listed.filter((b) => ticked.has(b.body)).map((b) => b.bounds));
+        if (typeof then === "number" && then !== first) {
+          at = sign * then;
+          reached = null;
+        }
+        extrudeBox.showError("");
+      }
       // The other profiles picked (version 18), each built as its own extrude, then joined as OK's rebuild joins them
       // (SL #632 item 3: drawn apart, an overlap was counted twice in the preview's volume).
       const extras = e.more;
@@ -3240,11 +3506,11 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
         prisms.push({ spec: b.spec, curves: b.curves });
       }
       let view: BodyView;
-      if (extras.length === 0) view = await viewOf(e.base.spec);
+      if (extras.length === 0) view = reached ?? (await viewOf(e.base.spec));
       else {
         // Each prism builds (a profile that can't let go above), so a refusal here is of joining them, which OK would refuse
         // in the same words: the picks stay, with no preview under the words (as for a refused distance).
-        const joined = await unitedViews(kernel, prisms.map((p) => ({ spec: previewSpec(p.spec, at), ...(p.curves ? { curves: p.curves } : {}) }))).catch((err: unknown) => err as Error);
+        const joined = await unitedViews(kernel, prisms.map((p) => ({ spec: previewSpec(p.spec, at, both), ...(p.curves ? { curves: p.curves } : {}) }))).catch((err: unknown) => err as Error);
         if (joined instanceof Error) {
           if (extruding !== e || e.sketch !== id || e.region !== region || e.more !== extras || e.distance !== d) return;
           e.preview = null;
@@ -3254,7 +3520,7 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
         view = joinedView(joined);
       }
       // Out of date: another sketch or region chosen or the panel closed. A newer distance only means another build follows.
-      if (extruding !== e || e.sketch !== id || e.region !== region || e.more !== extras || extrudeBox.symmetric !== both) return;
+      if (extruding !== e || e.sketch !== id || e.region !== region || e.more !== extras || extrudeBox.symmetric !== both || extrudeBox.through !== through) return;
       // A distance refused since this build began (extrudeDistance said why) shows no preview under the words.
       e.preview = e.distance === null || d === 0 || distanceRefused(e.distance) !== null ? null : view;
       e.arrow = arrowOf(view, d === 0 ? 1 : d, both) ?? e.arrow;
@@ -3420,6 +3686,8 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
       const both = extrudeBox.symmetric;
       made = extrudeSketch(source.doc, source.sketch, Math.abs(distance), !both && distance < 0, region ?? undefined, choice, more);
       if (both) made = { ...made, doc: setExtrudeSymmetric(made.doc, true, made.id) };
+      // Through all (version 23): the distance typed kept for when it is let go; the rebuild finds its length.
+      if (extrudeBox.through) made = { ...made, doc: setExtrudeThrough(made.doc, true, made.id) };
       await okCheck((async () => buildSpec(kernel, await featureSpec(kernel, made.doc, made.doc.timeline.features.find((f) => f.id === made.id)!)))());
       // Several profiles are joined only in the rebuild (SL #611 C1): the whole item is built before it is recorded.
       if (choice !== null || more.length > 0) {
@@ -3635,9 +3903,9 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
   /** The bodies the Move panel moves (body ids, 35eb): the selection's, and an edited Move's hidden or unbuilt ones it still holds (35e2i). */
   let moveBodies: string[] = [];
   /** Whether the Move panel is picking its bodies: a new Move's, or since 35e2i an edited one's (a click adds a body or takes it out). */
-  const picksBodies = () => moveBox.shown || (combineBox.shown && combineBox.editing === null);
+  const picksBodies = () => moveBox.shown || (combineBox.shown && combineBox.editing === null) || (patternBox.shown && patternBox.editing === null);
   /** The picked bodies handed to the panel picking them. */
-  const pickBodies = () => (moveBox.shown ? pickMoveBodies() : pickCombineBodies());
+  const pickBodies = () => (moveBox.shown ? pickMoveBodies() : patternBox.shown ? pickPatternBodies() : pickCombineBodies());
   /** Over the view while a new Move has no body yet: on a phone the panel's own words wait in the shut sheet, so the view stays clear to tap. */
   const moveHint = viewport.element.ownerDocument.createElement("p");
   moveHint.id = "move-hint"; // read by the e2e test
@@ -3705,6 +3973,642 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
     reveal: () => ctx.properties.dispatchEvent(new Event("properties-reveal", { bubbles: true })),
     offerCorners: (corners) => viewport.showCorners(corners), // corners to pick (35e2l3)
   });
+  // Chamfer (step 44a-app2, behind ?chamfer and ?all): straight edges of one body picked one click at a time (the
+  // selection is the edges while it is open), the size typed, then OK records a Chamfer at the marker. 44a-app3: Edit
+  // feature on a Chamfer (its type, sizes and Flip; its edges stay) and the live preview of the cut before OK.
+  const chamferBox = chamferPanel(ctx.properties, {
+    changed: () => (chamferBox.showError(""), void refreshChamferPreview()),
+    ok: () => void holdAsked(finishChamfer()), // held like Combine's OK: an Undo pressed while the kernel checks waits (#503)
+    cancel: () => (okChecks.clear(), leaveChamfer()),
+  });
+  /** The edges picked, in the order picked: each on the body (body id) and kernel edge index the scene shows. */
+  let chamferPicks: PickedEdge[] = [];
+  /** Each opening and closing of the Chamfer panel counted: an OK whose check lands after it changed is out of date. */
+  let chamferOpenings = 0;
+  /** Over the view while no edge is picked: on a phone the panel's words wait in the shut sheet. */
+  const chamferHint = viewport.element.ownerDocument.createElement("p");
+  chamferHint.id = "chamfer-hint"; // read by the e2e test
+  chamferHint.className = "move-panel-hint";
+  chamferHint.setAttribute("role", "status");
+  chamferHint.hidden = true;
+  viewport.element.append(chamferHint);
+  function showChamferHint() {
+    chamferHint.textContent = chamferHintWords(lastScene?.bodies.length ?? 0);
+    chamferHint.hidden = !(shown && chamferBox.shown && chamferBox.editing === null && chamferPicks.length === 0);
+  }
+  /** The cut drawn before OK (44a-app3, chamfer-preview.ts): the body's id and its view as the kernel chamfers it at the size typed; null when none is drawn. */
+  let chamferDrawn: { body: string; view: BodyView; cuts: number[] } | null = null;
+  /** The kernel's chamfer for the preview, the latest ask only (a late answer to an older size never draws over a newer one); a refusal comes back as its words. */
+  const chamferAsk = latestOnly(async (handle: BodyHandle, edges: readonly number[], size: ChamferSize, flip: boolean, shownAs: BodyHandle): Promise<{ view: BodyView; cuts: number[]; from: BodyView } | { why: string; edges: number[]; from: BodyView | null }> => {
+    // The body chamfered, as it is before the cut: the arrow stands on it and a refusal's red wedge is drawn on it.
+    const from = await bodies.using(() => bodies.view(handle)).catch(() => null);
+    try {
+      // Numbered as the body drawn now (`shownAs`), so the tool's clicks on the drawn preview pick that body's own edges.
+      return await bodies.using(async () => {
+        const [made, body] = await Promise.all([previewChamfer(kernel, handle, edges, size, flip), bodies.view(shownAs)]);
+        return { ...pickableView(body, made.view, made.faces), from: from ?? body };
+      });
+    } catch (e) {
+      // The edges it names (Chamfer's refusals name the edge they are about), else every edge asked.
+      return { why: e instanceof Error ? e.message : String(e), edges: refusedEdges(e instanceof KernelError ? e.inputs : [], edges), from };
+    }
+  });
+  /**
+   * What Chamfer shows in the view besides the body (Ben, 2026-11-16): the arrow on the last edge
+   * (`chamfer-arrow.ts`, dragged to set the distance; Extrude's arrow, with clicks still picking edges) and,
+   * when the kernel refuses, the wedge it would cut off each edge it names, in see-through red. Null: none.
+   */
+  let chamferShow: { from: BodyView; edge: number; flip: boolean; size: ChamferSize; refused: number[] | null } | null = null;
+  let chamferShowing = false;
+  function showChamferView() {
+    const c = shown && chamferBox.shown ? chamferShow : null;
+    const d1 = c === null ? 0 : "equal" in c.size ? c.size.equal : "two" in c.size ? c.size.two[0] : c.size.angle[0];
+    const arrow = c === null ? null : chamferArrow(c.from, c.edge, c.flip, d1);
+    const wedge = c === null || c.refused === null ? null : wedgeMesh(c.from, c.refused, c.size, c.flip);
+    if (arrow === null && wedge === null) {
+      if (chamferShowing) viewport.showExtrude(null);
+      chamferShowing = false;
+      return;
+    }
+    chamferShowing = true;
+    viewport.showExtrude({ profiles: [], chosen: null, preview: wedge, arrow, cut: true, pickBodies: true });
+  }
+  /** The arrow dragged (`onExtrudePointer`): the first distance snapped to 0.1 mm, put in the box, previewed live. */
+  let chamferDragMoved = false;
+  function chamferDrag(distance: number, done: boolean) {
+    chamferBox.dragging(!done);
+    // A press on the arrow let go where it was is a click (the view picks under it): the typed size stays as typed.
+    const moved = chamferDragMoved || !done;
+    chamferDragMoved = !done;
+    if (!moved) return;
+    const d = snapChamfer(distance, CHAMFER_MAX);
+    const typed = chamferBox.typed;
+    if (Number(typed.first) === d) return;
+    chamferBox.setFirst(d);
+    chamferBox.showError("");
+    void refreshChamferPreview();
+  }
+  /** The preview drawn as `next` (null: none), with the panel told the volume drawn or why there is none. */
+  function drawChamferPreview(next: { body: string; view: BodyView; cuts: number[] } | null, why = "", refused = false) {
+    const had = chamferDrawn !== null;
+    chamferDrawn = next;
+    chamferBox.showPreview(next?.view.volume ?? null, why, refused);
+    if ((had || next !== null) && shown && lastScene) showBodies(lastScene);
+  }
+  /**
+   * The preview asked again for the picks and the boxes as they are now: a new Chamfer chamfers the body its edges are
+   * on as last built; an edited one the body it was made from, with its edges as the rebuild found them, while no later
+   * item has changed that body (`editPreviewInput`). Sizes that don't read, no picks or a refusal draw none (OK says why).
+   */
+  async function refreshChamferPreview() {
+    if (!chamferBox.shown) return drawChamferPreview(null);
+    const typed = chamferBox.typed;
+    const read = readChamferSize(typed.kind, typed.first, typed.second);
+    let input: { body: string; handle: BodyHandle; edges: readonly number[]; shownAs: BodyHandle } | null = null;
+    let why = "";
+    const editing = chamferBox.editing;
+    if (editing !== null) {
+      const f = designDoc().timeline.features.find((x) => x.id === editing);
+      const body = f === undefined ? undefined : (f.intent.parameters.body as string);
+      const from = body === undefined ? null : editPreviewInput(resultsNow[editing], bodiesNow[body]?.handle);
+      if (from !== null && "why" in from) why = from.why;
+      else if (from !== null && body !== undefined) input = { body, ...from, shownAs: bodiesNow[body].handle };
+    } else if (chamferPicks.length > 0) {
+      const body = chamferPicks[0].body;
+      const handle = bodiesNow[body]?.handle;
+      if (handle !== undefined) input = { body, handle, edges: chamferPicks.map((p) => p.edge), shownAs: handle };
+    }
+    if (input === null || "why" in read) {
+      // The arrow stays where it was while a box holds no size (half typed); with no edges there is none.
+      if (input === null) chamferShow = null;
+      showChamferView();
+      return drawChamferPreview(null, why);
+    }
+    const opened = chamferOpenings;
+    const got = await chamferAsk(input.handle, input.edges, read.size, typed.flip, input.shownAs);
+    if (!got.current || chamferOpenings !== opened || !chamferBox.shown) return;
+    const v = got.value;
+    const last = input.edges[input.edges.length - 1];
+    chamferShow = v.from === null ? null : { from: v.from, edge: last, flip: typed.flip, size: read.size, refused: "why" in v ? v.edges : null };
+    showChamferView();
+    if ("why" in v) return drawChamferPreview(null, v.why, true);
+    drawChamferPreview({ body: input.body, view: v.view, cuts: v.cuts });
+  }
+  /** A scene body's view by its body id, or null when it is not shown. */
+  const shownView = (body: string) => lastScene?.bodies.find((b) => b.body === body)?.view ?? null;
+  /** The picks as selection references (for the highlight), or null for a pick whose edge has no name of its own. */
+  function chamferRefs(picks: readonly PickedEdge[]): GeometryReference[] | null {
+    const scene = lastScene;
+    if (scene === null) return null;
+    const refs: GeometryReference[] = [];
+    for (const p of picks) {
+      const b = scene.bodies.findIndex((x) => x.body === p.body);
+      const ref = b < 0 ? null : shownReference(scene, b, "edge", p.edge);
+      if (ref === null) return null;
+      refs.push(ref);
+    }
+    return refs;
+  }
+  /** The selection's edges as picks on the scene now, in the order selected (faces, bodies and edges gone are left out). */
+  function selectedEdges(): PickedEdge[] {
+    const scene = lastScene;
+    if (scene === null) return [];
+    return ctx.selection.items.flatMap((ref) => {
+      if (ref.kind !== "edge") return [];
+      const found = findInScene(ref, scene);
+      const hit = found.status === "found" ? sceneHit(scene, "edge", found.index) : null;
+      return hit === null ? [] : [{ body: scene.bodies[hit.body].body, edge: hit.index }];
+    });
+  }
+  /** Sets the selection to `picks` (the view lights them), or says why one can't be held; true when set. */
+  function selectPicks(picks: readonly PickedEdge[]): boolean {
+    const refs = chamferRefs(picks);
+    if (refs === null) {
+      chamferBox.showError(NO_NAME);
+      return false;
+    }
+    const items = ctx.selection.items;
+    if (items.length !== refs.length || items.some((r, i) => r.kind !== refs[i].kind || r.id !== refs[i].id)) ctx.selection.set(refs); // comes back through syncChamferPicks
+    return true;
+  }
+  /**
+   * The picks from the selection, as it changes (a browser row, Undo, a
+   * rebuild finding the edges again by name): taken one by one as clicks,
+   * so what the tool refuses is left out with its words; the selection
+   * becomes the picks.
+   */
+  function syncChamferPicks() {
+    if (!chamferBox.shown) return;
+    if (chamferBox.editing !== null) return void refreshChamferPreview(); // its edges are its own: only its preview is drawn again on the bodies as built
+    const { picks, refused } = picksFrom(selectedEdges(), shownView);
+    chamferPicks = picks;
+    if (refused !== null) chamferBox.showError(refused);
+    chamferBox.setEdges(picks.length);
+    showChamferHint();
+    selectPicks(picks);
+    void refreshChamferPreview();
+  }
+  /** A click in the view while Chamfer is open: an edge is added or taken out (`togglePick`); a face says to pick edges. */
+  function chamferClick(pick: Parameters<NonNullable<SharedViewport["onPick"]>>[0]) {
+    const scene = lastScene;
+    if (scene === null) return;
+    // An edited Chamfer keeps its edges (44a-app3): a click says so.
+    if (chamferBox.editing !== null) return void ((pick.edge != null || pick.face !== null) && chamferBox.showError(EDIT_EDGES_NOTE));
+    // A click on a previewed chamfer's face is a click on the edge it cut (the edge itself is cut away in the drawing).
+    const cut = pick.edge == null && pick.face !== null && chamferDrawn !== null ? cutAt(scene, chamferDrawn.body, chamferDrawn, pick.face) : null;
+    if (pick.edge == null && cut === null) {
+      if (pick.face !== null) chamferBox.showError(CHAMFER_FACE);
+      return;
+    }
+    const hit = cut !== null ? { body: scene.bodies.findIndex((b) => b.body === chamferDrawn!.body), index: cut } : sceneHit(scene, "edge", pick.edge!);
+    if (hit === null) return;
+    const body = scene.bodies[hit.body];
+    const next = toggleEdge(chamferPicks, { body: body.body, edge: hit.index }, body.view);
+    chamferBox.showError(next.refused ?? "");
+    if (next.refused !== null) return;
+    if (!selectPicks(next.picks)) return;
+    chamferPicks = next.picks;
+    chamferBox.setEdges(chamferPicks.length);
+    showChamferHint();
+    void refreshChamferPreview();
+  }
+  /**
+   * Modify ▾ Chamfer (with ?chamfer or ?all): out of any sketch or other
+   * panel first; starts with the edges selected (those the tool takes, the
+   * first refusal said), the size at 1 mm. Edit feature on a Chamfer
+   * (44a-app3, `id`): its type, sizes and Flip in the boxes, its edges as
+   * they are (the selection let go), its cut previewed at once.
+   */
+  function startChamfer(id: string | null = null) {
+    if (okChecks.size > 0) return afterOk(() => startChamfer(id));
+    leaveExplode(); // a tool works on the bodies where they are
+    leaveExtrude();
+    leaveEdit();
+    leaveMove();
+    if (mode.kind !== "none") leaveSketch();
+    leaveCombine(); // which puts an open Chamfer and Measure away too
+    chamferOpenings++;
+    if (id !== null) {
+      const edit = editableChamfer(designDoc(), id);
+      chamferPicks = [];
+      ctx.selection.clear();
+      chamferBox.show(edit.edges, edit);
+      if (failedNow.has(id)) chamferBox.showError(reasonsNow.get(id) ?? "");
+    } else {
+      const { picks, refused } = picksFrom(selectedEdges(), shownView);
+      chamferPicks = picks;
+      chamferBox.show(picks.length);
+      if (refused !== null) chamferBox.showError(refused);
+      selectPicks(picks);
+    }
+    toolsChanged();
+    fold?.reveal(); // the folded panel opens at it (U0b)
+    showChamferHint();
+    void refreshChamferPreview();
+  }
+  /** The Chamfer panel put away; its edges let go. */
+  function leaveChamfer() {
+    if (!chamferBox.shown) return;
+    chamferOpenings++;
+    chamferBox.hide();
+    chamferPicks = [];
+    chamferShow = null;
+    showChamferView(); // the arrow and any red wedge put away
+    drawChamferPreview(null); // the body drawn as it is again
+    showChamferHint();
+    toolsChanged();
+    if (ctx.selection.items.length > 0) ctx.selection.clear();
+  }
+  /** What OK was pressed on: the picks and the boxes. */
+  const chamferAsked = () => JSON.stringify([chamferPicks, chamferBox.typed]);
+  /**
+   * OK: the size read (refused in words before the kernel), the picked
+   * edges named over the bodies as last built (as the rebuild will name
+   * them), the Chamfer put in at the marker (`insertChamfer`), checked by
+   * building the design on the kernel (its refusal in its own words: too
+   * big for the edge, an inside corner, a sliver) and recorded as one undo
+   * step, "Chamfer edges".
+   */
+  async function finishChamfer() {
+    if (!chamferBox.shown || !chamferBox.ready || (chamferBox.editing === null && chamferPicks.length === 0)) return;
+    const typed = chamferBox.typed;
+    const read = readChamferSize(typed.kind, typed.first, typed.second);
+    if ("why" in read) return chamferBox.showError(read.why);
+    if (chamferBox.editing !== null) return finishChamferEdit(chamferBox.editing, read.size, typed.flip);
+    const opened = chamferOpenings;
+    const asked = chamferAsked();
+    const picks = [...chamferPicks];
+    // The edges are named over the bodies as last built: wait for a rebuild under way, so they are the design's now.
+    if (!(await okCheck(builtNow()))) return chamferOpenings === opened ? chamferBox.showError(CHAMFER_CHANGED) : undefined;
+    if (chamferOpenings !== opened) return;
+    if (chamferAsked() !== asked) return chamferBox.showError(CHAMFER_PICKS_CHANGED);
+    const before = designDoc();
+    const built = bodiesNow;
+    chamferBox.busy(true);
+    let checked: Checked;
+    let next: DesignDocument | null = null;
+    try {
+      const held = await okCheck(bodies.using(() => heldNamesOf(built, (b) => bodies.view(b.handle), picks)));
+      if (chamferOpenings !== opened) return;
+      if (held.some((h) => h === null)) checked = { refused: NO_NAME, misses: [] };
+      else {
+        const made = insertChamfer(before, picks[0].body, held as string[], read.size, typed.flip);
+        next = made.doc;
+        checked = await okCheck(onceMoreAfterRestart(() => checkedItem(kernel, made.doc, made.id)));
+      }
+    } catch (e) {
+      checked = { refused: e instanceof Error ? e.message : String(e), misses: [] };
+    }
+    // Closed, or opened again, while the kernel looked: this OK is out of date.
+    if (chamferOpenings !== opened) return;
+    chamferBox.busy(false);
+    if (designDoc() !== before) return chamferBox.showError(CHAMFER_CHANGED);
+    if (chamferAsked() !== asked) return chamferBox.showError(CHAMFER_PICKS_CHANGED);
+    if (checked.refused !== null || next === null) return chamferBox.showError(checked.refused ?? NO_NAME);
+    leaveChamfer();
+    menuHost.record(CHAMFER_STEP, checked.numbered ?? next);
+  }
+  /**
+   * Edit feature's OK on Chamfer `id` (44a-app3): the item given the size and
+   * Flip typed (`changedChamfer`; nothing recorded when they are as they
+   * were), checked by building the design on the kernel (its refusal in its
+   * own words, the panel kept open) and recorded as one undo step, "Edit
+   * Chamfer 1".
+   */
+  async function finishChamferEdit(id: string, size: ChamferSizing, flip: boolean) {
+    const opened = chamferOpenings;
+    const asked = chamferAsked();
+    const before = designDoc();
+    let next: DesignDocument;
+    try {
+      next = changedChamfer(before, id, size, flip);
+    } catch (e) {
+      return chamferBox.showError(e instanceof Error ? e.message : String(e));
+    }
+    if (next === before) return leaveChamfer();
+    chamferBox.busy(true);
+    let checked: Checked;
+    try {
+      checked = await okCheck(onceMoreAfterRestart(() => checkedItem(kernel, next, id)));
+    } catch (e) {
+      checked = { refused: e instanceof Error ? e.message : String(e), misses: [] };
+    }
+    if (chamferOpenings !== opened) return;
+    chamferBox.busy(false);
+    if (designDoc() !== before) return chamferBox.showError(CHAMFER_CHANGED);
+    if (chamferAsked() !== asked) return chamferBox.showError(CHAMFER_PICKS_CHANGED);
+    if (checked.refused !== null) return chamferBox.showError(checked.refused);
+    leaveChamfer();
+    menuHost.record(editStep(before, id), checked.numbered ?? next);
+  }
+  // Shell (step 35h2c-app2, behind ?shell and ?all): the faces of one body to leave open picked one click at a time
+  // (the selection is those faces while it is open; a body picked from its row is shelled sealed), the thickness
+  // typed, the hollow previewed live by the kernel, then OK records a Shell at the marker. Edit feature on a Shell
+  // changes its thickness (its open faces stay).
+  const shellBox = shellPanel(ctx.properties, {
+    changed: () => (shellBox.showError(""), void refreshShellPreview()),
+    ok: () => void holdAsked(finishShell()), // held like Chamfer's OK: an Undo pressed while the kernel checks waits
+    cancel: () => (okChecks.clear(), leaveShell()),
+  });
+  /** A new Shell's body and open faces, on the scene as last shown. */
+  let shellPicks: ShellPicks = NO_PICKS;
+  /** Each opening and closing of the Shell panel counted: an OK or preview whose answer lands after it changed is out of date. */
+  let shellOpenings = 0;
+  /** Over the view while nothing is picked (read by the e2e test). */
+  const shellHint = viewport.element.ownerDocument.createElement("p");
+  shellHint.id = "shell-hint";
+  shellHint.className = "move-panel-hint";
+  shellHint.setAttribute("role", "status");
+  shellHint.hidden = true;
+  viewport.element.append(shellHint);
+  function showShellHint() {
+    shellHint.textContent = shellHintWords(lastScene?.bodies.length ?? 0);
+    shellHint.hidden = !(shown && shellBox.shown && shellBox.editing === null && shellPicks.body === null);
+  }
+  /** The hollow drawn before OK (shell-preview.ts): the bodies it stands in for (body ids), the body hollowed, and the kernel's pieces; null when none is drawn. */
+  let shellDrawn: { replaced: string[]; body: string; preview: ShellPreview } | null = null;
+  /** The kernel's shell for the preview, the latest ask only (a late answer to an older thickness never draws over a newer one); a refusal comes back as its words. */
+  const shellAsk = latestOnly(async (handle: BodyHandle, open: readonly number[], thickness: number): Promise<ShellPreview | { why: string }> => {
+    try {
+      return await bodies.using(() => previewShell(kernel, handle, open, thickness));
+    } catch (e) {
+      return { why: e instanceof Error ? e.message : String(e) };
+    }
+  });
+  /** The preview drawn as `next` (null: none), the panel told the volume drawn or why there is none, the lit faces put away while it is drawn. */
+  function drawShellPreview(next: typeof shellDrawn, why = "", refused = false) {
+    const had = shellDrawn !== null;
+    shellDrawn = next;
+    shellBox.showPreview(next === null ? null : previewVolume(next.preview), why, refused);
+    if ((had || next !== null) && shown && lastScene) showBodies(lastScene);
+    if (had !== (next !== null)) showSelection();
+  }
+  /**
+   * The preview asked again for the picks and the box as they are now: a new Shell hollows the body picked as last
+   * built; an edited one the body it was made from, with its open faces as the rebuild found them, while no later
+   * item has changed what it made (`editPreviewInput`). A thickness that doesn't read, no body or a refusal draws none.
+   */
+  async function refreshShellPreview() {
+    if (!shellBox.shown) return drawShellPreview(null);
+    const read = readThickness(shellBox.typed);
+    let input: { body: string; replaced: string[]; handle: BodyHandle; open: readonly number[] } | null = null;
+    let why = "";
+    const editing = shellBox.editing;
+    if (editing !== null) {
+      const f = designDoc().timeline.features.find((x) => x.id === editing);
+      if (f !== undefined && isShellItem(f)) {
+        const body = shellOf(f).body;
+        const replaced = Object.keys(bodiesNow).filter((k) => k === body || bodiesNow[k].by === editing);
+        const from = shellEditInput(resultsNow[editing], replaced.map((k) => bodiesNow[k]?.handle));
+        if (from !== null && "why" in from) why = from.why;
+        else if (from !== null) input = { body, replaced, ...from };
+      }
+    } else if (shellPicks.body !== null) {
+      const handle = bodiesNow[shellPicks.body]?.handle;
+      if (handle !== undefined) input = { body: shellPicks.body, replaced: [shellPicks.body], handle, open: shellPicks.faces };
+    }
+    if (input === null || "why" in read) return drawShellPreview(null, why);
+    const opened = shellOpenings;
+    const got = await shellAsk(input.handle, input.open, read.thickness);
+    if (!got.current || shellOpenings !== opened || !shellBox.shown) return;
+    const v = got.value;
+    if ("why" in v) return drawShellPreview(null, v.why, true);
+    drawShellPreview({ replaced: input.replaced, body: input.body, preview: v });
+  }
+  /** The picks as selection references (for the highlight and the rows): the open faces, else the body (sealed); null for a face with no name. */
+  function shellRefs(picks: ShellPicks): GeometryReference[] | null {
+    const scene = lastScene;
+    if (scene === null || picks.body === null) return [];
+    const b = scene.bodies.findIndex((x) => x.body === picks.body);
+    if (b < 0) return null;
+    if (picks.faces.length === 0) return [bodyReference(picks.body)];
+    const refs: GeometryReference[] = [];
+    for (const face of picks.faces) {
+      const ref = shownReference(scene, b, "face", face);
+      if (ref === null) return null;
+      refs.push(ref);
+    }
+    return refs;
+  }
+  /** Sets the selection to `picks`, or says why one can't be held; true when set. */
+  function selectShellPicks(picks: ShellPicks): boolean {
+    const refs = shellRefs(picks);
+    if (refs === null) {
+      shellBox.showError(SHELL_NO_NAME);
+      return false;
+    }
+    const items = ctx.selection.items;
+    if (items.length !== refs.length || items.some((r, i) => r.kind !== refs[i].kind || r.id !== refs[i].id)) ctx.selection.set(refs); // comes back through syncShellPicks
+    return true;
+  }
+  /** The selection's bodies and faces as picks on the scene now, in the order selected (edges and anything gone left out). */
+  function selectedShellItems(): ({ body: string; face: number } | { body: string })[] {
+    const scene = lastScene;
+    if (scene === null) return [];
+    return ctx.selection.items.flatMap((ref) => {
+      if (ref.kind === "body") {
+        const b = bodyOf(scene, ref);
+        return b < 0 ? [] : [{ body: scene.bodies[b].body }];
+      }
+      if (ref.kind !== "face") return [];
+      const found = findInScene(ref, scene);
+      const hit = found.status === "found" ? sceneHit(scene, "face", found.index) : null;
+      return hit === null ? [] : [{ body: scene.bodies[hit.body].body, face: hit.index }];
+    });
+  }
+  /** The picks from the selection, as it changes (a browser row, Undo, a rebuild finding the faces again by name): taken one by one as clicks, refusals said. */
+  function syncShellPicks() {
+    if (!shellBox.shown) return;
+    if (shellBox.editing !== null) return void refreshShellPreview(); // its faces are its own: only its preview is drawn again on the bodies as built
+    const { picks, refused } = shellPicksFrom(selectedShellItems(), shownView);
+    shellPicks = picks;
+    if (refused !== null) shellBox.showError(refused);
+    shellBox.setPicks(picks);
+    showShellHint();
+    selectShellPicks(picks);
+    void refreshShellPreview();
+  }
+  /** A click in the view while Shell is open: a face is opened or closed again (`togglePick`); on the preview, read back through the kernel's history. */
+  function shellClick(pick: Parameters<NonNullable<SharedViewport["onPick"]>>[0]) {
+    const scene = lastScene;
+    if (scene === null || pick.face === null) return;
+    // An edited Shell keeps its open faces: a click says so.
+    if (shellBox.editing !== null) return void shellBox.showError(EDIT_FACES_WORDS);
+    const d = shellDrawn;
+    const hit = d === null ? sceneHit(scene, "face", pick.face) : (() => {
+      const at = shellPickAt(scene, drawnShell(scene, d.replaced, d.preview), d.preview, d.body, pick.face);
+      return at === null || at === "inside" ? at : { body: at.body, index: at.face };
+    })();
+    if (hit === "inside") return void shellBox.showError(INSIDE_WALL);
+    if (hit === null) return;
+    const body = scene.bodies[hit.body];
+    const next = toggleFace(shellPicks, body.body, hit.index, body.view);
+    shellBox.showError(next.refused ?? "");
+    if (next.refused !== null) return;
+    if (!selectShellPicks(next.picks)) return;
+    shellPicks = next.picks;
+    shellBox.setPicks(shellPicks);
+    showShellHint();
+    void refreshShellPreview();
+  }
+  /** Edit feature's words for a click on an edited Shell. */
+  const EDIT_FACES_WORDS = "Its open faces stay as they were picked: to open other faces, make another Shell.";
+  /**
+   * Modify ▾ Shell (with ?shell or ?all): out of any sketch or other panel first; starts with the faces or body
+   * selected (those the tool takes, the first refusal said), the thickness at 1 mm. Edit feature on a Shell (`id`):
+   * its thickness in the box, its faces as they are (the selection let go), its hollow previewed at once.
+   */
+  function startShell(id: string | null = null) {
+    if (okChecks.size > 0) return afterOk(() => startShell(id));
+    leaveExplode();
+    leaveExtrude();
+    leaveEdit();
+    leaveMove();
+    if (mode.kind !== "none") leaveSketch();
+    leaveCombine(); // which puts an open Chamfer, Shell and Measure away too
+    shellOpenings++;
+    if (id !== null) {
+      const edit = editableShell(designDoc(), id);
+      shellPicks = NO_PICKS;
+      ctx.selection.clear();
+      shellBox.show(NO_PICKS, edit);
+      if (failedNow.has(id)) shellBox.showError(reasonsNow.get(id) ?? "");
+    } else {
+      const { picks, refused } = shellPicksFrom(selectedShellItems(), shownView);
+      shellPicks = picks;
+      shellBox.show(picks);
+      if (refused !== null) shellBox.showError(refused);
+      selectShellPicks(picks);
+    }
+    toolsChanged();
+    fold?.reveal(); // the folded panel opens at it (U0b)
+    showShellHint();
+    void refreshShellPreview();
+  }
+  /** The Shell panel put away; its faces let go, the body drawn as it is again. */
+  function leaveShell() {
+    if (!shellBox.shown) return;
+    shellOpenings++;
+    shellBox.hide();
+    shellPicks = NO_PICKS;
+    drawShellPreview(null);
+    showShellHint();
+    toolsChanged();
+    if (ctx.selection.items.length > 0) ctx.selection.clear();
+  }
+  /** Shell's words: the design or picks changed while the kernel checked. */
+  const SHELL_CHANGED = "The design changed while the Shell was checked: nothing was changed. Press OK again.";
+  const SHELL_PICKS_CHANGED = "The faces or thickness changed while the Shell was checked: nothing was changed. Press OK again.";
+  /** What OK was pressed on: the picks and the box. */
+  const shellAsked = () => JSON.stringify([shellPicks, shellBox.typed]);
+  /**
+   * OK: the thickness read (refused in words before the kernel), the open faces named over the bodies as last built
+   * (as the rebuild will find them), the Shell put in at the marker (`insertShell`), checked by building the design on
+   * the kernel (its refusal in its own words) and recorded as one undo step, "Shell body".
+   */
+  async function finishShell() {
+    if (!shellBox.shown || !shellBox.ready || (shellBox.editing === null && shellPicks.body === null)) return;
+    const read = readThickness(shellBox.typed);
+    if ("why" in read) return shellBox.showError(read.why);
+    if (shellBox.editing !== null) return finishShellEdit(shellBox.editing, read.thickness);
+    const opened = shellOpenings;
+    const asked = shellAsked();
+    const picks = { body: shellPicks.body!, faces: [...shellPicks.faces] };
+    // The faces are named over the bodies as last built: wait for a rebuild under way, so they are the design's now.
+    if (!(await okCheck(builtNow()))) return shellOpenings === opened ? shellBox.showError(SHELL_CHANGED) : undefined;
+    if (shellOpenings !== opened) return;
+    if (shellAsked() !== asked) return shellBox.showError(SHELL_PICKS_CHANGED);
+    const before = designDoc();
+    const built = bodiesNow;
+    shellBox.busy(true);
+    let checked: Checked;
+    let next: DesignDocument | null = null;
+    try {
+      const held = await okCheck(bodies.using(() => heldFaceNames(built, (b) => bodies.view(b.handle), picks.body, picks.faces)));
+      if (shellOpenings !== opened) return;
+      if (held.some((h) => h === null)) checked = { refused: SHELL_NO_NAME, misses: [] };
+      else {
+        const made = insertShell(before, picks.body, held as string[], read.thickness);
+        next = made.doc;
+        checked = await okCheck(onceMoreAfterRestart(() => checkedItem(kernel, made.doc, made.id)));
+      }
+    } catch (e) {
+      checked = { refused: e instanceof Error ? e.message : String(e), misses: [] };
+    }
+    // Closed, or opened again, while the kernel looked: this OK is out of date.
+    if (shellOpenings !== opened) return;
+    shellBox.busy(false);
+    if (designDoc() !== before) return shellBox.showError(SHELL_CHANGED);
+    if (shellAsked() !== asked) return shellBox.showError(SHELL_PICKS_CHANGED);
+    if (checked.refused !== null || next === null) return shellBox.showError(checked.refused ?? SHELL_NO_NAME);
+    leaveShell();
+    menuHost.record(SHELL_STEP, checked.numbered ?? next);
+  }
+  /** Edit feature's OK on Shell `id`: the thickness typed (`changedShell`; nothing recorded when unchanged), checked on the kernel, recorded as "Edit Shell 1". */
+  async function finishShellEdit(id: string, thickness: number) {
+    const opened = shellOpenings;
+    const asked = shellAsked();
+    const before = designDoc();
+    let next: DesignDocument;
+    try {
+      next = changedShell(before, id, thickness);
+    } catch (e) {
+      return shellBox.showError(e instanceof Error ? e.message : String(e));
+    }
+    if (next === before) return leaveShell();
+    shellBox.busy(true);
+    let checked: Checked;
+    try {
+      checked = await okCheck(onceMoreAfterRestart(() => checkedItem(kernel, next, id)));
+    } catch (e) {
+      checked = { refused: e instanceof Error ? e.message : String(e), misses: [] };
+    }
+    if (shellOpenings !== opened) return;
+    shellBox.busy(false);
+    if (designDoc() !== before) return shellBox.showError(SHELL_CHANGED);
+    if (shellAsked() !== asked) return shellBox.showError(SHELL_PICKS_CHANGED);
+    if (checked.refused !== null) return shellBox.showError(checked.refused);
+    leaveShell();
+    menuHost.record(editStep(before, id), checked.numbered ?? next);
+  }
+  // Construct ▾ (step 59a2, construct-view.ts): the panel for one kind; while open the view's clicks fill what it is made from, and select nothing.
+  const constructBox = constructView({
+    slot: ctx.properties,
+    over: viewport.element,
+    doc: () => designDoc(),
+    scene: () => lastScene,
+    handle: (b) => {
+      const body = lastScene?.bodies[b]?.body;
+      return body === undefined ? null : (handlesNow[body] ?? null);
+    },
+    heldNames: (edges) => bodies.using(() => heldNamesOf(bodiesNow, (b) => bodies.view(b.handle), edges)),
+    ask: (make) => kernel.call("body_construct", make),
+    check: (next, id) => onceMoreAfterRestart(() => checkedItem(kernel, next, id)),
+    record: (step, next) => menuHost.record(step, next),
+    okCheck,
+    hold: holdAsked,
+    preview: (a) => {
+      constructPreview = a;
+      if (shown) showOrigin(designDoc());
+    },
+    offerCorners: (corners) => viewport.showCorners(corners),
+    changed: () => {
+      toolsChanged();
+      if (constructBox.shown) fold?.reveal(); // the folded panel opens at it (U0b)
+    },
+  });
+  /** Construct ▾'s items: every other tool put away first, and the selection let go (a click now fills the construction). */
+  function startConstruct(kind: ConstructKind) {
+    if (okChecks.size > 0) return afterOk(() => startConstruct(kind));
+    leaveExplode();
+    leaveExtrude();
+    leaveEdit();
+    leaveMove();
+    if (mode.kind !== "none") leaveSketch();
+    leaveCombine(); // which puts an open Chamfer, Measure and Construct away too
+    ctx.selection.clear();
+    constructBox.open(kind);
+  }
   /** Inspect ▾ Measure: every other tool put away first, and the selection let go (a click now picks for Measure). */
   function startMeasure() {
     if (okChecks.size > 0) return afterOk(() => startMeasure());
@@ -3762,6 +4666,7 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
   function sayCombineDone(words: string | null) {
     if (combineDoneTimer !== null) clearTimeout(combineDoneTimer);
     combineDoneTimer = null;
+    combineDoneFor = words === null ? null : designDoc();
     combineDone.textContent = words ?? "";
     combineDone.hidden = words === null;
     if (words !== null) combineDoneTimer = setTimeout(() => sayCombineDone(null), COMBINE_DONE_MS);
@@ -3848,7 +4753,12 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
    * calls this as it starts, so Measure (35e2l2) is put away here too: one tool at a time.
    */
   function leaveCombine() {
+    sayCombineDone(null); // its "Undo puts it back" stops being true once anything else is opened or recorded (SL #820 D-8)
     measureBox.close();
+    constructBox.close(); // Construct (59a2) is put away by every other tool the same way
+    leaveChamfer(); // Chamfer (44a-app2) is put away by every other tool the same way
+    leavePattern(); // and Pattern (61c)
+    leaveShell(); // and Shell (35h2c-app2)
     if (!combineBox.shown) return;
     toolsChanged();
     combineOpenings++;
@@ -3860,6 +4770,223 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
     if (edited) ctx.selection.clear();
   }
 
+  // Pattern (step 61c, behind ?pattern and ?all): bodies picked one click at a time (the selection is the bodies while a
+  // new one is open), then repeated in a row, a grid or round an axis; the copies previewed see-through as the kernel
+  // places them, OK records a Pattern at the marker. Edit feature on a Pattern changes its values and Join, its bodies stay.
+  const patternBox = patternPanel(ctx.properties, {
+    changed: () => (patternBox.showError(""), void refreshPatternPreview()),
+    ok: () => void holdAsked(finishPattern()), // held like Combine's OK: an Undo pressed while the kernel checks waits (#503)
+    cancel: () => (okChecks.clear(), leavePattern()),
+  });
+  /** The Pattern's bodies (body ids), in the order picked. */
+  let patternBodies: string[] = [];
+  /** Each opening and closing of the Pattern panel counted: an OK whose check lands after it changed is out of date. */
+  let patternOpenings = 0;
+  /** The edited Pattern whose own copies are put out of the way while its new ones are previewed (`editMesh`), or null. */
+  let patternHides: string | null = null;
+  /** Whether the copies are drawn (Extrude's see-through preview, with clicks still picking bodies). */
+  let patternShowing = false;
+  /** The kernel's motions for the preview, the latest ask only (a late answer to older values never draws over newer ones). */
+  const patternAsk = latestOnly((request: ReturnType<typeof patternRequest>) => kernel.call("pattern_motions", request));
+  /** Over the view while a new Pattern has no body yet: on a phone the panel's own words wait in the shut sheet. */
+  const patternHint = viewport.element.ownerDocument.createElement("p");
+  patternHint.id = "pattern-hint"; // read by the e2e test
+  patternHint.className = "move-panel-hint";
+  patternHint.setAttribute("role", "status");
+  patternHint.hidden = true;
+  viewport.element.append(patternHint);
+  const touchNow = () => viewport.element.ownerDocument.defaultView?.matchMedia?.("(pointer: coarse)").matches === true;
+  function showPatternHint() {
+    patternHint.textContent = patternHintWords(touchNow());
+    patternHint.hidden = !(shown && patternBox.shown && patternBox.editing === null && patternBodies.length === 0);
+  }
+  /** What the panel calls body `id`: its Bodies row ("Body 2"), else its item's name (browser.ts `bodyLabel`). */
+  const patternLabel = (id: string) => bodyLabel(designDoc(), id, failedNow);
+  /** The copies drawn in the view (`mesh`), or none. */
+  function drawPatternCopies(mesh: DisplayMesh | null) {
+    if (mesh === null || !shown || !patternBox.shown) {
+      if (patternShowing) viewport.showExtrude(null);
+      patternShowing = false;
+      return;
+    }
+    patternShowing = true;
+    viewport.showExtrude({ profiles: [], chosen: null, preview: mesh, arrow: null, pickBodies: true });
+  }
+  /**
+   * The preview asked again for the bodies and boxes as they are now: values `patternProblem` refuses say why (red)
+   * before the kernel is asked, with no copies drawn; else the kernel's motions (`pattern_motions`) place a see-through
+   * copy of each body's shown mesh (`copiesMesh`); a kernel refusal says which value in the pattern's own words. An
+   * edited Pattern previews from its bodies as shown only while they are as it copies them (`editPreviewOff`).
+   */
+  async function refreshPatternPreview() {
+    if (!patternBox.shown || lastScene === null) return drawPatternCopies(null);
+    // A new Pattern's spacings follow its bodies and directions until typed in, so the copies start side by side and apart.
+    if (patternBox.editing === null) {
+      const boxes = lastScene.bodies.filter((b) => patternBodies.includes(b.body)).map((b) => b.view.bounds);
+      patternBox.followSpacing((axis) => startSpacing(boxes, axis));
+    }
+    const values = readPatternBoxes(patternBox.typed);
+    const editing = patternBox.editing;
+    // Round a construction axis (59a3b): one this Pattern can use, turned round as the design last answered it.
+    const doc = designDoc();
+    const around = values.kind === "circular" ? turnAxisItem(values.axis) : null;
+    const axisItem = around === null ? undefined : doc.timeline.features.find((f) => f.id === around);
+    const at = editing === null ? insertAt(doc) : doc.timeline.features.findIndex((f) => f.id === editing);
+    const axisProblem = values.kind === "circular" ? turnAxisProblem(doc, values.axis, at) : null;
+    const problem = patternProblem(values) ?? (axisProblem === null ? null : `${axisProblem.charAt(0).toUpperCase()}${axisProblem.slice(1)}.`);
+    const off = editing === null ? null : editPreviewOff(designDoc(), editing, resultsNow);
+    const hides = editing !== null && off === null ? editing : null;
+    if (hides !== patternHides) (patternHides = hides), showBodies(lastScene);
+    if (problem !== null) return drawPatternCopies(null), patternBox.showPreview(null, problem, true);
+    if (off !== null) return drawPatternCopies(null), patternBox.showPreview(null, off);
+    if (patternBodies.length === 0) return drawPatternCopies(null), patternBox.showPreview(null);
+    const opened = patternOpenings;
+    const scene = lastScene;
+    const bodiesAsked = [...patternBodies];
+    let got: Awaited<ReturnType<typeof patternAsk>>;
+    try {
+      got = await patternAsk(patternRequest(values, axisItem === undefined ? undefined : constructOf(axisItem).answer));
+    } catch (e) {
+      if (patternOpenings !== opened || !patternBox.shown) return;
+      if (!(e instanceof KernelError) || e.kind !== "invalid-input") return drawPatternCopies(null), patternBox.showPreview(null, e instanceof Error ? e.message : String(e), true);
+      return drawPatternCopies(null), patternBox.showPreview(null, refusalWords(e.inputs), true);
+    }
+    if (!got.current || patternOpenings !== opened || !patternBox.shown || lastScene !== scene) return;
+    const mesh = copiesMesh(scene, bodiesAsked, got.value);
+    drawPatternCopies(mesh);
+    patternBox.showPreview(mesh === null ? null : got.value.length * bodiesAsked.filter((b) => scene.bodies.some((x) => x.body === b)).length);
+  }
+
+  /**
+   * Create ▾ Pattern (with ?pattern or ?all): out of any sketch or other
+   * panel first; starts with the selection's bodies (a face or edge picks
+   * its body), a row of 3 along X spaced by their length along it and a gap
+   * (`startSpacing`, followed until typed in). Edit feature on a Pattern (`id`): its values in the
+   * boxes, its bodies as they are (the selection let go).
+   */
+  function startPattern(id: string | null = null) {
+    if (okChecks.size > 0) return afterOk(() => startPattern(id));
+    leaveExplode(); // a tool works on the bodies where they are
+    leaveExtrude();
+    leaveEdit();
+    leaveMove();
+    if (mode.kind !== "none") leaveSketch();
+    leaveCombine(); // which puts an open Chamfer, Pattern and Measure away too
+    patternOpenings++;
+    // The construction axes it can turn round (59a3b): before the marker for a new one, before it for an edited one.
+    const doc = designDoc();
+    patternBox.setAxes(turnAxes(doc, id === null ? insertAt(doc) : doc.timeline.features.findIndex((f) => f.id === id)));
+    if (id !== null) {
+      const edit = editablePattern(doc, id);
+      patternBodies = edit.bodies;
+      ctx.selection.clear();
+      patternBox.show(edit.bodies.map(patternLabel), undefined, edit);
+      if (failedNow.has(id)) patternBox.showError(reasonsNow.get(id) ?? "");
+    } else {
+      patternBodies = pickedBodies(ctx.selection.items, lastScene);
+      patternBox.show(patternBodies.map(patternLabel)); // its spacings follow the bodies (refreshPatternPreview)
+    }
+    toolsChanged();
+    fold?.reveal(); // the folded panel opens at it (U0b)
+    showPatternHint();
+    if (id === null) pickPatternBodies();
+    else void refreshPatternPreview();
+  }
+
+  /**
+   * A new Pattern's bodies from the selection, as it changes (a click in the view or a browser row adds a body or takes
+   * it out): the selection becomes the bodies; bodies no longer shown (deleted, hidden) are let go. An edited Pattern's
+   * bodies stay as made; its preview is drawn again on the bodies as now built.
+   */
+  function pickPatternBodies() {
+    if (!patternBox.shown) return;
+    if (patternBox.editing === null) {
+      const picked = pickedBodies(ctx.selection.items, lastScene);
+      const kept = patternBodies.filter((b) => picked.includes(b));
+      const bodies = [...kept, ...picked.filter((b) => !kept.includes(b))]; // in the order picked
+      const refs = bodies.map(bodyReference);
+      const items = ctx.selection.items;
+      if (items.length !== refs.length || items.some((r, i) => r.kind !== "body" || r.id !== refs[i].id)) return ctx.selection.set(refs); // comes back here
+      patternBodies = bodies;
+      patternBox.setBodies(bodies.map(patternLabel));
+    }
+    showPatternHint();
+    void refreshPatternPreview();
+  }
+
+  /** The Pattern panel put away, its preview with it; a new Pattern's bodies stay selected, an edited one's are let go. */
+  function leavePattern() {
+    if (!patternBox.shown) return;
+    patternOpenings++;
+    const edited = patternBox.editing !== null;
+    patternBox.hide();
+    patternBodies = [];
+    drawPatternCopies(null);
+    if (patternHides !== null) {
+      patternHides = null;
+      if (lastScene) showBodies(lastScene);
+    }
+    showPatternHint();
+    toolsChanged();
+    if (edited) ctx.selection.clear();
+  }
+
+  /** OK's words when the design, or the panel, changed while the kernel checked the Pattern: nothing was recorded. */
+  const PATTERN_CHANGED = "The design changed while the Pattern was checked: nothing was changed. Press OK again.";
+  const PATTERN_PICKS_CHANGED = "The bodies or values changed while the Pattern was checked: nothing was changed. Press OK again.";
+  /** What OK was pressed on: the bodies and the boxes. */
+  const patternAsked = () => JSON.stringify([patternBodies, patternBox.typed]);
+
+  /**
+   * OK: the boxes read (refused in `patternProblem`'s words before the
+   * kernel), the Pattern put in at the marker (`insertPattern`) or changed
+   * (`changedPattern`), checked by building the design on the kernel (its
+   * refusal in the rebuild's words) and recorded as one undo step, "Pattern
+   * bodies" or "Edit Pattern 1". A Join whose copies meet nothing asks
+   * nothing (Ben's F2, as Combine's Join). An edit that changes nothing
+   * closes the panel and records nothing.
+   */
+  async function finishPattern() {
+    if (!patternBox.shown || !patternBox.ready || patternBodies.length === 0) return;
+    const values = readPatternBoxes(patternBox.typed);
+    const id = patternBox.editing;
+    const before = designDoc();
+    let next: DesignDocument;
+    let made: string;
+    try {
+      if (id === null) ({ doc: next, id: made } = insertPattern(before, patternBodies, values));
+      else [next, made] = [changedPattern(before, id, values), id];
+    } catch (e) {
+      return patternBox.showError(e instanceof Error ? e.message : String(e));
+    }
+    if (next === before) return leavePattern();
+    const opened = patternOpenings;
+    const asked = patternAsked();
+    patternBox.busy(true);
+    let checked: Checked;
+    try {
+      checked = await okCheck(onceMoreAfterRestart(() => checkedItem(kernel, next, made)));
+    } catch (e) {
+      checked = { refused: e instanceof Error ? e.message : String(e), misses: [] };
+    }
+    // Closed, or opened again, while the kernel looked: this OK is out of date.
+    if (patternOpenings !== opened) return;
+    patternBox.busy(false);
+    if (designDoc() !== before) return patternBox.showError(PATTERN_CHANGED);
+    if (patternAsked() !== asked) return patternBox.showError(PATTERN_PICKS_CHANGED);
+    if (checked.refused !== null) return patternBox.showError(checked.refused);
+    // A Join whose copies meet nothing records without a question: they stay bodies of their own, as a Combine Join of
+    // bodies that don't meet does (Ben's Fusion answer F2; the rebuild gives such a Join no misses).
+    if (id === null) ctx.selection.clear();
+    leavePattern();
+    // Its copies numbered as the check built them, in this step (SL #622 item 7).
+    menuHost.record(id === null ? PATTERN_STEP : editStep(before, id), checked.numbered ?? next);
+  }
+
+  /** Chamfer's words (44a-app2): a face clicked, and the design or picks changed while the kernel checked. */
+  const CHAMFER_FACE = "Click or tap an edge: a chamfer cuts back the edges you pick, not a whole face.";
+  const CHAMFER_CHANGED = "The design changed while the Chamfer was checked: nothing was changed. Press OK again.";
+  const CHAMFER_PICKS_CHANGED = "The edges or sizes changed while the Chamfer was checked: nothing was changed. Press OK again.";
   /** OK's words when the design changed while the kernel checked the Combine: nothing was recorded. */
   const COMBINE_CHANGED = "The design changed while the Combine was checked: nothing was changed. Press OK again.";
   const COMBINE_PICKS_CHANGED = "The bodies or choices changed while the Combine was checked: nothing was changed. Press OK again.";
@@ -3945,9 +5072,12 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
   function openEdit(id: string) {
     if (okChecks.size > 0) return afterOk(() => openEdit(id));
     const item = designDoc().timeline.features.find((f) => f.id === id)!;
-    if (isCombineItem(item) && !combineShown()) return panel.showActionNote(COMBINE_OFF, true);
+    if (isCombineItem(item) && !combineShown()) return panel.showActionNote(COMBINE_OFF, true, true);
     if (isMoveItem(item)) return startMove(id);
     if (isCombineItem(item)) return startCombine(id);
+    if (isChamferItem(item)) return chamferShown() ? startChamfer(id) : panel.showActionNote(CHAMFER_OFF, true, true);
+    if (isPatternItem(item)) return patternShown() ? startPattern(id) : panel.showActionNote(PATTERN_OFF, true, true);
+    if (isShellItem(item)) return shellShown() ? startShell(id) : panel.showActionNote(SHELL_OFF, true, true);
     // Asked before any open tool is left (hunt 11-11, E2: a Copy, which has nothing to edit, shut an open Move and lost
     // what was typed in it before the refusal): an item with nothing to edit says why, in the menu's words, and nothing changes.
     const off = editOff(item);
@@ -4032,6 +5162,12 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
    * scene otherwise.
    */
   function editMesh(scene: Scene) {
+    // An edited Pattern's own copies (61c) put out of the way while its new ones are previewed.
+    if (patternHides !== null && scene.bodies.some((b) => bodyItem(b.body) === patternHides)) return joinBodies(scene.bodies.filter((b) => bodyItem(b.body) !== patternHides)).mesh;
+    // The Chamfer's cut before OK (44a-app3): its body drawn as the kernel chamfers it.
+    if (chamferDrawn !== null) return previewedMesh(scene, chamferDrawn.body, chamferDrawn.view);
+    // The Shell's hollow before OK (35h2c-app2): its body (an edited Shell's every body) drawn as the kernel hollows it.
+    if (shellDrawn !== null) return drawnShell(scene, shellDrawn.replaced, shellDrawn.preview).scene.mesh;
     const hidden = editRegions === null ? null : bodyIdOf(editRegions.id);
     return hidden === null || !scene.bodies.some((b) => b.body === hidden) ? scene.mesh : joinBodies(scene.bodies.filter((b) => b.body !== hidden)).mesh;
   }
@@ -4087,13 +5223,18 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
         // A length's limits say "A length …"; a comma that could separate thousands says what it could mean (issue #518).
         return editBox.showError(read.why.startsWith("A length") ? `The ${label}${read.why.slice("A length".length)}` : `The ${label}: ${read.why}`);
       }
-      next = editFeature(before, id, read.sizes, flip, editRegions?.id === id ? (editRegions.picked ?? undefined) : undefined, symmetric);
+      // Through all (version 23) let go first, so Symmetric ticked in the same edit can take its place.
+      const through = editBox.through;
+      const untied = through === false ? setExtrudeThrough(before, false, id) : before;
+      next = editFeature(untied, id, read.sizes, flip, editRegions?.id === id ? (editRegions.picked ?? undefined) : undefined, symmetric);
       // Its operation (with Combine shown): New body, or Join, Cut or Intersect with the bodies ticked.
       const op = editOps?.id === id ? editBox.operation : null;
       if (op !== null && editOps !== null) {
         if (op !== "new" && editOps.candidates === null) return editBox.showError("Wait a moment: the bodies the extrude reaches are still being found.");
         next = setExtrudeOperation(next, id, op === "new" ? null : { operation: op, bodies: tickedBodies(editOps.choices) });
       }
+      // Ticked: last, once it is a Cut or Intersect.
+      if (through === true) next = setExtrudeThrough(next, true, id);
     } catch (e) {
       return editBox.showError(e instanceof Error ? e.message : String(e));
     }
@@ -4755,15 +5896,22 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
     if (mode.kind === "pick") {
       const spot = sketchSpot(pick, lastScene);
       if (spot?.kind === "plane") pickPlane(spot.plane);
+      else if (spot?.kind === "construct") pickConstruct(spot.item);
       else if (spot) pickFace(spot);
       return;
     }
     // Measure (35e2l2): the click picks what to measure, and selects nothing.
     if (measureBox.shown) return measureBox.pick(pick);
+    // Construct (59a2): the click fills the slot being picked, and selects nothing.
+    if (constructBox.shown) return constructBox.pick(pick);
+    // Chamfer (44a-app2): a click on an edge adds it or takes it out; anything else picks nothing.
+    if (chamferBox.shown) return chamferClick(pick);
+    // Shell (35h2c-app2): a click on a face opens it or closes it again; anything else picks nothing.
+    if (shellBox.shown) return shellClick(pick);
     // Snap (35e2d): the click picks what to snap, then where it lands, and picks no bodies.
     if (moveBox.shown && snapping) return snapPick(pick);
-    // A Move (35e2b; an edited one too since 35e2i), or a new Combine (35f1c): a click on a body adds it or takes it out; empty space keeps what is picked.
-    if (moveBox.shown || combineBox.shown) {
+    // A Move (35e2b; an edited one too since 35e2i), a new Combine (35f1c) or a new Pattern (61c): a click on a body adds it or takes it out; empty space keeps what is picked.
+    if (moveBox.shown || combineBox.shown || patternBox.shown) {
       const c = pickChange({ ...pick, shift: true, double: undefined }, lastScene); // every click toggles a body here, a quick second one too
       const b = c.change === "toggle" && lastScene ? bodyOf(lastScene, c.item) : -1;
       if (picksBodies() && b >= 0) ctx.selection.toggle(bodyReference(lastScene!.bodies[b].body));
@@ -4799,7 +5947,7 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
     globalThis.addEventListener?.("keyup", onHeldKey);
     globalThis.addEventListener?.("blur", onLostFocus);
     ctx.properties.ownerDocument.addEventListener(UNIT_EVENT, onUnitChange);
-    if (mode.kind === "pick") viewport.showPlanes(originPlanes(), sketchableFaces(lastScene));
+    if (mode.kind === "pick") viewport.showPlanes(offeredPlanes(), sketchableFaces(lastScene));
     drawSketches();
     showMoveHint();
     stopWatching = ctx.selection.onChange(() => {
@@ -4808,6 +5956,8 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
       const sketch = extruding && items.length === 1 ? readProfileReference(items[0]) : null;
       if (sketch !== null) chooseProfile(sketch);
       if (picksBodies()) pickBodies();
+      if (chamferBox.shown) syncChamferPicks();
+      if (shellBox.shown) syncShellPicks();
       // The user's next change of selection retires the note about dropped items.
       if (!settling && note) panel.showSelectionNote((note = ""));
       showSelection();
@@ -4821,6 +5971,7 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
     viewport.clearOverlay(REFUSAL_OVERLAY);
     showPrintCheck(); // asleep: cleared
     measureBox.close(); // its line is drawn in the shared view
+    constructBox.close(); // its preview too
     ctx.properties.ownerDocument.removeEventListener(UNIT_EVENT, onUnitChange);
     showBuildAreaWords();
     viewport.onPick = null;
@@ -4861,9 +6012,39 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
     if (!shown) return;
     const kind = panel.shapeChoice.value as ShapeKind;
     if (!kind) return;
-    leaveEdit(); // as a typed size below
-    void setPart({ op: "set_part", shape: kind });
+    // SL #760 item 5: an OK being checked goes first (leaveEdit would shut its panel and drop it), then the Shape goes
+    // to the body it was chosen for (`boxesBackTo`).
+    const part = heldPart();
+    afterOk(() => {
+      if (!boxesBackTo(part)) return;
+      leaveEdit(); // as a typed size below
+      void setPart({ op: "set_part", shape: kind });
+    });
   });
+  /** The body the boxes describe now, by id and name, for a size or Shape that may wait for an OK (`boxesBackTo`); null with none. */
+  function heldPart(): { id: string; label: string } | null {
+    const doc = ctx.project.workspaces.design as DesignDocument | undefined;
+    const f = doc === undefined ? null : boxesFeature(doc);
+    return f === null ? null : { id: f.id, label: f.provenance.self.label };
+  }
+  /**
+   * The boxes back on `part`, the body they described when a size was typed or a Shape chosen, once the OK it waited
+   * for has landed: that OK clears the selection or makes a new last body, so the boxes moved to another one, and the
+   * size went to a body the person never typed it for, with nothing said (app bug hunt 2026-11-18, E-2: a Move's OK
+   * then Width 20 for Box 1 made Box 2 20 wide; an Extrude's OK then Box 1's Height made the extrude 20 mm). False,
+   * and the panel says so, when `part` is no longer a body the boxes can change; true with no body held (none then).
+   */
+  function boxesBackTo(part: { id: string; label: string } | null): boolean {
+    const doc = designDoc();
+    if (part === null || part.id === boxesFeature(doc)?.id) return true;
+    const f = boxesFeature(doc, part.id);
+    if (f === null || f.id !== part.id) {
+      panel.showActionNote(`The size typed was for ${part.label}, which has no sizes to change now, so nothing changed.`, true);
+      return false;
+    }
+    showPartSizes(doc, f);
+    return true;
+  }
   /**
    * A size typed in the Size boxes (or a Shape chosen) changes the design under an open Edit feature panel, whose boxes
    * would go on showing the sizes from before and whose OK wrote them back over the one just typed (Undo hunt
@@ -4880,8 +6061,19 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
     input.addEventListener("input", () => {
       if (!shown) return;
       if (editStart[i] === null && saved !== null) editStart[i] = saved.sizes[i];
-      sizeTyped();
-      void update(...sizeStep(i));
+      // SL #760 item 5: an OK being checked goes first (sizeTyped would shut its panel and drop it); the size typed is
+      // kept through the redraw its step brings and put back in the box, then taken as typed.
+      // Then it goes to the body the boxes showed as it was typed, not the one they show once the OK lands (`boxesBackTo`).
+      const typed = input.value;
+      const part = heldPart();
+      const start = editStart[i];
+      afterOk(() => {
+        if (!boxesBackTo(part)) return;
+        editStart[i] = start;
+        if (input.value !== typed) input.value = typed;
+        sizeTyped();
+        void update(...sizeStep(i));
+      });
     });
     // Left (or Enter): a refused size gives way to the one from before the edit. Blur too: Firefox gave no change for a
     // number box left empty after 0 and -5 (hunt 26h, CI's browsers job).
@@ -4970,6 +6162,24 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
           if (moveBox.ready) void holdAsked(finishMove(moveBox.typed)); // busy while the kernel checks: a second Enter records nothing twice
           return true;
         }
+        // And the Chamfer panel's (44a-app2); its own boxes take their Enter themselves.
+        if (chamferBox.shown && !extrudeBox.shown) {
+          if (!onView) return false;
+          if (chamferBox.ready) void holdAsked(finishChamfer());
+          return true;
+        }
+        // And the Pattern panel's (61c); its own boxes take their Enter themselves.
+        if (patternBox.shown && !extrudeBox.shown) {
+          if (!onView) return false;
+          if (patternBox.ready) void holdAsked(finishPattern());
+          return true;
+        }
+        // And the Shell panel's (35h2c-app2).
+        if (shellBox.shown && !extrudeBox.shown) {
+          if (!onView) return false;
+          if (shellBox.ready) void holdAsked(finishShell());
+          return true;
+        }
         // And the Combine panel's (35f1c).
         if (combineBox.shown && !extrudeBox.shown) {
           if (!onView) return false;
@@ -4991,7 +6201,11 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
       if (id === "clear-selection" && moveBox.shown && dragFrom !== null) return callOffMoveDrag(), true;
       if (id === "clear-selection" && moveBox.shown) return leaveMove(), true;
       if (id === "clear-selection" && combineBox.shown) return leaveCombine(), true;
+      if (id === "clear-selection" && chamferBox.shown) return leaveChamfer(), true;
+      if (id === "clear-selection" && patternBox.shown) return leavePattern(), true;
+      if (id === "clear-selection" && shellBox.shown) return leaveShell(), true;
       if (id === "clear-selection" && measureBox.shown) return measureBox.close(), true;
+      if (id === "clear-selection" && constructBox.shown) return constructBox.close(), true;
       // M opens Move outside a sketch (Fusion's key); in a sketch the key does what it would.
       if (id === "move-tool") return mode.kind === "none" ? (startMove(), true) : false;
       // E is Extrude (Fusion's key), in a sketch too (Extrude leaves it, as its toolbar button does); not while a plane is
@@ -5046,6 +6260,9 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
       toolsChanged();
       listen();
       showStart();
+      // The Slice page may have ticked or unticked the warm-up loop or Better grip meanwhile: what is remembered counts again.
+      printExtras = null;
+      refreshArea();
       showBuildAreaWords();
       showRefusals();
       showPrintCheck();
@@ -5081,9 +6298,14 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
       moveHint.remove();
       explodeBar.remove();
       combineHint.remove();
+      chamferHint.remove();
+      patternHint.remove();
+      shellHint.remove();
       sayCombineDone(null);
       combineDone.remove();
       measureBox.dispose();
+      constructBox.dispose();
+      viewport.clearOverlay(CONSTRUCT_OVERLAY);
       startCard.element.remove();
       solidCard.element.remove();
       ctx.viewport.clearOverlay(SOLID_OVERLAY); // the card that explained the marks is gone (an Undo mounts Design again)

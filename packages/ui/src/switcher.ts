@@ -1,11 +1,12 @@
 // The workspace button on the app bar (U0f2b, the owner's Fusion-like top
 // bar): one "DESIGN ▾" naming the workspace on screen in place of the ten
 // tabs, its menu listing all ten in order, the one on screen marked, the
-// ones not built yet greyed with "Coming soon" at their right (still
+// ones not built yet greyed with their expected window ("Late 2027") at their right (still
 // chosen as before: each shows its page saying what it will do). Each
 // item carries data-workspace. Styles: src/styles/workspace-menu.css (and
 // the menu's own, menu-button.css).
 
+import { etaLabel, workspaceEta } from "./eta.ts";
 import { menuButton, type MenuButton } from "./menu-button.ts";
 
 export interface SwitcherEntry {
@@ -15,8 +16,8 @@ export interface SwitcherEntry {
   placeholder: boolean;
 }
 
-/** The words at a not-yet-built workspace's right in the menu. */
-export const COMING_SOON = "Coming soon";
+/** The words at a not-yet-built workspace's right in the menu: its expected window. */
+export const comingNote = (id: string) => etaLabel(workspaceEta(id));
 
 /** The button's words for the page on screen: a workspace's title, or another page's name (Community). */
 export const switcherLabel = (entries: readonly SwitcherEntry[], id: string, other: Record<string, string> = {}) => entries.find((e) => e.id === id)?.title ?? other[id] ?? id;
@@ -40,9 +41,9 @@ export function workspaceSwitcher(bar: HTMLElement, entries: SwitcherEntry[], ch
         items: entries.map((e) => ({
           id: `workspace-${e.id}`,
           label: e.title,
-          title: e.placeholder ? `${e.summary} (coming soon)` : e.summary,
+          title: e.placeholder ? `${e.summary} (expected ${workspaceEta(e.id)})` : e.summary,
           data: { workspace: e.id, ...(e.placeholder ? { soon: "" } : {}) },
-          note: e.placeholder ? COMING_SOON : undefined,
+          note: e.placeholder ? comingNote(e.id) : undefined,
           current: e.id === shown,
           run: () => choose(e.id),
         })),

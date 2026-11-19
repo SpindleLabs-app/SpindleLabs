@@ -174,7 +174,7 @@ interface Part {
 /** Question 2: each curve's material flag, from the part's own regions. Throws Unknown unless they are its material and its holes, nothing else. */
 async function readPart(kernel: KernelCalls, outline: Outline, name: string): Promise<Part> {
   const curves = outlineCurves(outline);
-  const bad = (why: string) => new Unknown(`the kernel does not read the ${name} part as one closed shape with its holes: ${why}`);
+  const bad = (why: string) => new Unknown(`the ${name} part isn't one closed shape with its holes: ${why}`);
   const found = await kernel.call("sketch_regions", curves.lines, curves.circles, curves.arcs);
   const loopOf = (p: Named) => curves.loops[p.curve][p.index];
   const body = found.regions.filter((r) => r.outer.some((p) => loopOf(p) === 0));
@@ -219,7 +219,7 @@ async function study(kernel: KernelCalls, a: Part, b: Part): Promise<Study> {
     // No regions, and the two curves it names (by kind and index, never by its words) are one of each part: they lie along each other.
     const named = (found.invalid ?? []).filter(isCurve).map((i) => ({ curve: i.input, index: i.index }));
     if (named.length === 2 && owner(named[0]) !== owner(named[1])) return { is: "along" };
-    return { is: "doubt", why: found.why ?? "the kernel found no closed shape" };
+    return { is: "doubt", why: found.why ?? "no closed shape was found" };
   }
   type Side = "in" | "out" | null;
   const sides: [Side, Side][] = [];
@@ -227,14 +227,14 @@ async function study(kernel: KernelCalls, a: Part, b: Part): Promise<Study> {
   const pieces = found.regions.map((r) => [...r.outer, ...r.holes.flat()]);
   for (const [i, region] of found.regions.entries()) {
     // A region the kernel is unsure of ("the curves meet too closely ... to tell the regions apart") names no curves to mark and promises no list.
-    if (!region.extrudes && !region.invalid?.length) return { is: "doubt", why: region.refused ?? "the kernel is unsure of a region" };
+    if (!region.extrudes && !region.invalid?.length) return { is: "doubt", why: region.refused ?? "SpindleLabs is unsure of one of the regions between them" };
     const side: [Side, Side] = [null, null];
     for (const p of pieces[i]) {
       const material = flag(p);
-      if (material === undefined) return { is: "doubt", why: "the kernel named a curve neither part has" };
+      if (material === undefined) return { is: "doubt", why: "a region's edge belongs to neither part" };
       const here: Side = p.reversed === material ? "in" : "out";
       const o = owner(p);
-      if (side[o] !== null && side[o] !== here) return { is: "doubt", why: "the kernel listed a region on both sides of one part's edge" };
+      if (side[o] !== null && side[o] !== here) return { is: "doubt", why: "one region lies on both sides of a part's edge" };
       side[o] = here;
       const at = `${key(p)} ${p.reversed}`;
       listed.set(at, [...(listed.get(at) ?? []), i]);
@@ -252,7 +252,7 @@ async function study(kernel: KernelCalls, a: Part, b: Part): Promise<Study> {
           const across = listed.get(`${key(p)} ${!p.reversed}`) ?? [];
           for (const there of across.length === 0 ? (["out"] as const) : across.map((j) => sides[j][o])) {
             if (there === null) continue;
-            if (seen !== null && seen !== there) return { is: "doubt", why: "the kernel's regions disagree about which part one lies in" };
+            if (seen !== null && seen !== there) return { is: "doubt", why: "the regions disagree about which part one of them lies in" };
             seen = there;
           }
         }
@@ -312,10 +312,10 @@ async function relate(kernel: KernelCalls, a: Outline, b: Outline): Promise<Part
         if (bad instanceof Unknown) throw bad;
       });
     }
-    throw new Unknown(`the kernel can't cut the two parts out of one sheet: ${words(e)}`);
+    throw new Unknown(`couldn't work out how the two parts sit on one sheet: ${words(e)}`);
   });
   if (beside === "fits") return { relation: "apart" };
-  if (beside === "outside") throw new Unknown("the kernel placed a part outside its own box");
+  if (beside === "outside") throw new Unknown("a part came out outside its own box");
   let close = beside === "close";
   if (beside === "nested") {
     for (const [inner, outer] of [
@@ -337,7 +337,7 @@ async function relate(kernel: KernelCalls, a: Outline, b: Outline): Promise<Part
   if (found.is === "overlap") return { relation: "overlap" };
   const meet = close || found.is === "along";
   const unknown = (why: string): PartsRelation => (meet ? { relation: "unknown", why, meet } : { relation: "unknown", why });
-  if (found.is === "clear") return close ? { relation: "touch" } : unknown("one part is inside the other's outline, yet the kernel finds it neither clear inside a hole nor in its material");
+  if (found.is === "clear") return close ? { relation: "touch" } : unknown("one part is inside the other's outline, yet it lies neither clear inside a hole nor in its material");
 
   // The kernel couldn't tell: the second part again, moved by NUDGE (the file's comment).
   const length = await edgeLength(kernel, b).catch(() => Infinity);
@@ -351,8 +351,8 @@ async function relate(kernel: KernelCalls, a: Outline, b: Outline): Promise<Part
   }
   return unknown(
     found.is === "along"
-      ? "an edge of one part lies along an edge of the other, and the kernel can't yet tell a shared edge from a thin overlap there"
-      : `the parts' edges meet too closely for the kernel to tell a touch from an overlap (${found.why})`,
+      ? "an edge of one part lies along an edge of the other, and SpindleLabs can't yet tell a shared edge from a thin overlap there"
+      : `the parts' edges meet too closely for SpindleLabs to tell a touch from an overlap (${found.why})`,
   );
 }
 

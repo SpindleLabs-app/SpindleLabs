@@ -20,3 +20,14 @@
 .testlab-page .testlab-page-sources { margin: var(--look-space-2) 0; font-size: 12px; color: var(--text-dim); overflow-wrap: anywhere; }
 .testlab-page .testlab-page-sources summary { min-height: 32px; display: flex; align-items: center; cursor: pointer; }
 .testlab-page .testlab-page-sources p { margin: var(--look-space-1) 0; }
+
+/* The testlab-page panel in the properties as a rounded floating card like Design's, on wide screens (UI review 2026-11-18, finding 2): it was a flat grey column docked down the right edge. theme.css makes the room round it. Tokens only. */
+@media (min-width: 641px) {
+  .testlab-page:is(#workspace:not([data-split="on"]) #properties > .testlab-page) { align-self: flex-start; box-sizing: border-box; max-height: 100%; overflow-y: auto; padding: 16px; background: var(--look-float); border: 1px solid var(--look-edge); border-radius: var(--look-radius-l); box-shadow: var(--look-top-light), var(--look-shadow-2); scrollbar-width: thin; scrollbar-color: transparent transparent; }
+  .testlab-page:is(#workspace:not([data-split="on"]) #properties > .testlab-page):is(:hover, :focus-within) { scrollbar-color: var(--line-4a515c) transparent; }
+}
+.testlab-page .testlab-page-progress { margin: var(--look-space-2) 0; font-size: 13px; font-weight: 600; }
+/* The status: what happened on its first line, then each thing to fix on its own line below (SL #820 D-6), not as the list rows above. */
+.testlab-page .testlab-page-status p { margin: 0; }
+.testlab-page .testlab-page-status .testlab-page-problems { display: block; list-style: disc; margin: var(--look-space-1) 0 0; padding-left: 1.2em; }
+.testlab-page .testlab-page-status .testlab-page-problems li { display: list-item; min-height: 0; padding: 0; margin: 2px 0; background: none; border: 0; }

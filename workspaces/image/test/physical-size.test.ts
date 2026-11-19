@@ -58,8 +58,8 @@ test("each way a PNG header can be broken is refused with its own message", () =
   assert.match(refusal(() => readPhysicalSize(png(ihdr(4, 4), chunk("pHYs", [0, 0, 39, 16, 0, 0, 39, 16, 1], 1), iend()))).message, /pHYs chunk is damaged: its checksum is wrong/);
   assert.match(refusal(() => readPhysicalSize(png(chunk("IHDR", [0, 0, 0, 4, 0, 0, 0, 4, 8, 6, 0, 0]), iend()))).message, /IHDR header is 12 bytes long instead of 13/);
   assert.match(refusal(() => readPhysicalSize(png(ihdr(4, 4), chunk("pHYs", [0, 0, 39, 16, 0, 0, 39, 16]), iend()))).message, /pHYs chunk is 8 bytes long instead of 9/);
-  assert.match(refusal(() => readPhysicalSize(png(idat(), ihdr(4, 4), iend()))).message, /does not start with its IHDR/);
-  assert.match(refusal(() => readPhysicalSize(png(ihdr(4, 4), ihdr(4, 4), iend()))).message, /two IHDR headers/);
+  assert.match(refusal(() => readPhysicalSize(png(idat(), ihdr(4, 4), iend()))).message, /doesn't start the way a PNG should/);
+  assert.match(refusal(() => readPhysicalSize(png(ihdr(4, 4), ihdr(4, 4), iend()))).message, /describes its size twice/);
   assert.match(refusal(() => readPhysicalSize(png(ihdr(0, 4), iend()))).message, /at least 1 × 1 pixels; this one says 0 × 4/);
   assert.equal(refusal(() => readPhysicalSize(png(ihdr(20000, 4), iend()))).code, "too-large");
   // A length of 0xFFFFFFFF must not be trusted (it would read far past the end).

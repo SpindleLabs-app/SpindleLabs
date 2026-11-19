@@ -9,7 +9,7 @@
 // (it reuses the sketcher's curves and constraints).
 
 import type { WorkspacePlugin } from "@fission/core";
-import { showPlaceholder } from "@fission/ui";
+import { showPlaceholder, workspaceEta } from "@fission/ui";
 
 const summary = "2D design: paths, shapes and text for logos and artwork that flow into every making workspace.";
 
@@ -38,6 +38,7 @@ export const vectorWorkspace: WorkspacePlugin = {
   commands: [],
   mount(ctx) {
     showPlaceholder(ctx.properties, {
+      eta: workspaceEta("vector"),
       title: "VectorLab",
       summary,
       plans: [

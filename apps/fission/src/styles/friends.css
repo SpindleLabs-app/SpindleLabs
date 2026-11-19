@@ -20,6 +20,6 @@
 .friends .friends-empty { padding: 0 var(--look-space-1); }
 .friends .friends-turn-on { justify-self: start; min-height: 44px; }
 .friends .friends-turn-off { justify-self: start; }
-@media (pointer: coarse), (max-width: 640px) {
+@media ((pointer: coarse) and (max-width: 1199px)), (max-width: 640px) {
   .friends.account .account-action, .friends.account .account-close, .friends.account .friends-input { min-height: 44px; }
 }

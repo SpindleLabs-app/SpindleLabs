@@ -97,7 +97,7 @@ await check("E1: an old body's free on its way when the kernel traps never frees
   // Worked by hand: 50 x 30 x 20 = 30,000 mm³ (the old 40 wide box was 24,000).
   await p.waitForFunction(() => /30[,\s ]?000/.test(document.querySelector("#volume")?.textContent ?? ""), null, { timeout: 5000 });
   const words = await p.$eval("#properties", (el) => el.innerText);
-  assert.ok(!/not in the kernel|Out of date/.test(words), `the panel shows the part, not an error: ${words.slice(-200)}`);
+  assert.ok(!/not in the kernel|That body is no longer there|Out of date/.test(words), `the panel shows the part, not an error: ${words.slice(-200)}`);
   assert.deepEqual(await red(p), []);
   // One more edit builds on the fresh kernel, and the healed body is still there to be replaced.
   await p.fill("#height", "25");

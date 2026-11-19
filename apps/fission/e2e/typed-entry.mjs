@@ -22,7 +22,7 @@
 // line's point where it went, still taking the keys (hunt D2). Run with
 // `npm run e2e` (after `npm run build`); ONLY=<words> runs the checks whose names hold them.
 import assert from "node:assert/strict";
-import { launch } from "./browser.mjs";
+import { chosen, launch } from "./browser.mjs";
 import { preview } from "vite";
 import { TOP, clickPlane, screenPoint } from "./sketch-screen.mjs";
 import { closePanels, gridSnapOn, openPanel, sheetsClearFor, startWithBox, pickPlane } from "./start.mjs";
@@ -87,7 +87,7 @@ async function sketch(page, tap = false) {
 
 let failed = false;
 async function check(name, fn) {
-  if (process.env.ONLY && !name.includes(process.env.ONLY)) return;
+  if (!chosen(name)) return;
   try {
     await fn();
     console.log(`ok - ${name}`);

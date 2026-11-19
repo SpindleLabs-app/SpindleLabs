@@ -480,10 +480,11 @@ try {
     await page.keyboard.press("Escape");
     await page.mouse.click(fitted.x, fitted.y);
     assert.equal(await selection(), "face:feature-1/top", "picking works in the fitted view");
-    // Nothing selected: Fit frames the whole body from home, as fit() does.
+    // Nothing selected: Fit frames the whole body from the angle it already has (the top view here), and Home turns back to home's.
     await page.keyboard.press("Escape");
     await clickView("top");
     await clickView("fit");
+    await clickView("home");
     await pickAt(HOME, [20, 15, 20], "face:feature-1/top");
     await pickAt(HOME, [20, 0, 10], "face:feature-1/front");
   });
@@ -960,7 +961,7 @@ try {
 
   await check("DESIGN ▾ names Design and lists Design and Slice only (the public app's, src/listed-workspaces.ts), Design marked, neither greyed", async () => {
     assert.equal(await page.textContent("#workspace-menu"), "DesignLab ▾");
-    assert.equal(await page.$eval("#workspace-menu", (b) => getComputedStyle(b).textTransform), "uppercase", "it reads DESIGN ▾, as Fusion's");
+    assert.notEqual(await page.$eval("#workspace-menu", (b) => getComputedStyle(b).textTransform), "uppercase", "it reads DesignLab ▾, spelled as the menu spells it");
     assert.equal(await page.getAttribute("#workspace-menu", "data-active"), "design");
     await page.click("#workspace-menu");
     const items = await page.$$eval("#workspace-menu-menu [role=menuitem]", (ts) => ts.map((t) => [t.querySelector(".menu-button-name").textContent, t.querySelector(".menu-button-note")?.textContent ?? "", t.getAttribute("aria-current") === "true"]));
@@ -974,7 +975,7 @@ try {
     assert.equal(await page.getAttribute("#workspace-menu", "aria-expanded"), "false");
   });
 
-  await check("each placeholder workspace says what it will do and 'Coming soon', and keeps the viewport", async () => {
+  await check("each placeholder workspace says what it will do and 'Expected <when>', and keeps the viewport", async () => {
     // Back to a known body, then remember the camera's view of it.
     await chooseShape(page, "box");
     await page.fill("#width", "40");
@@ -983,12 +984,12 @@ try {
     await page.waitForTimeout(300); // let orbit damping settle
     const radius = await page.$eval("#viewport", (el) => el.dataset.framedRadius);
     const before = await pixel(0.5, 0.5);
-    // Each opened by its link: none is listed in the public app, and Slice's item opens Slice for printing (src/listed-workspaces.ts).
-    for (const [id, title] of [["render", "RenderLab"], ["simulate", "TestLab"], ["manufacture", "CNCLab"], ["laser", "LaserLab"], ["slice", "SliceLab"], ["circuit", "PCBLab"], ["vector", "VectorLab"], ["layout", "LayoutLab"]]) {
+    // Each opened by its link: none is listed in the public app, and Slice is the Slice page, not a placeholder (src/listed-workspaces.ts).
+    for (const [id, title] of [["render", "RenderLab"], ["simulate", "TestLab"], ["manufacture", "CNCLab"], ["laser", "LaserLab"], ["circuit", "PCBLab"], ["vector", "VectorLab"], ["layout", "LayoutLab"]]) {
       await page.evaluate((hash) => (location.hash = hash), `#${id}`);
       await page.waitForFunction((want) => document.body.dataset.activeWorkspace === want, id);
       assert.equal(await page.textContent(".placeholder h2"), title);
-      assert.equal(await page.textContent(".placeholder .coming-soon"), "Coming soon");
+      assert.match(await page.textContent(".placeholder .coming-soon"), /^Expected (early |mid |late )?20\d\d$/);
       assert.match(await page.textContent(".placeholder .starts-after"), /^Work starts after CAD step \d+/);
       assert.equal(await page.$eval("body", (b) => b.dataset.activeWorkspace), id);
       assert.equal(new URL(page.url()).hash, `#${id}`);
@@ -1533,6 +1534,7 @@ try {
     try {
       await wide.addInitScript(() => indexedDB.deleteDatabase("fission"));
       await wide.goto(url + "#design");
+      await startWithBox(wide); // a first visit's design is kept from its first change (#820 D-4), so the status says Saved after one
       await wide.waitForFunction(() => document.querySelector("#save-status")?.dataset.state === "saved");
       const rect = (sel) => wide.$eval(sel, (el) => el.getBoundingClientRect().toJSON());
       assert.equal((await rect("#menu-toggle")).width, 0, "no Menu");
@@ -1557,6 +1559,7 @@ try {
     phone.on("pageerror", (e) => noteError(e.message));
     try {
       await phone.goto(url + "#design");
+      await startWithBox(phone); // stored once changed: a first visit's design is kept from its first change (#820 D-4)
       await phone.waitForFunction(() => document.querySelector("#save-status")?.dataset.state === "saved");
       const id = await phone.evaluate(() => document.body.dataset.projectId);
       // Cut the stored project short, as a crash in the middle of a write might.
@@ -1618,6 +1621,7 @@ try {
         };
       });
       await phone.goto(url + "#design");
+      await startWithBox(phone); // the first write: a first visit's design is kept from its first change (#820 D-4)
       await phone.waitForFunction(() => document.querySelector("#save-status")?.dataset.state === "error");
       const words = await phone.textContent("#save-status");
       assert.match(words, /^Not saved: browser storage is full: can't save this project \(use Save to keep your work as a file\)$/);
@@ -1657,7 +1661,7 @@ try {
     }
   });
 
-  await check("split view: Image beside Design by default; Design in the second pane with its own panels and camera, one selection; a placeholder there says Coming soon and draws no 3D view; Close split restores one view", async () => {
+  await check("split view: Image beside Design by default; Design in the second pane with its own panels and camera, one selection; a placeholder there says when it is expected and draws no 3D view; Close split restores one view", async () => {
     const wide = await browser.newPage({ viewport: { width: 1280, height: 800 } });
     wide.on("pageerror", (e) => noteError(e.message));
     wide.on("console", (m) => {
@@ -1764,12 +1768,12 @@ try {
       // A placeholder in the second pane: its name, Coming soon and what it
       // will do in the middle of the pane, and no 3D view: the view stops
       // drawing, its canvas, cube and bar are hidden, its properties column too.
-      await wide.selectOption("#split-choice", "slice");
-      await wide.waitForFunction(() => document.body.dataset.split === "slice");
-      assert.equal(await wide.textContent("#split-viewport .split-soon h2"), "SliceLab");
-      assert.equal(await wide.textContent("#split-viewport .split-soon .coming-soon"), "Coming soon");
+      await wide.selectOption("#split-choice", "render");
+      await wide.waitForFunction(() => document.body.dataset.split === "render");
+      assert.equal(await wide.textContent("#split-viewport .split-soon h2"), "RenderLab");
+      assert.match(await wide.textContent("#split-viewport .split-soon .coming-soon"), /^Expected (early |mid |late )?20\d\d$/);
       assert.equal(await wide.isVisible("#split-viewport .split-soon"), true);
-      assert.equal(await wide.textContent("#split-properties .placeholder h2"), "SliceLab", "the workspace's own page, where the card comes from");
+      assert.equal(await wide.textContent("#split-properties .placeholder h2"), "RenderLab", "the workspace's own page, where the card comes from");
       assert.equal(await wide.isVisible("#split-properties"), false, "no second copy beside the card");
       assert.equal(await wide.$eval("#split-viewport", (el) => el.dataset.drawing), "off");
       for (const part of ["canvas", ".view-cube", ".view-controls"]) assert.equal(await wide.isVisible(`#split-viewport > ${part}`), false, `no ${part} in the placeholder's pane`);
@@ -1824,7 +1828,7 @@ try {
     }
   });
 
-  await check("split view, every choice in the second pane: one toolbar row per pane and no empty band; placeholders say Coming soon and draw no 3D view; each check fails on the old layout", async () => {
+  await check("split view, every choice in the second pane: one toolbar row per pane and no empty band; placeholders say when they are expected and draw no 3D view; each check fails on the old layout", async () => {
     const wide = await browser.newPage({ viewport: { width: 1280, height: 800 } });
     wide.on("pageerror", (e) => noteError(e.message));
     try {
@@ -1834,7 +1838,7 @@ try {
       await wide.click("#workspace-menu");
       const titles = Object.fromEntries(await wide.$$eval("#workspace-menu-menu [data-workspace]", (items) => items.map((t) => [t.dataset.workspace, t.querySelector(".menu-button-name").textContent.trim()])));
       await wide.keyboard.press("Escape");
-      const placeholders = ["render", "simulate", "manufacture", "laser", "slice", "circuit", "vector", "layout"];
+      const placeholders = ["render", "simulate", "manufacture", "laser", "circuit", "vector", "layout"];
 
       /** What the layout checks read, in page pixels. */
       const measure = () =>
@@ -1879,7 +1883,7 @@ try {
       async function checkNoView(id) {
         assert.equal(await wide.isVisible("#split-viewport .split-soon"), true, `${id}: the card shows`);
         assert.equal(await wide.textContent("#split-viewport .split-soon h2"), titles[id]);
-        assert.equal(await wide.textContent("#split-viewport .split-soon .coming-soon"), "Coming soon");
+        assert.match(await wide.textContent("#split-viewport .split-soon .coming-soon"), /^Expected (early |mid |late )?20\d\d$/);
         assert.equal(await wide.$eval("#split-viewport", (el) => el.dataset.drawing), "off", `${id}: the view is not drawing`);
         assert.equal(await wide.isVisible("#split-viewport > canvas"), false, `${id}: no canvas`);
         assert.equal(await wide.isVisible("#split-viewport > .view-controls"), false, `${id}: no view buttons`);

@@ -1,5 +1,6 @@
 // @fission/ui: shared UI pieces and the theme (theme.css).
 export { formatQuantity } from "./format.ts";
+export { WORKSPACE_ETA, etaLabel, workspaceEta, type Eta } from "./eta.ts";
 export { showPlaceholder, type PlaceholderInfo } from "./placeholder.ts";
 export { downstreamChip, type ChipInfo, type ChipState } from "./downstream-chip.ts";
 export { changeNote, type ChangeNoteInfo, type NoteState } from "./change-note.ts";
@@ -20,9 +21,11 @@ export { openElsewhere, openElsewhereWords, type OpenElsewhere } from "./open-el
 export { commandSearch, matchCommands, shellCommands, type Command, type CommandSearch } from "./command-search.ts";
 export { REPEAT_MS, repeatGuard, type RepeatGuard } from "./press-guard.ts";
 export { keepTypingVisible, takesTyping, typingHidden } from "./keep-typing-visible.ts";
+export { moreSides, SLACK, watchScrollMore } from "./scroll-more.ts";
 export { askName, GCODE_KIND, PNG_KIND, PROJECT_KIND, STL_KIND, baseNameOf, fileNameFor, pickerOf, saveFile, type FileHandle, type SaveKind, type SaveRequest, type SaveResult } from "./save-file.ts";
 export { adoptSkeleton, holdSkeleton, leaveAfter, skeleton, whileLoading, SKELETON_DELAY_MS, SKELETON_FADE_MS, type HeldSkeleton, type SkeletonShape } from "./skeleton.ts";
-export { carryOnRow, filterRows, HOME_NO_MATCH, HOME_NO_PROJECTS, homeRows, homeScreen, usedAt, workspacesIn, type HomeParts, type HomeProject, type HomeRow, type HomeScreen } from "./home-screen.ts";
+export { carryOnRow, filterRows, HOME_NO_MATCH, HOME_NO_PROJECTS, homeRows, homeScreen, SHAPE_WAIT_MS, usedAt, workspacesIn, type HomeParts, type HomeProject, type HomeRow, type HomeScreen } from "./home-screen.ts";
+export { homeBackdrop, HOME_MOTION_KEY, MOTION_CHOICES, motionChoiceOf, type Backdrop, type MotionChoice, type Surface } from "./home-backdrop.ts";
 export { NO_PROJECTS, PROJECTS_NOTE, PROJECTS_TITLE, deleteQuestion, projectList, projectRows, savedWhen, type KeptProject, type ProjectList, type ProjectListParts, type ProjectListRow } from "./project-list.ts";
 export { designRows, KEEPING_OFF_NOTE, MY_DESIGNS_NOTE, MY_DESIGNS_TITLE, myDesigns, NO_DESIGNS, othersWords, removeQuestion, sizeWords, spaceWords, tagOf, type AccountDesign, type DesignRowWords, type MyDesigns, type MyDesignsParts } from "./my-designs.ts";
 export { amountWords, NO_PRINTS, PRINT_NOT_KEPT, PRINT_LOG_NOTE, PRINT_LOG_TITLE, printLogDialog, removePrintQuestion, RESULT_WORDS, type PrintLogDialog, type PrintLogParts, type PrintLogResult, type PrintLogRow } from "./print-log.ts";

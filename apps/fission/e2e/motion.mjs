@@ -5,7 +5,7 @@
 // show none of it. Run with `npm run e2e` (after `npm run build`).
 // `E2E_SHOTS=<dir>` saves screenshots.
 import assert from "node:assert/strict";
-import { launch } from "./browser.mjs";
+import { assertNoErrors, launch, watchErrors } from "./browser.mjs";
 import { preview } from "vite";
 
 const server = await preview({ preview: { port: 4252, strictPort: true }, logLevel: "error" });
@@ -19,10 +19,11 @@ const settle = (page) => page.waitForTimeout(400);
 try {
   for (const reduced of [false, true]) {
     const context = await browser.newContext({ viewport: { width: 1280, height: 800 }, reducedMotion: reduced ? "reduce" : "no-preference" });
+    watchErrors(context); // every uncaught exception, console.error and failed request fails the run (test audit E-7)
     const page = await context.newPage();
     await page.goto(url);
     await page.waitForSelector(TOOL + ":visible");
-    const sel = `${TOOL}:visible:not([aria-disabled="true"]):not(:disabled)`;
+    const sel = `${TOOL}:not(#command-search-button):visible:not([aria-disabled="true"]):not(:disabled)`;
     const fast = await duration(page, sel);
     if (!reduced) {
       // --motion-fast is 110 ms = 0.11 s
@@ -61,6 +62,7 @@ try {
   }
   // Touch: no hover nudge (a tap leaves "hover" stuck on a touch screen), but a press still sinks.
   const touch = await browser.newContext({ viewport: { width: 375, height: 667 }, hasTouch: true, isMobile: true });
+  watchErrors(touch); // every uncaught exception, console.error and failed request fails the run (test audit E-7)
   const page = await touch.newPage();
   await page.goto(url);
   await page.waitForSelector("#menu-toggle");
@@ -68,6 +70,7 @@ try {
   assert.match(await duration(page, "#menu-toggle"), /^0\.11s/);
   if (shots) await page.screenshot({ path: `${shots}/motion-375.png` });
   await touch.close();
+  assertNoErrors();
   console.log("PASS motion: ease, nudge, press, reduced motion off, touch without hover, control without the class");
 } finally {
   await browser.close();

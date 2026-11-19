@@ -9,8 +9,9 @@
 // move.ts.
 
 import type { BodySpec, DisplayMesh, Feature, GeometryReference, KernelCalls, MoveHandle, StlFile } from "@fission/core";
-import { actsOnBodies, bodyIdOf, bodyItem, isDuplicateItem, isMoveItem, isOperationExtrude, makesPieces, MOVE_PARAMS, type DesignDocument, type SketchPlane } from "./document.ts";
-import { mirrorOf } from "./duplicate.ts";
+import { actsOnBodies, bodyIdOf, bodyItem, constructOf, isDuplicateItem, isMoveItem, isOperationExtrude, kernelHeld, MOVE_PARAMS, type DesignDocument, type SketchPlane } from "./document.ts";
+import { mirrorOf, type MirrorPlane } from "./duplicate.ts";
+import { constructPlaneItem } from "./construct-data.ts";
 import { featureSpec } from "./extrude.ts";
 import { factorOf, madeAfter, movedBodies, moveValues, type MoveBox, type MoveValues } from "./move.ts";
 import { BodyCache, rebuildTimeline } from "./rebuild.ts";
@@ -176,6 +177,26 @@ export function mirroredPoint(p: readonly number[], plane: SketchPlane): Point {
 }
 
 /**
+ * `p` mirrored across `plane` as a Mirror body's copy is: an origin plane
+ * by `mirroredPoint`; a construction plane (59a3) by the answer `doc` keeps
+ * for it, p − 2((p − q)·n)n through its foot q, a direction (`vector`)
+ * v − 2(v·n)n. Null when `doc` has no plane answer under that name (the
+ * construction deleted: the Mirror built nothing to carry).
+ */
+export function mirrorMap(doc: DesignDocument, plane: MirrorPlane): PointMap | null {
+  const item = constructPlaneItem(plane);
+  if (item === null) return (p) => mirroredPoint(p, plane as SketchPlane);
+  const f = doc.timeline.features.find((x) => x.id === item);
+  const a = f === undefined ? undefined : constructOf(f).answer;
+  if (a?.kind !== "plane") return null;
+  const [n, q] = [a.normal, a.point];
+  return (p, vector) => {
+    const d = vector ? p[0] * n[0] + p[1] * n[1] + p[2] * n[2] : (p[0] - q[0]) * n[0] + (p[1] - q[1]) * n[1] + (p[2] - q[2]) * n[2];
+    return [p[0] - 2 * d * n[0], p[1] - 2 * d * n[1], p[2] - 2 * d * n[2]];
+  };
+}
+
+/**
  * The preview of Move `id` edited to `v` (35e2c), on `scene` as `doc`
  * built it (`results`): each body it moves taken back through the built
  * Moves after it that move it too (last first), then out of where Move
@@ -214,10 +235,8 @@ export function editedMoveMesh(scene: Scene, doc: DesignDocument, results: Reado
         after.unshift({ go: (p, vector) => movedPoint(p, m, vector), back: (p, vector) => unmovedPoint(p, m, vector) });
       } else if (isDuplicateItem(f) && bodyIdOf(f.id) === source && typeof f.intent.parameters.body === "string") {
         const plane = mirrorOf(f);
-        if (plane !== undefined) {
-          const mirrored: PointMap = (p) => mirroredPoint(p, plane);
-          after.unshift({ go: mirrored, back: mirrored });
-        }
+        const mirrored = plane === undefined ? null : mirrorMap(doc, plane);
+        if (mirrored !== null) after.unshift({ go: mirrored, back: mirrored });
         source = f.intent.parameters.body;
       }
     }
@@ -394,7 +413,7 @@ export async function endSpecs(kernel: KernelCalls, doc: DesignDocument, feature
     const r = build.results[f.id];
     const body = r?.status === "built" ? build.bodies[bodyIdOf(f.id)] : undefined;
     if (body === undefined) throw new Error(r?.status === "failed" ? r.message : `${itemName(f)} is not built`);
-    if (body.spec === null) throw new Error(`${itemName(f)}'s body is a Combine's result, which only the kernel holds: ask for its STL by body (endStls)`);
+    if (body.spec === null) throw new Error(`${itemName(f)}'s body is a Combine's or a Chamfer's result, which only the kernel holds: ask for its STL by body (endStls)`);
     specs.push(body.spec);
   }
   return specs;
@@ -410,7 +429,7 @@ export async function endSpecs(kernel: KernelCalls, doc: DesignDocument, feature
  */
 export async function endStls(kernel: KernelCalls, doc: DesignDocument, bodies: readonly { body: string; feature: Feature; name: string }[]): Promise<StlFile[]> {
   const files: StlFile[] = [];
-  if (!doc.timeline.features.some(makesPieces)) {
+  if (!doc.timeline.features.some(kernelHeld)) {
     // One rebuild for all the moved bodies, not one each (clumsy hunt 2026-11-04, endSpecs).
     const specs = await endSpecs(kernel, doc, bodies.map((b) => b.feature));
     for (const [i, b] of bodies.entries()) files.push(await kernel.call("export_stl", specs[i], b.name));

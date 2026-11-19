@@ -20,7 +20,10 @@
 //   MODERATORS   comma-separated  <account id>=<name>  pairs, e.g. "0b7c…-…=Ben". The account id is
 //                the one under Authentication > Users. The name (1 to 100 characters) goes in the record.
 // Supabase itself provides SUPABASE_URL, SUPABASE_ANON_KEY and SUPABASE_SERVICE_ROLE_KEY.
-// EXTRA_ORIGINS (comma-separated) adds pages allowed to call it, beside the review page's own.
+// REVIEW_EXTRA_ORIGINS (comma-separated) adds review pages allowed to call it, beside REVIEW_ORIGINS. Never EXTRA_ORIGINS,
+// which every function of the project reads (security hunt 2026-11-13, C5): an address added there for the app would
+// become a review page. If REVIEW_EXTRA_ORIGINS names one of the app's own addresses (APP_ONLY_ORIGINS) the function
+// answers 503 not-set-up to everyone until it is put right.
 // Tested in node by packages/account/test/moderation-function.test.ts against a fake sign-in service and database.
 
 export type Env = Record<string, string | undefined>;
@@ -33,6 +36,8 @@ export type Deps = { env: Env; fetch: typeof fetch; now?: () => number; log?: (l
  * Never spindlelabs.app.
  */
 export const REVIEW_ORIGINS = ["http://localhost:8765", "http://127.0.0.1:8765", "https://spindlelabs-app.github.io"];
+/** The app's own addresses that are never a review page (the mirror, which serves both, is in REVIEW_ORIGINS). */
+export const APP_ONLY_ORIGINS = ["https://spindlelabs.app", "https://www.spindlelabs.app"];
 /** The largest request read at all, in bytes: the longest claim with every character escaped, and the rest. */
 export const MAX_REQUEST_BYTES = 64 * 1024;
 /** The longest note (why), as the moderation record allows. */
@@ -116,7 +121,9 @@ function oneOf<T extends string>(a: Ask, key: string, allowed: readonly T[]): T 
 
 export function moderation(deps: Deps) {
   const env = deps.env;
-  const origins = [...REVIEW_ORIGINS, ...(env.EXTRA_ORIGINS ?? "").split(",").map((s) => s.trim()).filter(Boolean)];
+  const extra = (env.REVIEW_EXTRA_ORIGINS ?? "").split(",").map((s) => s.trim()).filter(Boolean);
+  const appListed = extra.some((o) => APP_ONLY_ORIGINS.includes(o.replace(/\/+$/, "").toLowerCase()));
+  const origins = appListed ? [] : [...REVIEW_ORIGINS, ...extra];
 
   function cors(req: Request): Record<string, string> {
     const o = req.headers.get("origin");
@@ -238,7 +245,7 @@ export function moderation(deps: Deps) {
   return async function handle(req: Request): Promise<Response> {
     if (req.method === "OPTIONS") return new Response(null, { status: 204, headers: cors(req) });
     if (req.method !== "POST") return reply(req, 405, { error: "method" });
-    if (!env.SUPABASE_URL || !env.SUPABASE_ANON_KEY || !env.SUPABASE_SERVICE_ROLE_KEY) return reply(req, 503, { error: "not-set-up" });
+    if (!env.SUPABASE_URL || !env.SUPABASE_ANON_KEY || !env.SUPABASE_SERVICE_ROLE_KEY || appListed) return reply(req, 503, { error: "not-set-up" });
     const moderators = readModerators(env.MODERATORS);
     if (!moderators) return reply(req, 503, { error: "not-set-up" });
     if (!origins.includes(req.headers.get("origin") ?? "")) return reply(req, 403, { error: "origin" });

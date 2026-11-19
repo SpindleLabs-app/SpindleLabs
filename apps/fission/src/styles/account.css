@@ -13,7 +13,7 @@
 .account-open.account-signed-in .tool-word { display: inline-block; vertical-align: bottom; max-width: 12em; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .account { width: min(420px, calc(100vw - 32px)); max-height: calc(100dvh - 64px); padding: 0; overflow: hidden; flex-direction: column; background: var(--look-float); color: var(--text-body); border: 1px solid var(--look-edge); border-radius: var(--look-radius-l); box-shadow: var(--look-top-light), var(--look-shadow-2); }
 .account[open] { display: flex; }
-.account::backdrop { background: var(--fill-5-8-14-06); }
+.account::backdrop { background: var(--shade-black-05); }
 .account .account-head { display: flex; align-items: center; justify-content: space-between; gap: var(--look-space-2); padding: var(--look-space-3) var(--look-space-4); border-bottom: 1px solid var(--look-edge); }
 .account .account-head h2 { margin: 0; font-size: 16px; }
 .account .account-body { overflow-y: auto; padding: var(--look-space-4); display: grid; gap: var(--look-space-3); font-size: 14px; line-height: 1.45; }

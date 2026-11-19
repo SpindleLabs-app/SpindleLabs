@@ -3,8 +3,8 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { RepresentationRegistry, type WorkspaceContext } from "@fission/core";
-import { mountSlicePage, plateFiles, plateMesh, plateWords, printPanel, readPlate, sliceWords, slicePageWorkspace } from "../src/index.ts";
-import { PRINT_DEFAULTS } from "@fission/print";
+import { leftOutWords, mountSlicePage, plateFiles, plateMesh, plateWords, printPanel, readPlate, sliceWords, slicePageWorkspace } from "../src/index.ts";
+import { PRINT_DEFAULTS, SUPPORT_OPTIONS } from "@fission/print";
 
 const { Window } = await import("happy-dom");
 
@@ -127,6 +127,7 @@ test("the words of a slice: layers, grams and time as the dialog says them, with
 });
 
 /** The panel's choice boxes (quality … nozzle), not the presets list that sits above them. */
+const choiceSelect = (doc: Document, id: string) => doc.getElementById(`slice-page-${id}`) as unknown as HTMLSelectElement;
 const choiceSelects = (doc: Document) => [...doc.querySelectorAll("select")].filter((x) => (x as unknown as HTMLElement).id !== "slice-presets-list") as unknown as HTMLSelectElement[];
 
 function panelIn(kernelCall: (name: string, ...a: unknown[]) => Promise<unknown>, list = objects, extra: Partial<Parameters<typeof printPanel>[1]> = {}) {
@@ -142,8 +143,8 @@ test("the panel starts on the beginner's defaults, and picking a choice changes 
   assert.deepEqual(panel.choices(), PRINT_DEFAULTS);
   const selects = choiceSelects(doc);
   assert.equal(selects.length, 7, "quality, walls, infill, supports, file, build plate, nozzle");
-  selects[1].value = "3"; // Walls: the options are 1..6, index 3 is 4 walls
-  selects[1].dispatchEvent(new (doc.defaultView as unknown as { Event: typeof Event }).Event("change"));
+  choiceSelect(doc, "walls").value = "3"; // Walls: the options are 1..6, index 3 is 4 walls
+  choiceSelect(doc, "walls").dispatchEvent(new (doc.defaultView as unknown as { Event: typeof Event }).Event("change"));
   assert.deepEqual(panel.choices(), { ...PRINT_DEFAULTS, walls: 4 });
 });
 
@@ -181,8 +182,8 @@ test("Slice and download makes the P1S's file for the plate and nozzle chosen, s
     { save: async (r) => (saved.push(r), { status: "saved", name: "chosen.gcode.3mf" }), projectName: () => "Bracket" },
   );
   const selects = choiceSelects(doc);
-  selects[5].value = "2"; // Cool Plate
-  selects[5].dispatchEvent(new (doc.defaultView as unknown as { Event: typeof Event }).Event("change"));
+  choiceSelect(doc, "plate").value = "2"; // Cool Plate
+  choiceSelect(doc, "plate").dispatchEvent(new (doc.defaultView as unknown as { Event: typeof Event }).Event("change"));
   assert.deepEqual(panel.file(), { format: "p1s", plate: "cool_plate", nozzle: "standard" });
   await panel.download();
   assert.equal(calls[0][0], "print_file_stl");
@@ -196,6 +197,22 @@ test("Slice and download makes the P1S's file for the plate and nozzle chosen, s
   const cancelled = panelIn(async () => ({ layers: 5, filamentMm: 1, filamentG: 1, printTimeS: 60, unprintedVolume: 0, package: pkg }), objects, { save: async () => ({ status: "cancelled" }) });
   await cancelled.panel.download();
   assert.match(cancelled.doc.querySelector(".slice-page-slice-words")!.textContent!, /^Sliced, but not saved: 5 layers/);
+});
+
+test("a second press of Slice and download within a burst of the first saves nothing more; a changed choice lets the next press through (clumsy-user hunt)", async () => {
+  const saved: unknown[] = [];
+  const { doc, panel } = panelIn(
+    async () => ({ layers: 5, filamentMm: 1, filamentG: 1, printTimeS: 60, unprintedVolume: 0, package: new Uint8Array([1]) }),
+    objects,
+    { save: async (r) => (saved.push(r), { status: "saved", name: "x.gcode.3mf" }) },
+  );
+  await panel.download();
+  await panel.download(); // the impatient second press, straight after the first finished
+  assert.equal(saved.length, 1, "the repeat does nothing");
+  choiceSelect(doc, "walls").value = "1";
+  choiceSelect(doc, "walls").dispatchEvent(new (doc.defaultView as unknown as { Event: typeof Event }).Event("change"));
+  await panel.download();
+  assert.equal(saved.length, 2, "a changed choice asks for something new");
 });
 
 test("Slice and download: an empty plate never asks the engine or saves, a failed save is said, and a refusal leaves the buttons working", async () => {
@@ -310,7 +327,7 @@ test("File: plain G-code slices without the P1S's file, saves the G-code as text
   );
   const selects = choiceSelects(doc);
   const Ev = (doc.defaultView as unknown as { Event: typeof Event }).Event;
-  const [file, plate, nozzle] = [selects[4], selects[5], selects[6]];
+  const [file, plate, nozzle] = [choiceSelect(doc, "format"), choiceSelect(doc, "plate"), choiceSelect(doc, "nozzle")];
   assert.equal(plate.disabled, false);
   file.value = "1"; // Plain G-code
   file.dispatchEvent(new Ev("change"));
@@ -375,14 +392,34 @@ test("a printer preset picked puts every setting in (the selects, ticks, file, p
   assert.ok(list, "the presets bar is on the page");
   list.value = "p-1";
   list.dispatchEvent(new Ev("change"));
-  assert.deepEqual(panel.choices(), { ...PRINT_DEFAULTS, layerHeight: 0.12, walls: 4, infill: 40, supports: "tree", warmUp: false, betterGrip: true });
+  // Supports, the warm-up loop and Better grip are per print (Ben, 2026-11-16): the preset's old three are not put in.
+  assert.deepEqual(panel.choices(), { ...PRINT_DEFAULTS, layerHeight: 0.12, walls: 4, infill: 40 });
   assert.deepEqual(panel.file(), { format: "p1s", plate: "smooth", nozzle: "high-flow" });
   const selects = choiceSelects(doc);
-  assert.equal(selects[1].selectedOptions[0].textContent, "4", "the Walls box shows 4");
-  assert.equal((doc.querySelector("#slice-page-grip") as unknown as HTMLInputElement).checked, true);
-  assert.equal((doc.querySelector("#slice-page-warm-up") as unknown as HTMLInputElement).checked, false);
+  assert.equal(choiceSelect(doc, "walls").selectedOptions[0].textContent, "4", "the Walls box shows 4");
+  assert.equal((doc.querySelector("#slice-page-grip") as unknown as HTMLInputElement).checked, false);
+  assert.equal((doc.querySelector("#slice-page-warm-up") as unknown as HTMLInputElement).checked, true);
   assert.equal(stored.get("spindlelabs.slice.nozzle"), "high-flow", "remembered as if picked");
   assert.match(doc.querySelector(".slice-page-fits-words")?.textContent ?? "", /High Flow/, "the fits line follows the nozzle");
+});
+
+test("a printer preset picked straight after a download lets the next press through: it asks for different settings (found by the merge queue's slice-presets check)", async () => {
+  const stored = new Map<string, string>();
+  const settings = { layerHeight: 0.12, walls: 4, infill: 40, supports: "off", warmUp: true, betterGrip: false, format: "p1s", plate: "smooth", nozzle: "standard" };
+  stored.set("spindlelabs.slice.presets", JSON.stringify({ version: 1, presets: [{ id: "p-1", name: "Strong", printer: "bambu-p1s", settings, updatedAt: 1 }] }));
+  const storage = { getItem: (k: string) => stored.get(k) ?? null, setItem: (k: string, v: string) => void stored.set(k, v) };
+  const saved: unknown[] = [];
+  const { doc, panel } = panelIn(
+    async () => ({ layers: 5, filamentMm: 1, filamentG: 1, printTimeS: 60, unprintedVolume: 0, package: new Uint8Array([1]) }),
+    objects,
+    { storage, save: async (r) => (saved.push(r), { status: "saved", name: "x.gcode.3mf" }) },
+  );
+  await panel.download();
+  const list = doc.querySelector("#slice-presets-list") as unknown as HTMLSelectElement;
+  list.value = "p-1";
+  list.dispatchEvent(new (doc.defaultView as unknown as { Event: typeof Event }).Event("change"));
+  await panel.download();
+  assert.equal(saved.length, 2);
 });
 
 test("Printer fits: the row shows only where the page can save a test piece, says typical sizes until measured, and its button opens the calibration", () => {
@@ -394,4 +431,147 @@ test("Printer fits: the row shows only where the page can save a test piece, say
   assert.match(row.textContent!, /typical sizes for the Standard nozzle \(not measured yet\)/);
   (withIt.doc.querySelector("#slice-page-fits-open") as unknown as HTMLButtonElement).click();
   assert.ok(withIt.doc.querySelector("dialog[open], dialog"), "the calibration dialog exists once asked");
+});
+
+// SL #761 follow-up: the page says what a failed Design item or a hidden body leaves off the plate, in Slice's own words.
+test("leftOutWords names the failed items and the hidden bodies, and says nothing when nothing is left out", () => {
+  assert.equal(leftOutWords({ failed: [], hidden: [] }), "");
+  assert.equal(leftOutWords({ failed: ["Extrude 2"], hidden: [] }), "Extrude 2 failed in Design, so the print is without what it makes. Fix it in the Design timeline (red) to include it.");
+  assert.equal(leftOutWords({ failed: ["Extrude 2", "Combine 1"], hidden: [] }), "Extrude 2 and Combine 1 failed in Design, so the print is without what they make. Fix them in the Design timeline (red) to include them.");
+  assert.equal(leftOutWords({ failed: ["A", "B", "C", "D"], hidden: [] }).slice(0, 25), "A, B and 2 more failed in");
+  assert.equal(leftOutWords({ failed: [], hidden: ["Body 2"] }), "Body 2 is hidden in Design, so it is not on the plate.");
+  assert.equal(leftOutWords({ failed: [], hidden: ["Body 1", "Body 3"] }), "Body 1 and Body 3 are hidden in Design, so they are not on the plate.");
+  assert.equal(leftOutWords({ failed: ["Extrude 2"], hidden: ["Body 1"] }).endsWith("Body 1 is hidden in Design, so it is not on the plate."), true);
+});
+
+// The supports hint after a slice (the dialog's, brought to the page, SP5): recommended or not by the overhang area, with one
+// button that flips the Supports choice when it disagrees. Hand working: a floor triangle at z 0 and a triangle at z 20 with
+// corners (0,0), (0,10), (10,0): u = (0,10,0), v = (10,0,0), u × v z = 0·0 − 10·10 = −100, so it faces straight down and its
+// area is 100 / 2 = 50 mm², over the 5 mm² limit: supports recommended.
+function overhangStl(): Uint8Array {
+  const bytes = new Uint8Array(84 + 100);
+  const view = new DataView(bytes.buffer);
+  view.setUint32(80, 2, true);
+  const tris = [[[0, 0, 0], [10, 0, 0], [0, 10, 0]], [[0, 0, 20], [0, 10, 20], [10, 0, 20]]];
+  tris.forEach((t, n) => t.forEach((c, i) => c.forEach((v, k) => view.setFloat32(84 + n * 50 + 12 + i * 12 + k * 4, v, true))));
+  return bytes;
+}
+const hangingRegistry = () => {
+  const r = new RepresentationRegistry();
+  r.registerProducer("fake.body", "data", () => ({ kind: "data", values: { format: "stl", bytes: overhangStl() } }));
+  return r;
+};
+
+test("after a slice the supports hint says whether supports are recommended and its button flips the choice; it goes when a slice starts", async () => {
+  const result = { layers: 12, filamentMm: 1000, filamentG: 40, printTimeS: 4800, unprintedVolume: 0 };
+  const { doc, panel } = panelIn(async () => result, objects.slice(0, 1), { registry: hangingRegistry() });
+  const hint = doc.querySelector(".slice-page-supports-hint") as unknown as HTMLElement;
+  const flip = doc.querySelector(".slice-page-supports-flip") as unknown as HTMLButtonElement;
+  assert.equal(hint.hidden, true, "no hint before a slice");
+  await panel.slice();
+  assert.equal(hint.hidden, false);
+  assert.match(hint.textContent!, /Supports recommended: part of it hangs out more than 45° with nothing under it\./);
+  assert.equal(flip.textContent, "Turn supports on");
+  flip.click();
+  assert.equal(panel.choices().supports, "normal", "the button turns supports on");
+  assert.match(doc.querySelector(".slice-page-slice-words")!.textContent!, /Supports turned on \(Normal\)\. Slice again to make the file with them\./);
+  assert.equal(flip.hidden, true, "with supports on the recommendation already agrees, so no button");
+  assert.equal(hint.hidden, true, "and the old result's hint goes until the next slice");
+  assert.equal(choiceSelect(doc, "supports").value, String(SUPPORT_OPTIONS.findIndex((o) => o.value === "normal")), "and the Supports box shows it");
+});
+
+test("a part with nothing hanging says supports are not needed, and offers to turn them off only when they are on", async () => {
+  const result = { layers: 12, filamentMm: 1000, filamentG: 40, printTimeS: 4800, unprintedVolume: 0 };
+  const { doc, panel } = panelIn(async () => result, objects.slice(0, 1));
+  const hint = doc.querySelector(".slice-page-supports-hint") as unknown as HTMLElement;
+  const flip = doc.querySelector(".slice-page-supports-flip") as unknown as HTMLButtonElement;
+  await panel.slice();
+  assert.match(hint.textContent!, /Supports not needed: nothing hangs out more than 45°\./);
+  assert.equal(flip.hidden, true, "supports are off, so they already agree");
+  const select = choiceSelect(doc, "supports");
+  select.value = String(SUPPORT_OPTIONS.findIndex((o) => o.value === "normal"));
+  select.dispatchEvent(new (doc.defaultView as unknown as { Event: typeof Event }).Event("change"));
+  assert.equal(flip.hidden, false, "turning them on makes the hint offer to turn them off");
+  assert.equal(flip.textContent, "Turn supports off");
+});
+
+test("the page says it is a first version, and keeps the printer's settings in a fold that starts closed (SP5b2a)", () => {
+  const { doc } = panelIn(async () => ({}));
+  assert.match(doc.getElementById("slice-page-untested")!.textContent ?? "", /haven't been test-printed yet/);
+  const fold = doc.getElementById("slice-page-settings") as unknown as HTMLDetailsElement;
+  assert.equal(fold.open, false, "closed unless left open");
+  // File, build plate, nozzle, quality, walls and infill are inside the fold; supports, the ticks are per print, outside it.
+  const inside = (id: string) => fold.contains(doc.getElementById(id));
+  for (const id of ["slice-page-format", "slice-page-plate", "slice-page-nozzle", "slice-page-quality", "slice-page-walls", "slice-page-infill"]) assert.equal(inside(id), true, id);
+  for (const id of ["slice-page-supports", "slice-page-warm-up", "slice-page-grip"]) assert.equal(inside(id), false, id);
+  // The closed line says the settings in words (hand-worked from the defaults: P1S, textured plate, standard nozzle, 0.2 mm, 2 walls, 15 %).
+  assert.equal(doc.querySelector(".slice-page-settings-words")!.textContent, "Bambu Lab P1S · Textured PEI plate · 0.4 mm Standard · 0.2 mm layers · 2 walls · 15 % infill");
+});
+
+test("picking walls changes the closed line, and a fold left open is remembered (SP5b2a)", () => {
+  const kept = new Map<string, string>();
+  const storage = { getItem: (k: string) => kept.get(k) ?? null, setItem: (k: string, v: string) => void kept.set(k, v) };
+  const { doc } = panelIn(async () => ({}), objects, { storage: storage as never });
+  const select = choiceSelect(doc, "walls");
+  select.value = "3"; // 4 walls
+  select.dispatchEvent(new (doc.defaultView as unknown as { Event: typeof Event }).Event("change"));
+  assert.match(doc.querySelector(".slice-page-settings-words")!.textContent ?? "", /· 4 walls ·/);
+  const fold = doc.getElementById("slice-page-settings") as unknown as HTMLDetailsElement;
+  fold.open = true;
+  fold.dispatchEvent(new (doc.defaultView as unknown as { Event: typeof Event }).Event("toggle"));
+  assert.equal(kept.get("spindlelabs.slice.settings-open"), "open");
+  const again = panelIn(async () => ({}), objects, { storage: storage as never });
+  assert.equal((again.doc.getElementById("slice-page-settings") as unknown as HTMLDetailsElement).open, true, "a new page opens as left");
+});
+
+test("a changed choice or tick (not Supports, whose hint follows it) clears the last result's words, cost line and hint, so a result never sits beside choices it no longer matches", async () => {
+  const result = { layers: 12, filamentMm: 1000, filamentG: 40, printTimeS: 4800, unprintedVolume: 0 };
+  const { doc, panel } = panelIn(async () => result);
+  const words = () => doc.querySelector(".slice-page-slice-words")!.textContent!;
+  const cost = doc.getElementById("slice-page-cost") as unknown as HTMLElement;
+  const change = (el: HTMLElement) => el.dispatchEvent(new (doc.defaultView as unknown as { Event: typeof Event }).Event("change"));
+  for (const how of ["walls", "grip"]) {
+    await panel.slice();
+    assert.match(words(), /^12 layers, /, "a result to clear");
+    assert.equal(cost.hidden, false);
+    if (how === "walls") {
+      const walls = choiceSelect(doc, "walls");
+      walls.value = "0";
+      change(walls as unknown as HTMLElement);
+    } else {
+      const grip = doc.getElementById("slice-page-grip") as unknown as HTMLInputElement;
+      grip.checked = !grip.checked;
+      change(grip as unknown as HTMLElement);
+    }
+    assert.equal(words(), "", `${how}: the words go`);
+    assert.equal(cost.hidden, true, `${how}: the cost line goes`);
+  }
+});
+
+test("a preset picked last time is put back when the page opens, with its settings shown (it once crashed the page: the preset was applied before the rest of the panel existed)", () => {
+  const kept = new Map<string, string>([
+    ["spindlelabs.slice.presets", JSON.stringify({ version: 1, presets: [{ id: "p1", name: "home P1S", printer: "bambu-p1s", updatedAt: 1, settings: { layerHeight: 0.16, walls: 3, infill: 25, format: "p1s", plate: "smooth", nozzle: "high-flow" } }] })],
+    ["spindlelabs.slice.preset", "p1"],
+  ]);
+  const storage = { getItem: (k: string) => kept.get(k) ?? null, setItem: (k: string, v: string) => void kept.set(k, v), removeItem: (k: string) => void kept.delete(k) } as unknown as Storage;
+  const { doc, panel } = panelIn(async () => ({}), objects, { storage });
+  assert.deepEqual(panel.choices(), { ...PRINT_DEFAULTS, layerHeight: 0.16, walls: 3, infill: 25 });
+  assert.deepEqual(panel.file(), { format: "p1s", plate: "smooth", nozzle: "high-flow" });
+  assert.match(doc.querySelector(".slice-page-settings-words")!.textContent!, /0\.16 mm layers · 3 walls · 25 % infill$/);
+});
+
+test("stop() drops a slice under way: nothing is saved, no words appear, and the panel is ready again (the page calls it when another workspace is shown)", async () => {
+  let release: (v: unknown) => void = () => undefined;
+  const saves: unknown[] = [];
+  const { doc, panel } = panelIn(() => new Promise((resolve) => (release = resolve)), objects, { save: async (r) => (saves.push(r), { status: "saved", name: "x.gcode.3mf" }) });
+  const button = doc.getElementById("slice-page-download") as unknown as HTMLButtonElement;
+  const running = panel.download();
+  await new Promise((r) => setTimeout(r, 20));
+  assert.equal(button.disabled, true, "slicing");
+  panel.stop();
+  release({ layers: 5, filamentMm: 1, filamentG: 1, printTimeS: 60, unprintedVolume: 0, package: new Uint8Array(1) });
+  await running;
+  assert.deepEqual(saves, [], "nothing saved");
+  assert.equal(doc.getElementById("slice-page-status")!.textContent, "", "no words");
+  assert.equal(button.disabled, false, "ready again");
 });

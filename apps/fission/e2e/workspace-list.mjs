@@ -2,7 +2,7 @@
 // everything from that list except design and slice. everything else can
 // still silently exist but shouldnt be on the public app"; and Slice showed
 // greyed as "Coming soon" although slicing works). DESIGN ▾ lists Design and
-// Slice only, neither greyed nor "Coming soon"; Slice opens Slice for
+// Slice only, neither greyed nor marked with a date; Slice opens Slice for
 // printing on the design (with a box: its dialog; on an empty design: the
 // reason why there is nothing to slice, in the file message line). There is
 // no Split, as there is no second workspace to put beside Design. The other
@@ -68,7 +68,7 @@ try {
   ]) {
     const press = (page, sel) => (touch ? page.tap(sel) : page.click(sel));
 
-    await check(`${width} px: DESIGN ▾ lists Design and Slice only, neither greyed nor "Coming soon"; no Split`, async () => {
+    await check(`${width} px: DESIGN ▾ lists Design and Slice only, neither greyed nor marked with a date; no Split`, async () => {
       const page = await fresh(width, touch);
       await page.locator("#start-hint").waitFor();
       assert.deepEqual(await rows(page, touch), [
@@ -82,35 +82,33 @@ try {
       await page.context().close();
     });
 
-    await check(`${width} px: Slice opens Slice for printing on the box, staying in Design`, async () => {
+    await check(`${width} px: Slice shows the Slice page, listing the box as Body 1 on the plate`, async () => {
       const page = await fresh(width, touch);
       if (!touch) await pinProperties(page);
       await startWithBox(page, touch);
       await press(page, "#workspace-menu");
       await press(page, '#workspace-menu-menu [data-workspace="slice"]');
-      await page.waitForSelector("#slice-print-dialog[open]");
-      assert.equal(await page.$eval("body", (b) => b.dataset.activeWorkspace), "design", "Design stays on screen under the dialog");
-      assert.equal(await page.textContent("#workspace-menu"), "DesignLab ▾");
+      await page.waitForFunction(() => document.body.dataset.activeWorkspace === "slice");
+      await page.waitForFunction(() => /^1 body on the plate\./.test(document.querySelector(".slice-page-words")?.textContent ?? ""));
+      assert.equal(await page.locator("#slice-print-dialog[open]").count(), 0, "no dialog: the page is the screen");
+      assert.equal(await page.textContent("#workspace-menu"), "SliceLab ▾");
       await shot(page, `workspace-list-slice-${width}`);
-      await press(page, "#slice-print-close");
-      assert.equal(await page.$eval("#slice-print-dialog", (d) => d.open), false);
       await page.context().close();
     });
 
-    await check(`${width} px: Slice on an empty design says there is nothing to slice, and opens no dialog`, async () => {
+    await check(`${width} px: Slice on an empty design shows the page saying there is nothing to print`, async () => {
       const page = await fresh(width, touch);
       await page.locator("#start-hint").waitFor();
       await press(page, "#workspace-menu");
       await press(page, '#workspace-menu-menu [data-workspace="slice"]');
-      await page.waitForFunction(() => document.querySelector("#file-status")?.textContent !== "");
-      assert.match(await page.textContent("#file-status"), /^There is no body to (download|slice)/);
-      assert.equal(await page.$eval("#slice-print-dialog", (d) => d.open), false);
-      assert.equal(await page.$eval("body", (b) => b.dataset.activeWorkspace), "design");
+      await page.waitForFunction(() => document.body.dataset.activeWorkspace === "slice");
+      await page.waitForFunction(() => /^Nothing to print yet: the design has no body shown\./.test(document.querySelector(".slice-page-words")?.textContent ?? ""));
+      assert.equal(await page.locator("#slice-print-dialog[open]").count(), 0);
       await page.context().close();
     });
   }
 
-  await check("Slice from a workspace reached by its link goes back to Design and opens Slice for printing", async () => {
+  await check("Slice from a workspace reached by its link shows the Slice page", async () => {
     const page = await fresh(1280, false);
     await pinProperties(page);
     await startWithBox(page);
@@ -118,8 +116,8 @@ try {
     await page.waitForFunction(() => document.body.dataset.activeWorkspace === "laser");
     await page.click("#workspace-menu");
     await page.click('#workspace-menu-menu [data-workspace="slice"]');
-    await page.waitForSelector("#slice-print-dialog[open]");
-    assert.equal(await page.$eval("body", (b) => b.dataset.activeWorkspace), "design");
+    await page.waitForFunction(() => document.body.dataset.activeWorkspace === "slice");
+    assert.equal(await page.locator(".slice-page").count() > 0, true);
     await page.context().close();
   });
 
@@ -160,21 +158,21 @@ try {
     await page.context().close();
   });
 
-  await check("?all-workspaces (developers) lists all ten as before, with Split; Slice still opens Slice for printing", async () => {
+  await check("?all-workspaces (developers) lists all ten as before, with Split; Slice is the Slice page", async () => {
     const page = await fresh(1280, false, "?all-workspaces#design");
     await page.locator("#start-hint").waitFor();
-    const soon = "Coming soon";
+    const late = "Late 2027", later = "2028";
     assert.deepEqual(await rows(page, false), [
       ["design", "DesignLab", "", false],
-      ["render", "RenderLab", soon, true],
-      ["simulate", "TestLab", soon, true],
-      ["manufacture", "CNCLab", soon, true],
-      ["laser", "LaserLab", soon, true],
+      ["render", "RenderLab", late, true],
+      ["simulate", "TestLab", later, true],
+      ["manufacture", "CNCLab", later, true],
+      ["laser", "LaserLab", late, true],
       ["slice", "SliceLab", "", false],
-      ["circuit", "PCBLab", soon, true],
-      ["vector", "VectorLab", soon, true],
+      ["circuit", "PCBLab", later, true],
+      ["vector", "VectorLab", late, true],
       ["image", "ImageLab", "", false],
-      ["layout", "LayoutLab", soon, true],
+      ["layout", "LayoutLab", later, true],
     ]);
     assert.equal(await page.isVisible("#split-toggle"), true);
     await page.context().close();

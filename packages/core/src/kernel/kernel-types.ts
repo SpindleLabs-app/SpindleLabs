@@ -334,6 +334,57 @@ export interface P1sPrintFile {
   printTimeS: number;
 }
 
+/**
+ * TestLab's stress test (stress_test, TestLab T5): a static test of a kept body where the app shows it. Stiffness
+ * (`youngsModulus`) and `strength` in MPa; `held` the body's faces held still in every direction (a clamp), by its
+ * display mesh's `triangle_faces` numbers; each load on some faces, either a total `force` [x, y, z] in N spread evenly
+ * over their area, or a `pressure` in MPa pushing into the part. `size` is the mesh size in mm (left out: the kernel's
+ * own choice for the body).
+ */
+export interface StressTest {
+  youngsModulus: number;
+  poissonsRatio: number;
+  strength: number;
+  held: number[];
+  loads: StressLoad[];
+  size?: number;
+}
+
+/** One load of a stress test: a total force (N) or a pressure (MPa) on some of the body's faces. */
+export type StressLoad = { faces: number[]; force: [number, number, number] } | { faces: number[]; pressure: number };
+
+/** A stage of a stress test, in the order the kernel runs them. */
+export type StressStage = "meshing" | "solving" | "stresses";
+
+/**
+ * A stress test's answer (stress_test): the body's surface where it is before it bends (flat `points` in world mm,
+ * `triangles` into them, each triangle's face), each point's `displacement` (flat, mm) and `vonMises` stress (MPa),
+ * the largest of each with where, the safety factor (the strength over the largest stress; null when nothing is
+ * stressed), the balance check (`applied` loads and the holds' `reaction`, equal and opposite in a sound answer), and
+ * the mesh's and solver's numbers.
+ */
+export interface StressTestResult {
+  points: number[];
+  triangles: number[];
+  triangleFaces: number[];
+  displacement: number[];
+  vonMises: number[];
+  maxDisplacement: number;
+  maxDisplacementAt: [number, number, number];
+  maxVonMises: number;
+  maxVonMisesAt: [number, number, number];
+  safetyFactor: number | null;
+  applied: [number, number, number];
+  reaction: [number, number, number];
+  size: number;
+  nodes: number;
+  elements: number;
+  worstQuality: number;
+  method: string;
+  iterations: number;
+  relativeResidual: number;
+}
+
 /** A body the kernel keeps between calls: a whole number from 1, never reused. Free it with body_free. */
 export type BodyHandle = number;
 
@@ -363,6 +414,45 @@ export interface BooleanResult {
   bodies: BodyHandle[];
   history: { faces: FaceFrom[]; also?: FaceFrom[][]; edges: EdgeFrom[] }[];
 }
+
+/**
+ * body_shell's answer (step 35h2c): body_boolean's shape. A face or edge
+ * named by the body given is that face or edge of it; one named by body 0
+ * (SHELL_INSIDE, kernel-client.ts) is the inside wall moved in from the given body's
+ * face of that number (turned over), or the inside edge moved in from its
+ * edge. Several bodies when the walls fall apart into pieces.
+ */
+export type ShellResult = BooleanResult;
+
+/**
+ * A chamfer's size as the kernel takes it (step 44a): `{ equal: d }` the same
+ * distance back along both faces, `{ two: [d1, d2] }` d1 along the first face
+ * and d2 along the second, `{ angle: [d, degrees] }` d along the first face,
+ * leaning that many degrees off it. Millimetres and degrees.
+ */
+export type ChamferSize = { equal: number } | { two: [number, number] } | { angle: [number, number] };
+
+/**
+ * body_chamfer's answer: the new kept body and where each of its faces came
+ * from, indexed as its BodyView numbers them: a face of the body given (by
+ * that body's face index), or the chamfer of one of its edges (by that body's
+ * edge index).
+ */
+export interface ChamferResult {
+  body: BodyHandle;
+  faces: ({ from: "face"; face: number } | { from: "edge"; edge: number })[];
+}
+
+/**
+ * A pattern as the kernel's `pattern_motions` takes it (step 61): a row along
+ * `along` (a unit direction), `count` instances `spacing` mm apart, with an
+ * optional second row `across` (a grid); or `count` instances round `axis`
+ * through `pivot`, over `angle` radians or, left out, evenly over a full
+ * turn. Counts include the original.
+ */
+export type PatternSpec =
+  | { linear: { along: [number, number, number]; spacing: number; count: number; across?: { along: [number, number, number]; spacing: number; count: number } } }
+  | { circular: { pivot: [number, number, number]; axis: [number, number, number]; count: number; angle?: number } };
 
 /** What kind of failure a kernel call had. */
 export type KernelErrorKind =
@@ -399,7 +489,11 @@ export type KernelInput =
   | { input: "sketch" }
   | { input: "line"; index: number }
   | { input: "arc"; index: number }
-  | { input: "circle"; index: number };
+  | { input: "circle"; index: number }
+  /** A vertex, edge or face of a body the call was given (`body` 0 the first, a boolean's target; 1 its tool), by kernel index: Chamfer's refusals name the edge they are about. */
+  | { input: "vertex"; body: number; vertex: number }
+  | { input: "edge"; body: number; edge: number }
+  | { input: "face"; body: number; face: number };
 
 /** A failed kernel call in plain data, as it crosses from the worker. */
 export interface KernelFailure {
@@ -467,3 +561,46 @@ export interface Measured {
   centres?: MeasureGap;
   angle?: number;
 }
+
+/** A point in the world, in mm. */
+export type WorldPoint = [number, number, number];
+
+/**
+ * One thing a construction is made from (step 59): a pick on a kept body (a
+ * corner, edge or face by its kernel index, as `MeasurePick` names one, never
+ * the whole body), or a plane, axis or point given as a value (one made
+ * before, or an origin plane or axis). A given plane or axis is only its
+ * point and normal or direction: the kernel refuses any other key.
+ */
+export type ConstructGiven = { pick: MeasurePick } | { plane: { point: WorldPoint; normal: WorldPoint } } | { axis: { point: WorldPoint; direction: WorldPoint } } | { point: WorldPoint };
+
+/**
+ * What to make (step 59, the kernel's `body_construct`): its kind and its
+ * slots, each a `ConstructGiven`. Distances in mm, angles in degrees.
+ */
+export type ConstructMake =
+  | { kind: "offset_plane"; plane: ConstructGiven; distance: number }
+  | { kind: "angle_plane"; plane: ConstructGiven; line: ConstructGiven; angle: number }
+  | { kind: "mid_plane"; first: ConstructGiven; second: ConstructGiven }
+  | { kind: "plane_through_points"; first: ConstructGiven; second: ConstructGiven; third: ConstructGiven }
+  | { kind: "plane_through_line_and_point"; line: ConstructGiven; point: ConstructGiven }
+  | { kind: "axis_through_points"; first: ConstructGiven; second: ConstructGiven }
+  | { kind: "axis_along"; line: ConstructGiven }
+  | { kind: "axis_where_planes_meet"; first: ConstructGiven; second: ConstructGiven }
+  | { kind: "axis_square_to_plane"; plane: ConstructGiven; point: ConstructGiven }
+  | { kind: "point_at"; point: ConstructGiven }
+  | { kind: "point_midway"; edge: ConstructGiven }
+  | { kind: "point_centre"; round: ConstructGiven }
+  | { kind: "point_where_line_crosses"; line: ConstructGiven; plane: ConstructGiven }
+  | { kind: "point_where_planes_meet"; first: ConstructGiven; second: ConstructGiven; third: ConstructGiven };
+
+/**
+ * What `body_construct` made, in the world, each within 10 nm of what it was
+ * made from: a plane's or axis's `point` is the foot of the world's origin
+ * on it (the same however it was made), `near` a point of it beside what it
+ * was made from, where the app draws it; normals and directions are unit.
+ */
+export type ConstructMade =
+  | { kind: "plane"; point: WorldPoint; normal: WorldPoint; near: WorldPoint }
+  | { kind: "axis"; point: WorldPoint; direction: WorldPoint; near: WorldPoint }
+  | { kind: "point"; point: WorldPoint };

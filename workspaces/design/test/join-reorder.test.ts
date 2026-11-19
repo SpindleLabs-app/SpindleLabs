@@ -12,7 +12,9 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { nodeKernel } from "../../../packages/testing/src/node-kernel.ts";
+import { insertCombine } from "../src/combine.ts";
 import { insertPreset, partDocument, type DesignDocument } from "../src/document.ts";
+import { insertDuplicates } from "../src/duplicate.ts";
 import { extrudeSketch } from "../src/extrude.ts";
 import { insertMove, NO_MOVE } from "../src/move.ts";
 import { BodyCache, rebuildTimeline } from "../src/rebuild.ts";
@@ -98,4 +100,52 @@ test("the controls: drags that leave the joined bodies' order alone still move, 
   assert.ok(Object.values(b.statuses).every((x) => x === "built"), JSON.stringify(b.statuses));
   near(b.bodies[`body:${n.box1}`].volume, 24000);
   assert.deepEqual(b.bodies[`body:${n.box1}`].z, [5, 25]);
+});
+
+// SL #760 item 2 (app-wide hunt 2026-11-14, T-3): the same rule under a Combine Join. The joined body keeps the
+// target's id, but once a later Cut splits it, the piece that stays "Body 1" is the one holding the input made first,
+// so swapping the items that made the Combine's bodies quietly makes Body 1 the other piece.
+/**
+ * Box 1 100 × 40 × 10 (x 0..100). Box 2 40 × 40 × 10 moved x +100 by Move 1 (x 100..140). Combine 1 joins Box 2 to
+ * Box 1 (or cuts it, or joins keeping the tool): x 0..140. Box 3 15 × 60 × 30 moved (50, −10, −10) by Move 2, x 50..65
+ * right across. Combine 2 cuts Box 3 from Body 1. Then a Copy of Body 1.
+ */
+function combined(operation: "join" | "cut", keep = false) {
+  let doc: DesignDocument = partDocument("box", 100, 40, 10);
+  const box1 = doc.timeline.features[0].id;
+  const b2 = insertPreset(doc, "box", 40, 40, 10);
+  const move1 = insertMove(b2.doc, [`body:${b2.id}`], { ...NO_MOVE, x: 100 });
+  const c1 = insertCombine(move1.doc, `body:${box1}`, [`body:${b2.id}`], operation, keep);
+  const b3 = insertPreset(c1.doc, "box", 15, 60, 30);
+  doc = insertMove(b3.doc, [`body:${b3.id}`], { ...NO_MOVE, x: 50, y: -10, z: -10 }).doc;
+  doc = insertCombine(doc, `body:${box1}`, [`body:${b3.id}`], "cut").doc;
+  const copy = insertDuplicates(doc, [`body:${box1}`]);
+  return { doc: copy.doc, box1, box2: b2.id, move1: move1.id, combine1: c1.id, copy: copy.ids[0] };
+}
+
+test("hand-worked, #760 item 2: under a Combine Join, Body 1 is the piece with Box 1's end and its Copy holds 20,000; dragging Box 2 to the front is refused in words", async () => {
+  const d = combined("join");
+  const before = await built(d.doc);
+  assert.ok(Object.values(before.statuses).every((s) => s === "built"), JSON.stringify(before.statuses));
+  // The joined bar x 0..140 cut at x 50..65: x 0..50 is 50 × 40 × 10 = 20,000 and x 65..140 is 75 × 40 × 10 = 30,000.
+  // Body 1 is the piece with Box 1's own end (Box 1 was made first), so the Copy of Body 1 is 20,000:
+  // 20,000 + 30,000 + 20,000 = 70,000 in three bodies.
+  near(before.bodies[`body:${d.box1}`].volume, 20000);
+  near(before.bodies[`body:${d.copy}`].volume, 20000);
+  near(Object.values(before.bodies).reduce((sum, b) => sum + b.volume, 0), 70000);
+  // Box 2 first would make its end (x 65..140, 30,000) Body 1, and the Copy 30,000: refused, as under an Extrude Join.
+  assert.deepEqual(reorderItem(d.doc, d.box2, 0), { refused: "join-order", message: "Box 2 can't go before Box 1: Combine 1 joins their bodies, and the joined body is the one made first" });
+  assert.deepEqual(reorderItem(d.doc, d.box1, 2), { refused: "join-order", message: "Box 1 can't go after Box 2: Combine 1 joins their bodies, and the joined body is the one made first" });
+  // Keeping the tool changes nothing about which input was made first.
+  assert.equal((reorderItem(combined("join", true).doc, d.box2, 0) as { refused?: string }).refused, "join-order");
+});
+
+test("the controls, #760 item 2: drags that keep the joined bodies' order still move, and so does the swap under a Combine Cut", async () => {
+  const d = combined("join");
+  assert.deepEqual(reorderItem(d.doc, d.move1, 2), { doc: d.doc });
+  // A Cut keeps the target's body alone (the tool is used up), so which box came first names nothing later.
+  const c = combined("cut");
+  const r = reorderItem(c.doc, c.box2, 0);
+  assert.ok("doc" in r, JSON.stringify(r));
+  assert.deepEqual(r.doc.timeline.features.map((f) => f.id).slice(0, 2), [c.box2, c.box1]);
 });

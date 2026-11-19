@@ -24,7 +24,7 @@
 .combine-panel #combine-why { margin: 0 0 6px; overflow-wrap: anywhere; }
 .combine-panel button:disabled { opacity: 0.45; }
 .combine-panel .combine-panel-field:disabled { opacity: 0.75; }
-@media (max-width: 700px), (pointer: coarse) {
+@media (max-width: 700px), ((pointer: coarse) and (max-width: 1199px)) {
   .combine-panel button, .combine-panel select, .combine-panel .combine-panel-keep { min-height: 44px; }
   .combine-panel .combine-panel-keep input { width: 22px; height: 22px; }
 }

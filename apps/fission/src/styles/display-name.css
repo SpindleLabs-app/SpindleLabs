@@ -8,6 +8,6 @@
 .account .display-name-input:disabled { opacity: 0.6; }
 .account .display-name-save { flex: none; }
 .account .display-name-hint { overflow-wrap: anywhere; }
-@media (pointer: coarse), (max-width: 640px) {
+@media ((pointer: coarse) and (max-width: 1199px)), (max-width: 640px) {
   .account .display-name-input, .account .display-name-save { min-height: 44px; }
 }

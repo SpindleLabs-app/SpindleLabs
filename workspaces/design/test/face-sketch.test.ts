@@ -9,7 +9,7 @@ import assert from "node:assert/strict";
 import { emptyProject, projectFromJson, projectToJson, type BodyView, type Plane } from "@fission/core";
 import { buildingItems, builds, greyedBy, greyedItems, partDocument, readDesignDocument, type DesignDocument } from "../src/document.ts";
 import { drawnFrame, drawnOnFace, faceFeature, frameNow, frameOf, isFacePlane, isFaceSketch, planeWords, squared, turned, type SketchPlacement } from "../src/face-sketch.ts";
-import { addFaceSketch, addSketch, drawCircle, sketchPlane } from "../src/sketch.ts";
+import { addFaceSketch, addSketch, drawCircle, FACE_ITEM_GONE, MISMATCHED_FACE, sketchPlane } from "../src/sketch.ts";
 import { sketchDrawings } from "../src/sketch-tool.ts";
 import { extrudeSketch, isFlipped, setExtrudeFlip } from "../src/extrude.ts";
 import { deleteItem, moveMarker, reorderItem, suppressItem } from "../src/timeline-edits.ts";
@@ -235,11 +235,11 @@ test("addFaceSketch puts a sketch on a solid item's face, depending on it, with 
 test("addFaceSketch refuses a face it can't put a sketch on, each with its reason", () => {
   const box = partDocument("box", 40, 30, 20);
   const top = drawnFrame([0, 0, 1], [20, 15, 20]);
-  assert.throws(() => addFaceSketch(box, { plane: "XY", feature: "feature-1" }, top), /XY is not a face of feature-1/);
-  assert.throws(() => addFaceSketch(box, { plane: "face:feature-1/top", feature: "feature-9" }, top), /is not a face of feature-9/);
-  assert.throws(() => addFaceSketch(box, { plane: "face:feature-9/end", feature: "feature-9" }, top), /there is no solid item feature-9 to sketch on/);
+  assert.throws(() => addFaceSketch(box, { plane: "XY", feature: "feature-1" }, top), { message: MISMATCHED_FACE });
+  assert.throws(() => addFaceSketch(box, { plane: "face:feature-1/top", feature: "feature-9" }, top), { message: MISMATCHED_FACE });
+  assert.throws(() => addFaceSketch(box, { plane: "face:feature-9/end", feature: "feature-9" }, top), { message: FACE_ITEM_GONE });
   const { doc, sketch } = onTop();
-  assert.throws(() => addFaceSketch(doc, { plane: `face:${sketch}/end`, feature: sketch }, top), /there is no solid item sketch-2 to sketch on/);
+  assert.throws(() => addFaceSketch(doc, { plane: `face:${sketch}/end`, feature: sketch }, top), { message: `${doc.timeline.features.find((f) => f.id === sketch)!.provenance.self.label} has no faces of its own to sketch on: pick a face of a body, or a plane.` });
   assert.throws(() => addFaceSketch(moveMarker(box, "start"), { plane: "face:feature-1/top", feature: "feature-1" }, top), /Box 1 comes after the rollback marker/);
   assert.throws(() => addFaceSketch(box, { plane: "face:feature-1/top", feature: "feature-1" }, { plane: plane([0, 0, 0], [0, 0, 1], [0, 0, 1]), side: 1 }), /needs a frame and a side/);
   assert.throws(() => addFaceSketch(box, { plane: "face:feature-1/top", feature: "feature-1" }, { plane: top.plane, side: 0 as 1 }), /needs a frame and a side/);
@@ -347,7 +347,7 @@ test("a file's sketch on a face is checked when it is opened: each way it can be
     ["a plane no one knows", (d) => {
       d.timeline.features[1].intent.parameters.plane = "XW";
       delete d.sketches[0].face;
-    }, /is on XW, not a plane this SpindleLabs knows \(XY, XZ, YZ or a face\)/],
+    }, /is on XW, not a plane this SpindleLabs knows \(XY, XZ, YZ, a face or a construction plane\)/],
     ["flip false", (d) => (d.timeline.features[2].intent.parameters.flip = false), /feature-5: flip must be true or left out, not false/],
     ["flip as text", (d) => (d.timeline.features[2].intent.parameters.flip = "true"), /flip must be true or left out, not true/],
     ["a kept placement that is text", (d) => (d.kept = { "feature-5": { points: [], curves: [], placement: "XZ" } }), /kept shape's placement is not an object/],

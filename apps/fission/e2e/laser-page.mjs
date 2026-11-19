@@ -423,7 +423,7 @@ try {
     await words(page, "2 parts on the bed. Sketch 1 and Sketch 2 overlap.");
     // At X = 43 its left side lies on Sketch 1's right side: a shared line and no shared area.
     await typeX("43");
-    await words(page, "2 parts on the bed. Sketch 1 and Sketch 2 touch: their cuts would share a line.");
+    await words(page, "2 parts on the bed. Sketch 1 and Sketch 2 touch: their cuts would meet.");
     assert.deepEqual(await page.$$eval(".laser-flat path.laser-flat-part", (ps) => ps.map((p) => p.classList.contains("laser-flat-part-warn"))), [false, false]);
     // Half a mm clear: nothing to say.
     await typeX("43.5");
@@ -483,14 +483,14 @@ try {
     await context.close();
   });
 
-  await check("in the second pane, where Laser is still shown as coming soon, no bed is drawn over the words", async () => {
+  await check("in the second pane, where Laser is still shown as not built yet, no bed is drawn over the words", async () => {
     const { context, page } = await newPage("?laser&all-workspaces");
     await page.locator("#start-hint").waitFor();
     await page.click("#split-toggle");
     await page.waitForSelector("#split-choice");
     await page.selectOption("#split-choice", "laser");
     await until(page, () => document.body.dataset.split === "laser", null, "Laser in the second pane");
-    await until(page, () => /Coming soon/.test(document.querySelector("#split-viewport .split-soon")?.textContent ?? ""), null, "the pane saying Coming soon");
+    await until(page, () => /Expected late 2027/.test(document.querySelector("#split-viewport .split-soon")?.textContent ?? ""), null, "the pane saying Expected late 2027");
     assert.equal(await page.evaluate(() => document.querySelector("#split-viewport").dataset.drawing), "off");
     assert.equal(await boxOf(page, "#split-viewport .laser-flat"), null, "no flat view over the words");
     // The words are what a press in the pane's middle lands on.

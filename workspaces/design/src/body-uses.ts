@@ -15,12 +15,14 @@
 //   change is (extrude.ts `setExtrudeOperation`).
 
 import type { Feature } from "@fission/core";
-import { bodyItem, combineBodies, extrudeOperation, isCombineItem, isDuplicateItem, isMoveItem, isPiece, type DesignDocument } from "./document.ts";
+import { bodyItem, chamferOf, combineBodies, extrudeOperation, isChamferItem, isCombineItem, isDuplicateItem, isMoveItem, isPatternItem, isPiece, isShellItem, shellOf, type DesignDocument } from "./document.ts";
 
-/** The bodies item `f` works on, by body id: a Move's, a Combine's target and tools, a Duplicate's (Combine bug hunt 11-08), an extrude's operation's. */
+/** The bodies item `f` works on, by body id: a Move's, a Combine's target and tools, a Duplicate's (Combine bug hunt 11-08), a Pattern's (step 61b), an extrude's operation's. */
 export function bodiesUsed(f: Feature): string[] {
   if (isDuplicateItem(f)) return typeof f.intent.parameters.body === "string" ? [f.intent.parameters.body] : [];
-  if (isMoveItem(f)) return Array.isArray(f.intent.parameters.bodies) ? (f.intent.parameters.bodies as string[]) : [];
+  if (isChamferItem(f)) return [chamferOf(f).body];
+  if (isShellItem(f)) return [shellOf(f).body];
+  if (isMoveItem(f) || isPatternItem(f)) return Array.isArray(f.intent.parameters.bodies) ? (f.intent.parameters.bodies as string[]) : [];
   if (isCombineItem(f)) {
     const c = combineBodies(f);
     return [c.target, ...c.tools];
@@ -30,16 +32,18 @@ export function bodiesUsed(f: Feature): string[] {
 
 /**
  * The bodies item `f` changes for the items after it: a Move's (placed),
- * a Combine's target (changed) and tools unless kept (used up), an
- * operation extrude's bodies picked. A Duplicate changes none.
+ * a Chamfer's (cut back), a Shell's (hollowed out), a Combine's target (changed) and tools unless kept (used up), an
+ * operation extrude's bodies picked, a Pattern's with Join (each joined to its copies). A Duplicate and a Pattern without Join
+ * change none.
  */
 export function bodiesChanged(f: Feature): string[] {
-  if (isMoveItem(f)) return bodiesUsed(f);
+  if (isMoveItem(f) || isChamferItem(f) || isShellItem(f)) return bodiesUsed(f);
   if (isCombineItem(f)) {
     const c = combineBodies(f);
     return c.keepTools ? [c.target] : [c.target, ...c.tools];
   }
   if (isDuplicateItem(f)) return [];
+  if (isPatternItem(f)) return f.intent.parameters.join === true ? bodiesUsed(f) : [];
   return extrudeOperation(f)?.bodies ?? [];
 }
 
