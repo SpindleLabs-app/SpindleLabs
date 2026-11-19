@@ -58,7 +58,16 @@ export interface SketchPlacement {
  * when 1. A face sketch's `body` always holds a size from #539 on (1 too),
  * so one without it was drawn before and is carried as it was then.
  */
-export type BodyFrame = Plane & { size?: number };
+export type BodyFrame = Plane & {
+  size?: number;
+  /**
+   * SL #759 item 4 (Design data version 30): the frame of the sketch the body was extruded from, where the rebuild
+   * placed it (`BuiltBody.base`), which a body's own frame starts from (`movedFrame` keeps it through every Move), so
+   * a sketch on such a body follows whatever moves that sketch. Never written to a file (`bareFrame`); only a body
+   * frame worked out in a rebuild holds it, so an old sketch's frame can be told apart from it (`onBase`, `offBase`).
+   */
+  base?: Plane;
+};
 
 /**
  * Why a face sketch says something about its plane: held at its last
@@ -99,6 +108,13 @@ export interface SketchFace {
    * faces), and it is carried by that. None from version 22: `body` is the frame of the input face its name names.
    */
   first?: true;
+  /**
+   * Drawn before Design data version 30 (set on every face sketch with a `body` as it is read, SL #759 item 4): its
+   * `body` left out the frame of the sketch its face's body was extruded from (`BodyFrame.base`), which a body's frame
+   * now starts from. Carried as before (`offBase`) until a rebuild can write its `body` again so that it is carried the
+   * same way by today's rule (`onBase`), which takes the mark off.
+   */
+  unbased?: true;
 }
 
 /** The origin planes in the order a tie is broken (sketch.ts PLANES; the model's ORIGIN_FRAMES). */
@@ -113,6 +129,7 @@ const cross = (a: readonly number[], b: readonly number[]): Vec3 => [a[1] * b[2]
 // `+ 0` turns −0 into 0, so a frame written to a file reads back equal.
 const scale = (a: readonly number[], k: number): Vec3 => [a[0] * k + 0, a[1] * k + 0, a[2] * k + 0];
 const add = (a: readonly number[], b: readonly number[]): Vec3 => [a[0] + b[0], a[1] + b[1], a[2] + b[2]];
+const sub = (a: readonly number[], b: readonly number[]): Vec3 => [a[0] - b[0], a[1] - b[1], a[2] - b[2]];
 const unit = (a: readonly number[]): Vec3 => scale(a, 1 / Math.sqrt(dot(a, a)));
 const sign = (x: number): 1 | -1 => (x < 0 ? -1 : 1);
 
@@ -239,8 +256,56 @@ function spun(v: readonly number[], k: readonly number[], angle: number): Vec3 {
  * or a spec that is not moved), so a sketch on a body never moved keeps no
  * `body` and is placed exactly as before 35e2h.
  */
-export function bodyFrame(spec: BodySpec): BodyFrame | null {
-  return movedFrame(null, "moved" in spec ? spec.moved.moves : []);
+export function bodyFrame(spec: BodySpec, base?: Plane): BodyFrame | null {
+  return movedFrame(base === undefined ? null : { ...base, base }, "moved" in spec ? spec.moved.moves : []);
+}
+
+/** A body frame as a sketch records it (`SketchFace.body`): without the rebuild's `base`. */
+export function bareFrame(f: BodyFrame): BodyFrame {
+  if (f.base === undefined) return f;
+  const { base: _, ...bare } = f;
+  return bare;
+}
+
+/**
+ * A frame's map of points as a body's (`carried` without the sketch's anchor): a point with coordinates u along it
+ * goes to s R u + o, s its size, R its axes x, y = normal × x and normal, o its origin.
+ */
+const atLocal = (f: BodyFrame, u: readonly number[]): Vec3 => {
+  const s = f.size ?? 1;
+  const y = cross(f.normal, f.xAxis);
+  return add(f.origin, scale(add(add(scale(f.xAxis, u[0]), scale(y, u[1])), scale(f.normal, u[2])), s));
+};
+
+/**
+ * SL #759 item 4: an old sketch's body frame `p` (drawn before version 30, `SketchFace.unbased`) as today's rule would
+ * have recorded it on a face whose body frame starts from `base`: p∘base (its origin p's point at base's origin, its
+ * axes base's turned by p's, its size p's). A face frame is now M∘base where it was M (M the Moves since), so the
+ * motion carrying the sketch, now∘p⁻¹, is the same either way.
+ */
+export function onBase(p: BodyFrame, base: Plane): BodyFrame {
+  const turn = (v: readonly number[]) => sub(atLocal({ ...p, size: 1 }, v), p.origin);
+  const frame = squared({ origin: atLocal(p, base.origin), xAxis: turn(base.xAxis), normal: turn(base.normal) })!;
+  return p.size === undefined ? frame : { ...frame, size: p.size };
+}
+
+/**
+ * The frame `now` would have been before version 30 (`now`∘base⁻¹: the Moves' motion M alone, from the world's), for
+ * a sketch drawn before (`SketchFace.unbased`), carried exactly as it was until its body frame is written again. `now`
+ * itself when it has no base.
+ */
+export function offBase(now: BodyFrame): BodyFrame {
+  const b = now.base;
+  if (b === undefined) return now;
+  const by = cross(b.normal, b.xAxis);
+  // base⁻¹ takes a point u to Bᵀ (u − ob): world axis e_i to (b.x_i, b.y_i, b.n_i), the world's origin to −Bᵀ ob.
+  const back = (v: readonly number[]): Vec3 => [dot(v, b.xAxis), dot(v, by), dot(v, b.normal)];
+  const col = (i: number): Vec3 => [b.xAxis[i], by[i], b.normal[i]];
+  const keep = { ...now, base: undefined };
+  const turn = (v: readonly number[]) => sub(atLocal({ ...keep, size: 1 }, v), now.origin);
+  const o = atLocal(keep, scale(back(b.origin), -1));
+  const frame = squared({ origin: o, xAxis: turn(col(0)), normal: turn(col(2)) })!;
+  return now.size === undefined ? frame : { ...frame, size: now.size };
 }
 
 /**
@@ -282,7 +347,9 @@ export function movedFrame(from: BodyFrame | null, moves: readonly Motion[]): Bo
     n = spun(n, k, m.turn.angle);
   }
   const frame = squared({ origin: o, xAxis: x, normal: n });
-  return frame === null || size === 1 ? frame : { ...frame, size };
+  // SL #759 item 4: the frame it started from stays with it, so a sketch drawn before version 30 can be told how.
+  const based = frame === null || from?.base === undefined ? frame : { ...frame, base: from.base };
+  return based === null || size === 1 ? based : { ...based, size };
 }
 
 /** Whether two frames are the same, part by part. */
@@ -320,6 +387,23 @@ export function carried(from: BodyFrame | undefined, to: BodyFrame | undefined, 
     if (vector) return turn(p);
     const v = add(turn([p[0] - a.origin[0], p[1] - a.origin[1], p[2] - a.origin[2]]), b.origin);
     return shift === null ? v : add(v, shift);
+  };
+}
+
+/**
+ * The map of a body's points from where body frame `from` was to where `to` is (each the world's when not given): the
+ * whole of F(q) = k Q (q − a) + b in `carried`, sizes too (k = s_to / s_from), where `carried` moves a sketch rigidly.
+ * SL #759 item 3: a point of a body a Scale changed (an input face's frame on a merged face, a click) goes so.
+ */
+export function bodyMap(from: BodyFrame | null | undefined, to: BodyFrame | null | undefined): (p: readonly number[]) => Vec3 {
+  const k = (to?.size ?? 1) / (from?.size ?? 1);
+  const move = carried(from ?? undefined, to ?? undefined);
+  const a = from?.origin ?? [0, 0, 0];
+  return (p) => {
+    const rigid: Vec3 = move === null ? [p[0], p[1], p[2]] : move(p, false);
+    if (k === 1) return rigid;
+    const d = sub(p, a);
+    return add(rigid, scale(move === null ? d : move(d, true), k - 1));
   };
 }
 

@@ -264,6 +264,21 @@ test("hold a face and push another by tapping them: each tap one named undo step
   page.unmount();
 });
 
+test("a phone's Properties sheet goes for Add load as for Pick faces, since faces are tapped next (join check 2026-11-19)", async () => {
+  const c = context(1);
+  const page = mountTestLabPage(c.ctx);
+  await page.ready;
+  let conceals = 0;
+  c.ctx.properties.addEventListener("properties-conceal", () => conceals++);
+  c.click("[data-testlab=pick-held]");
+  assert.equal(conceals, 1, "Pick faces to hold");
+  c.click("[data-testlab=pick-held]"); // Done picking: the sheet stays
+  assert.equal(conceals, 1);
+  c.click("[data-testlab=add-load]");
+  assert.equal(conceals, 2, "Add load starts picking its faces, so the sheet goes too");
+  page.unmount();
+});
+
 test("T5c5: the picking hint over the view says what a tap does while picking, and goes when picking ends, on sleep and on unmount", async () => {
   const c = context(1);
   const page = mountTestLabPage(c.ctx);

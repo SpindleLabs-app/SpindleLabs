@@ -1731,9 +1731,10 @@ showUndoRedo();
 // the history (an undo, another project opened). Phones leave it out (@fission/ui styles/project-name.css).
 const nameBox = projectNameBox(document, {
   name: () => ctx.project.name,
-  rename: (name) => {
+  // Keys typed in the box rename at once (SL #764 item 4), folded into one undo step like a size box's.
+  rename: (name, typing) => {
     ctx.project.name = name;
-    projectChanged("Rename project");
+    projectChanged("Rename project", typing ? "project-name" : undefined);
   },
   maxLength: MAX_PROJECT_NAME,
 });

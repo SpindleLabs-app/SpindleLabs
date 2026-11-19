@@ -5,6 +5,7 @@
 // "Bracket"); Escape mid-typing puts the name back; the name is stored, so a reload opens "Bracket". Under 1200 px (too
 // little room once Sign in shows, e2e/account.mjs checks nothing overlaps) and on a phone it is not shown. Run with `npm run e2e`.
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import { launch } from "./browser.mjs";
 import { preview } from "vite";
 
@@ -90,6 +91,33 @@ await check("1280 × 800 with a mouse: the name in the bar's middle, renamed in 
   await page.reload();
   await page.locator("#project-name").waitFor();
   await page.waitForFunction(() => document.getElementById("project-name").value === "Bracket LR", null, { timeout: 10000 }).catch(async () => assert.fail(`a reload opens "Bracket LR" (shows "${await nameValue(page)}")`));
+  await context.close();
+});
+
+// SL #764 item 4 (S-3, app-wide hunt 2026-11-14): a name typed with the caret still in the box (no Enter, no click away)
+// is the project's name at once: Ctrl+S saves the file under it and a reload opens it, as a size typed in a box is kept.
+await check("1280 px: a name typed with no Enter is saved by Ctrl+S and kept by a reload", async () => {
+  const context = await browser.newContext({ viewport: { width: 1280, height: 800 }, acceptDownloads: true });
+  const page = await context.newPage();
+  page.on("pageerror", (e) => errors.push(e.message));
+  await page.goto(url);
+  await page.locator("#start-hint").waitFor();
+  await page.click("#project-name");
+  await page.keyboard.press("ControlOrMeta+A");
+  await page.keyboard.type("Typed then saved");
+  assert.equal(await page.evaluate(() => document.activeElement?.id), "project-name", "the caret is still in the box");
+  const [download] = await Promise.all([page.waitForEvent("download", { timeout: 15000 }), page.keyboard.press("ControlOrMeta+S")]);
+  const file = JSON.parse(readFileSync(await download.path(), "utf8"));
+  assert.equal(file.name, "Typed then saved", "the file holds the name on screen");
+  // The keys made one undo step, whatever was typed.
+  assert.match(await page.getAttribute("#undo", "title"), /Undo Rename project/);
+  await page.click("#project-name");
+  await page.keyboard.press("End");
+  await page.keyboard.type(" v2");
+  await page.waitForFunction(() => document.getElementById("save-status")?.dataset.state === "saved", null, { timeout: 20000 }).catch(() => assert.fail("the typed name is stored"));
+  await page.reload();
+  await page.locator("#project-name").waitFor();
+  await page.waitForFunction(() => document.getElementById("project-name").value === "Typed then saved v2", null, { timeout: 10000 }).catch(async () => assert.fail(`a reload opens "Typed then saved v2" (shows "${await nameValue(page)}")`));
   await context.close();
 });
 
