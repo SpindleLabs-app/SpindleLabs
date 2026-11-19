@@ -51,6 +51,32 @@ export function faceColourArray(mesh: Pick<DisplayMesh, "positions" | "indices" 
   return out;
 }
 
+/**
+ * How far a selected face moves towards white over a colour map (TestLab's results: a face shown from the card): the
+ * map's colours run blue to red, so the selection's blue would vanish on a blue face; a pale patch shows on any of them.
+ */
+export const MAP_SELECTED_MIX = 0.6;
+
+/**
+ * Each vertex's colour over a colour map (`map`, linear RGB per vertex) into `out`: the map's, with the vertices of the
+ * selected faces (or every face with the body selected) MAP_SELECTED_MIX of the way to white, mixed in linear RGB.
+ */
+export function mapColourArray(mesh: Pick<DisplayMesh, "indices" | "triangle_faces">, map: Float32Array, highlight: ViewportHighlight, out: Float32Array): Float32Array {
+  out.set(map);
+  const selected = new Set(highlight.faces);
+  if (!highlight.body && selected.size === 0) return out;
+  const lit = new Set<number>();
+  mesh.triangle_faces.forEach((f, t) => {
+    if (highlight.body || selected.has(f)) for (let k = 0; k < 3; k++) lit.add(mesh.indices[3 * t + k]);
+  });
+  for (const v of lit)
+    for (let k = 0; k < 3; k++) {
+      const c = map[3 * v + k];
+      out[3 * v + k] = c + (1 - c) * MAP_SELECTED_MIX;
+    }
+  return out;
+}
+
 /** Each edge-line segment's colour, start and end (six numbers a segment), into `out` (edge_lines.length long). */
 export function edgeColourArray(edgeLineEdges: readonly number[], highlight: ViewportHighlight, hoverEdge: number | null, out: Float32Array): Float32Array {
   const linear = new Map<Rgb, [number, number, number]>();

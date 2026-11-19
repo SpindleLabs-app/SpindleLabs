@@ -19,7 +19,7 @@ import {
   type ViewportPick,
   type WorkspaceContext,
 } from "@fission/core";
-import { pickHint } from "../src/page.ts";
+import { FACE_FLASH_MS, pickHint } from "../src/page.ts";
 import { HELD_OVERLAY, loadOverlay, mountTestLabPage, pickedFace, RESULT_OVERLAY, STOPPED, readTestLab, studyNode, studyOverlays, studyLost, type StudyNow } from "../src/index.ts";
 
 const { Window } = await import("happy-dom");
@@ -80,8 +80,12 @@ function context(bodies = 2) {
   const overlays = new Map<string, AnalysisOverlay>();
   const shown: DisplayMesh[] = [];
   const coloured: (readonly number[] | null)[] = [];
+  const looked: number[] = [];
+  const selections: string[] = [];
   const viewport = {
     element: el(),
+    lookAtFace: (face: number) => (looked.push(face), { centre: [0, 0, 0], radius: 1 }),
+    showSelection: (h: { faces: readonly number[] }) => void selections.push(`faces ${h.faces.join(",")}`),
     onPick: null as ((p: ViewportPick) => void) | null,
     showBody: (m: DisplayMesh) => void shown.push(m),
     showColourMap: (colours: readonly number[] | null) => void coloured.push(colours),
@@ -165,7 +169,7 @@ function context(bodies = 2) {
     viewport.onPick!({ face, shift: false });
     await settle();
   };
-  return { ctx, viewport, overlays, shown, coloured, steps, graph, status, click, settle, tap, kernel, lending, data: () => readTestLab(project.workspaces.simulate) };
+  return { ctx, viewport, looked, selections, overlays, shown, coloured, steps, graph, status, click, settle, tap, kernel, lending, data: () => readTestLab(project.workspaces.simulate) };
 }
 
 test("a design with one body tests it without being asked, framed in the view", async () => {
@@ -574,5 +578,54 @@ test("Run: a set-up changed while the test works shows nothing from it", async (
   for (let i = 0; i < 4; i++) await c.settle();
   assert.match(c.status(), /The set-up changed while it ran/);
   assert.equal(last(c, ".testlab-results"), null);
+  page.unmount();
+});
+
+test("the card's face names: a tap turns the view to that face and lights it briefly; a face an edit took away says why (Ben, 19 Nov)", async (t) => {
+  const c = context(1);
+  design.names["body:feature-1"] = ["top", "bottom", "front", null];
+  const page = await setUp(c, "pla"); // held: face 1 (Bottom face); Load 1 on face 0 (Top face)
+  c.click("[data-testlab=run]");
+  for (let i = 0; i < 4; i++) await c.settle();
+  const faces = () => [...last<HTMLElement>(c, ".testlab-results-card")!.querySelectorAll<HTMLButtonElement>("button[data-testlab-face]")];
+  assert.deepEqual(faces().map((b) => b.textContent), ["Top face", "Bottom face"]);
+  const conceals: number[] = [];
+  c.ctx.properties.addEventListener("properties-conceal", () => void conceals.push(1));
+  t.mock.timers.enable({ apis: ["setTimeout"] });
+  faces()[1].click();
+  // Bottom face is face 1 of the body: the view turns to face 1 and lights it; a phone's sheet goes away so it can be seen.
+  assert.deepEqual(c.looked, [1]);
+  assert.equal(c.selections.at(-1), "faces 1");
+  assert.equal(conceals.length, 1);
+  // The light goes after FACE_FLASH_MS: still lit at 0.9 of it, gone at 1.1.
+  t.mock.timers.tick(0.9 * FACE_FLASH_MS);
+  assert.equal(c.selections.at(-1), "faces 1");
+  t.mock.timers.tick(0.2 * FACE_FLASH_MS);
+  assert.equal(c.selections.at(-1), "faces ");
+  // A second tap while lit starts the light again, never cut short by the first's timer.
+  faces()[0].click();
+  t.mock.timers.tick(0.6 * FACE_FLASH_MS);
+  faces()[0].click();
+  t.mock.timers.tick(0.6 * FACE_FLASH_MS);
+  assert.equal(c.selections.at(-1), "faces 0");
+  assert.deepEqual(c.looked, [1, 0, 0]);
+  // Leaving TestLab while lit puts the light out at once, and no timer later clears another workspace's selection.
+  page.sleep!();
+  assert.equal(c.selections.at(-1), "faces ");
+  const after = c.selections.length;
+  t.mock.timers.tick(2 * FACE_FLASH_MS);
+  assert.equal(c.selections.length, after);
+  t.mock.timers.reset();
+  page.wake!();
+  for (let i = 0; i < 4; i++) await c.settle();
+  // An edit takes Top face away: the out-of-date card keeps its name, marked, and a tap says why, the camera untouched.
+  design.names["body:feature-1"] = ["side", "bottom", "front", null];
+  c.graph.changed("feature-1");
+  for (let i = 0; i < 4; i++) await c.settle();
+  const top = faces()[0];
+  assert.equal(top.getAttribute("aria-disabled"), "true");
+  top.click();
+  assert.deepEqual(c.looked, [1, 0, 0]);
+  assert.match(last(c, ".testlab-results-copied")!.textContent!, /^Top face isn't on the part after the last edit: the last edit took it off the body\.$/);
   page.unmount();
 });

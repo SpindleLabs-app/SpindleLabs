@@ -39,7 +39,7 @@ function answer(safetyFactor: number | null, maxVonMises: number, maxDisplacemen
 }
 
 /** Ben's run (19 Nov): Body 1 in PLA, 9,800 N down on its top, held by a face on the same side: SF 0.182, 192 MPa, 8.03 mm. */
-const bens: RunSetUp = { body: "Body 1", held: ["Top face 2"], loads: [load({})] };
+const bens: RunSetUp = { body: "Body 1", held: [face("Top face 2")], loads: [load({})] };
 
 test("Ben's run: 'Would break', where it is pushed and held, the material, and where it would start to break, with no numbers past breaking", () => {
   const r = resultOf(answer(0.182, 192, 8.03), pla, bens);
@@ -73,20 +73,20 @@ test("Ben's run: 'Would break', where it is pushed and held, the material, and w
 
 test("the limit by hand in each unit, for metals 'bend for good', and with more than one load as a multiple of them", () => {
   // Steel (yield) 5 kg hanging, SF 23.4: 5 × 23.4 = 117 kg.
-  const kg = resultOf(answer(23.4, 10, 0.004), steel, { body: "Bracket", held: ["Back face"], loads: [load({ amount: 5, unit: "kg" })] });
+  const kg = resultOf(answer(23.4, 10, 0.004), steel, { body: "Bracket", held: [face("Back face")], loads: [load({ amount: 5, unit: "kg" })] });
   assert.equal(verdictWords(kg), "Holds");
   assert.equal(limitWords(kg), "It could take about 117 kg before it starts to bend for good.");
   // 5 kg hanging is 5 × 9.80665 = 49.03 N, said to three figures.
   assert.equal(pushedWords(kg.setUp.loads[0]), "5 kg hanging (49.0 N) down on Top face");
   // A pressure of 20 kPa square into two faces, SF 0.5: 20 × 0.5 = 10 kPa.
-  const kpa = resultOf(answer(0.5, 70, 1), pla, { body: "Lid", held: ["A", "B", "C"], loads: [load({ amount: 20, unit: "kPa", direction: "into", faces: [face("Top face"), face("Side face")] })] });
+  const kpa = resultOf(answer(0.5, 70, 1), pla, { body: "Lid", held: [face("A"), face("B"), face("C")], loads: [load({ amount: 20, unit: "kPa", direction: "into", faces: [face("Top face"), face("Side face")] })] });
   assert.equal(limitWords(kpa), "It would start to break at about 10 kPa.");
   assert.equal(pushedWords(kpa.setUp.loads[0]), "20 kPa pressing square into Top face and Side face");
   assert.equal(cardLines(kpa)[3].words, "A, B and C");
   // A force square into a face: no direction word of its own.
   assert.equal(pushedWords(load({ direction: "into" })), "9,800 N square into Top face");
   // Two loads, SF 1.5: the loads could be 1.5 times what they are.
-  const two = resultOf(answer(1.5, 23.3, 0.3), pla, { body: "Body 1", held: ["Back face"], loads: [load({}), load({ id: "load-2", amount: 3, direction: "+x" })] });
+  const two = resultOf(answer(1.5, 23.3, 0.3), pla, { body: "Body 1", held: [face("Back face")], loads: [load({}), load({ id: "load-2", amount: 3, direction: "+x" })] });
   assert.equal(verdictWords(two), "Holds, just");
   assert.equal(limitWords(two), "It could take about 1.5 times these loads before it starts to break.");
   assert.deepEqual(cardLines(two).filter((l) => l.label === "Pushed").map((l) => l.words), ["9,800 N down on Top face", "3 N along +X on Top face"]);
@@ -148,4 +148,42 @@ test("the view's dots: one legend line each, in its dot's colour, naming the col
   // The violet dot at (100, 0, 0) drawn moved by the bend times the drawn scale along x: 100 + 8.03 · scale.
   assert.deepEqual("point" in bend.places![0] && bend.places![0].point, [100 + 8.03 * r.scale, 0, 0]);
   assert.equal(stress.marks.length + bend.marks.length, 0, "no faces painted: the colour map is the paint");
+});
+
+test("each face the card names is a button: a tap shows that face in the view; one not found now says why instead", () => {
+  // Two loads and two held faces: every face name on the card (3 pushed, 2 held) is its own button, in the card's order.
+  const top = face("Top face");
+  const side = face("Side of line-20 face");
+  const end = face("End face");
+  const back = face("Back face");
+  const setUp: RunSetUp = { body: "Body 1", held: [end, back], loads: [load({ faces: [top, side] }), load({ id: "load-2", amount: 3, direction: "+x", faces: [top] })] };
+  const r = resultOf(answer(1.5, 23.3, 0.3), pla, setUp);
+  const doc = new Window().document as unknown as Document;
+  const shown: string[] = [];
+  const box = resultSection(doc, r, "stress", false, () => {}, {
+    whyNot: (f) => (f.ref.id === back.ref.id ? "Back face isn't on the part after the last edit." : null),
+    show: (f) => void shown.push(f.label),
+  });
+  const buttons = [...box.querySelectorAll<HTMLButtonElement>(".testlab-results-card button[data-testlab-face]")];
+  assert.deepEqual(buttons.map((b) => b.textContent), ["Top face", "Side of line-20 face", "Top face", "End face", "Back face"]);
+  // Each is a real button, named for what it does with its own words in the name (so speech and the eye agree).
+  for (const b of buttons) {
+    assert.equal(b.type, "button");
+    assert.equal(b.getAttribute("aria-label"), `Show ${b.textContent} in the view`);
+  }
+  // The lines still read as before around the buttons.
+  const dd = [...box.querySelectorAll(".testlab-results-setup dd")].map((d) => d.textContent);
+  assert.deepEqual(dd, ["Body 1", "PLA, printed", "9,800 N down on Top face and Side of line-20 face", "3 N along +X on Top face", "End face and Back face"]);
+  buttons[1].click();
+  buttons[3].click();
+  assert.deepEqual(shown, ["Side of line-20 face", "End face"]);
+  // A face not on the part now: marked, and a tap says why where the card says things, never turns the camera to a guess.
+  assert.equal(buttons[4].getAttribute("aria-disabled"), "true");
+  buttons[4].click();
+  assert.deepEqual(shown, ["Side of line-20 face", "End face"]);
+  assert.equal(box.querySelector(".testlab-results-copied")!.textContent, "Back face isn't on the part after the last edit.");
+  // Without a way to show faces (a stand-in view) the names stay plain words.
+  const plain = resultSection(doc, r, "stress", false, () => {});
+  assert.equal(plain.querySelectorAll("button[data-testlab-face]").length, 0);
+  assert.match(plain.querySelector(".testlab-results-setup")!.textContent!, /End face and Back face/);
 });

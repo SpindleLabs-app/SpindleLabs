@@ -20,11 +20,11 @@
 // Styles: src/styles/testlab-page.css, src/styles/testlab-results.css, src/styles/testlab-view-hint.css, src/styles/testlab-join.css.
 
 import type { AnalysisOverlay, FaceReference, LentBody, ListedObject, MountedWorkspace, OverlaySeverity, StressTest, ViewportPick, WorkspaceContext } from "@fission/core";
-import { KernelError, KERNEL_TEST_STOPPED, materialLibrary } from "@fission/core";
+import { KernelError, KERNEL_TEST_STOPPED, materialLibrary, NO_HIGHLIGHT } from "@fission/core";
 import { GEOMETRY_OWNER, studyNow, studyOn, type StudyNow } from "./faces.ts";
 import { joinedNow, joinGroup, joinWords, listWords, withJoined, type JoinGroup } from "./join.ts";
 import { materialWords, sourceLines, testMaterials } from "./materials.ts";
-import { resultColours, resultOf, resultOverlays, resultSection, setUpOf, type ColourBy, type Result } from "./results.ts";
+import { resultColours, resultOf, resultOverlays, resultSection, setUpOf, type ColourBy, type FaceButtons, type Result } from "./results.ts";
 import { answerProblem, STAGE_WORDS, stressTestOf } from "./run.ts";
 import { fileFaces, keptProject, type RunRecord } from "./test-file.ts";
 import {
@@ -71,6 +71,22 @@ export const loadOverlay = (loadId: string) => `testlab-${loadId}`;
 
 /** The graph node a study's result is. */
 export const studyNode = (studyId: string) => `simulate.${studyId}`;
+
+/** How long a face shown from the results card stays lit, in ms. */
+export const FACE_FLASH_MS = 2000;
+
+/**
+ * Why a face the results card names can't be shown in the view now, in words, or null when it can: one an edit took away
+ * or gave its name to more than one face, or the part not shown. Pure.
+ */
+export function faceWhyNot(now: StudyNow | null, face: HeldFace): string | null {
+  if (now === null) return `${face.label} can't be shown: the part isn't shown now.`;
+  const at = now.found.get(face.ref.id);
+  if (at === undefined) return `${face.label} isn't in the set-up now: run again to show it.`;
+  if (at.status === "shared") return `${face.label} matches ${at.count} faces after the last edit, so it isn't shown on any of them.`;
+  if (at.status !== "found") return `${face.label} isn't on the part after the last edit: ${at.why}.`;
+  return null;
+}
 
 /** What a tap on a face does now: nothing, hold it, or push it with one load. */
 export type Picking = null | { kind: "held"; fixture: string } | { kind: "load"; load: string };
@@ -126,6 +142,14 @@ export function mountTestLabPage(ctx: WorkspaceContext): MountedWorkspace {
   /** The last Run's result for the study as set up now, in memory only; null when there is none. */
   let result: Result | null = null;
   let colourBy: ColourBy = "stress";
+  /** The light on a face shown from the results card: its timer, until it goes out. */
+  let flash: ReturnType<typeof setTimeout> | null = null;
+  const flashOff = () => {
+    if (flash === null) return;
+    clearTimeout(flash);
+    flash = null;
+    ctx.viewport.showSelection(NO_HIGHLIGHT);
+  };
   /** The bodies the study tests now (join.ts), from the last look-up; its body alone when it joins nothing. */
   let group: JoinGroup = { bodies: [], missing: [] };
   /** The body each face of the view is on (by place in `group`), when bodies are joined. */
@@ -224,6 +248,27 @@ export function mountTestLabPage(ctx: WorkspaceContext): MountedWorkspace {
   const conceal = () => {
     const PageEvent = (doc.defaultView as (Window & typeof globalThis) | null)?.Event ?? Event;
     panel.dispatchEvent(new PageEvent("properties-conceal", { bubbles: true }));
+  };
+
+  /**
+   * The results card's face names (Ben, 19 Nov): a tap turns the view square onto that face, framed round it (the shared
+   * viewport's lookAtFace, gliding there), and lights it for FACE_FLASH_MS; a phone's Properties sheet goes away so the
+   * face can be seen. A face the design no longer has says why instead (faceWhyNot).
+   */
+  const faceButtons: FaceButtons = {
+    whyNot: (f) => faceWhyNot(now, f),
+    show: (f) => {
+      const at = now?.found.get(f.ref.id);
+      if (!awake || at?.status !== "found") return;
+      conceal();
+      if (flash !== null) clearTimeout(flash);
+      ctx.viewport.showSelection({ body: false, faces: [at.face], edges: [] });
+      if (!ctx.viewport.lookAtFace?.(at.face)) ctx.viewport.fitSelection();
+      flash = setTimeout(() => {
+        flash = null;
+        if (awake) ctx.viewport.showSelection(NO_HIGHLIGHT);
+      }, FACE_FLASH_MS);
+    },
   };
 
   const pickButton = (on: boolean, text: string, data: string, set: () => void) => {
@@ -387,7 +432,7 @@ export function mountTestLabPage(ctx: WorkspaceContext): MountedWorkspace {
         }),
       );
     } else panel.append(run);
-    if (result && s !== null) panel.append(resultSection(doc, result, colourBy, stateLine.dataset.stale === "true", (by) => ((colourBy = by), draw())));
+    if (result && s !== null) panel.append(resultSection(doc, result, colourBy, stateLine.dataset.stale === "true", (by) => ((colourBy = by), draw()), faceButtons));
     else panel.append(el("p", "testlab-page-note", "A simulation: real prints are weaker across their layers."));
     drawBodies();
     paint();
@@ -815,6 +860,7 @@ export function mountTestLabPage(ctx: WorkspaceContext): MountedWorkspace {
   return {
     ready,
     sleep() {
+      flashOff(); // before the next workspace draws its own selection
       awake = false;
       picking = null; // picking ends when TestLab is left; it never waits for a tap on another workspace's view
       showViewHint();
@@ -831,6 +877,8 @@ export function mountTestLabPage(ctx: WorkspaceContext): MountedWorkspace {
       void show(false); // the design may have changed while another workspace was on screen
     },
     unmount() {
+      if (awake) flashOff();
+      else if (flash !== null) clearTimeout(flash);
       live = false;
       offGraph();
       if (awake) {

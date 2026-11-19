@@ -15,7 +15,10 @@
 // - Export test file (Ben, 19 Nov): the card's button saves body-1.testlab.json with the run in it, at 1280 and 375 px.
 // - The results card (Ben, 19 Nov): the verdict, Body 1, PLA, the 5 kg on the top and the front held, and where it would
 //   start to break; 1,000 kg says Would break with no stress or bend on the card, at 1280 and 375 px.
-// Screenshots: E2E_SHOTS=<dir> saves testlab-1280.png, testlab-taller-1280.png, testlab-lost-1280.png, testlab-375.png, the picking hint over the view as testlab-hint-1280.png and testlab-hint-375.png, and the cards as testlab-card-holds-1280.png and testlab-card-breaks-{1280,375}.png (with testlab-page-breaks-*.png), and the suggestions as testlab-suggest-{1280,375}.png.
+// - Each face the card names is a button: pressed, the view glides square onto that face (the top from above, the front
+//   from the front, against the box worked by hand), framed round it and lit for a moment; a press on the view stops a
+//   glide; at 375 px a tap puts the sheet away first.
+// Screenshots: E2E_SHOTS=<dir> saves testlab-1280.png, testlab-taller-1280.png, testlab-lost-1280.png, testlab-375.png, the picking hint over the view as testlab-hint-1280.png and testlab-hint-375.png, and the cards as testlab-card-holds-1280.png and testlab-card-breaks-{1280,375}.png (with testlab-page-breaks-*.png), and the suggestions as testlab-suggest-{1280,375}.png, and a face shown from the card as testlab-face-top-1280.png and testlab-face-front-{1280,375}.png.
 import { readFileSync, writeFileSync } from "node:fs";
 import assert from "node:assert/strict";
 import { preview } from "vite";
@@ -188,6 +191,46 @@ async function dotsExplained(page) {
   assert.ok(lines.every((l) => l.inside), JSON.stringify(lines));
 }
 
+/**
+ * A face named on the card is a button (Ben, 19 Nov): pressed, the view glides square onto that face from outside, framed
+ * round it, and lights it (the view's data-highlight) for a moment. Checked against the box worked by hand: `centre` the
+ * face's middle, `toward` its outward side; the bent drawing moves the face a few mm, the camera's target must be within
+ * 4 mm of the middle and its direction within 10° of square on. The camera may still be gliding for about half a second.
+ */
+async function showsFace(page, tap, name, centre, toward, shot) {
+  const button = page.locator(".testlab-results-card button[data-testlab-face]", { hasText: name }).first();
+  assert.equal(await button.getAttribute("aria-label"), `Show ${name} in the view`);
+  const sized = await button.boundingBox();
+  assert.ok(sized.height >= 28, `the ${name} button is ${sized.height} px tall`);
+  if (tap) await button.tap();
+  else await button.click();
+  await until(page, () => /faces \d/.test(document.querySelector("[data-highlight]")?.dataset.highlight ?? ""), null, `${name} lit`);
+  if (tap) await until(page, () => document.querySelector("#properties-toggle")?.getAttribute("aria-expanded") === "false", null, "the Properties sheet put away so the face can be seen");
+  await page.waitForTimeout(700); // the glide is about half a second
+  const cam = await page.evaluate(() => window.fissionTest.camera());
+  const off = Math.hypot(...sub(cam.target, centre));
+  assert.ok(off < 4, `the view looks at ${cam.target.map((x) => x.toFixed(1))}, ${off.toFixed(1)} mm from ${name}'s middle ${centre}`);
+  const back = unit(sub(cam.position, cam.target));
+  const angle = (Math.acos(Math.min(1, dot(back, toward))) * 180) / Math.PI;
+  assert.ok(angle < 10, `the view looks ${angle.toFixed(1)}° off square onto ${name}`);
+  // Framed round the face: the face's middle lands in the middle of the view.
+  const s = await screenOf(page, centre);
+  const box = await page.locator("#viewport canvas").boundingBox();
+  assert.ok(Math.abs(s.x - (box.x + box.width / 2)) < box.width * 0.1 && Math.abs(s.y - (box.y + box.height / 2)) < box.height * 0.1, `${name}'s middle at ${s.x.toFixed(0)},${s.y.toFixed(0)} on screen`);
+  // Lit, the face is a pale patch over the stress colours (a blue tint would vanish on the scale's blue end).
+  const lit = await pixel(page, centre);
+  assert.match(await page.getAttribute("[data-highlight]", "data-highlight"), /faces \d/, "still lit when its pixel was read");
+  if (shots && shot) await page.screenshot({ path: `${shots}/${shot}` });
+  // The light goes out after a moment and the camera stays.
+  await until(page, () => /faces  ?edges/.test(document.querySelector("[data-highlight]")?.dataset.highlight ?? ""), null, `${name} no longer lit`, 4000);
+  const still = await page.evaluate(() => window.fissionTest.camera());
+  assert.deepEqual(still.target, cam.target);
+  const after = await pixel(page, centre);
+  const sum = (c) => c[0] + c[1] + c[2];
+  assert.ok(Math.min(...lit.slice(0, 3)) > Math.min(...after.slice(0, 3)) + 40 && sum(lit) > sum(after) + 60, `${name} lit (${lit}) is not paler than after (${after})`);
+  return cam;
+}
+
 /** The card is wholly on screen in the panel once scrolled to, and nothing in it runs off its side. */
 async function cardInSight(page) {
   await page.locator(".testlab-results-card").scrollIntoViewIfNeeded();
@@ -301,6 +344,31 @@ try {
     if (shots) await page.screenshot({ path: `${shots}/testlab-1280.png` });
     if (shots) await page.locator(".testlab-results-card").screenshot({ path: `${shots}/testlab-card-holds-1280.png` });
     await exported(page, false, 1280);
+    // The card's face names are buttons that show the face: the top from above, then the front from the front.
+    const topCam = await showsFace(page, false, "Top face", [20, 15, 20], [0, 0, 1], "testlab-face-top-1280.png");
+    const before = await showsFace(page, false, "Front face", [20, 0, 10], [0, -1, 0], "testlab-face-front-1280.png");
+    // A press on the view while it glides stops it where it is (the person has taken the camera): Top face again, and a
+    // press on the bare view (left of the card, checked to be the canvas) part way: it ends neither at the front nor the top.
+    const canvas = await page.locator("#viewport canvas").boundingBox();
+    const spot = { x: canvas.x + 300, y: canvas.y + canvas.height - 150 };
+    assert.equal(await page.evaluate(([x, y]) => document.elementFromPoint(x, y)?.tagName, [spot.x, spot.y]), "CANVAS");
+    await page.locator(".testlab-results-card button[data-testlab-face]", { hasText: "Top face" }).first().click();
+    await page.waitForTimeout(150);
+    await page.mouse.move(spot.x, spot.y);
+    await page.mouse.down();
+    await page.mouse.up();
+    await page.waitForTimeout(700);
+    const stopped = await page.evaluate(() => window.fissionTest.camera());
+    const backOf = (c) => unit(sub(c.position, c.target));
+    const degrees = (a, b) => (Math.acos(Math.min(1, dot(backOf(a), backOf(b)))) * 180) / Math.PI;
+    assert.ok(degrees(stopped, topCam) > 5, `a press stopped the glide: it went on to the top view (${degrees(stopped, topCam).toFixed(1)}° from it)`);
+    assert.ok(degrees(stopped, before) > 5, `the glide had started (${degrees(stopped, before).toFixed(1)}° from the front view)`);
+    // Under reduced motion there is no glide: the camera is square onto the face at once.
+    await page.emulateMedia({ reducedMotion: "reduce" });
+    await page.locator(".testlab-results-card button[data-testlab-face]", { hasText: "Front face" }).first().click();
+    const jumped = await page.evaluate(() => window.fissionTest.camera());
+    assert.ok(degrees(jumped, before) < 0.5, `under reduced motion the view is at the front at once (${degrees(jumped, before).toFixed(1)}° off)`);
+    await page.emulateMedia({ reducedMotion: "no-preference" });
     // Colour by Bend: the legend runs 0 mm to the biggest bend.
     await page.click("[data-testlab-by=bend]");
     await until(page, () => /^0 mm.* mm$/.test(document.querySelector(".testlab-results-legend")?.textContent ?? ""), null, "the bend's legend");
@@ -353,6 +421,10 @@ try {
     if (shots) await page.screenshot({ path: `${shots}/testlab-375.png` });
     await exported(page, tap, 375);
     if (shots) await page.locator(".testlab-results-card").screenshot({ path: `${shots}/testlab-card-export-375.png` });
+    // With a finger: the card's Front face button puts the sheet away and turns the view to the front.
+    await openPanel(page, "properties", tap);
+    await page.locator(".testlab-results-card").scrollIntoViewIfNeeded();
+    await showsFace(page, tap, "Front face", [20, 0, 10], [0, -1, 0], "testlab-face-front-375.png");
     await breaks(page, tap, "testlab-card-breaks-375.png");
     await context.close();
   });
