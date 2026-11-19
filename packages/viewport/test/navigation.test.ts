@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { FARTHEST_VIEW, MAX_STEP, NEAREST_VIEW, POLE_EPS, ZOOM_PER_PIXEL, clampZoom, cubeDragAngles, orbitBy, dragAction, dragZoomFactor, focusPixel, focusPoint, panBy, wheelFactor, zoomAt, type CameraPose, type Lens, type Vec3 } from "../src/navigation.ts";
+import { FARTHEST_VIEW, MAX_STEP, NEAREST_VIEW, POLE_EPS, ZOOM_PER_PIXEL, clampZoom, clipRange, cubeDragAngles, orbitBy, dragAction, dragZoomFactor, focusPixel, focusPoint, panBy, wheelFactor, zoomAt, type CameraPose, type Lens, type Vec3 } from "../src/navigation.ts";
 
 const near = (a: readonly number[], b: readonly number[], eps = 1e-9, what = "") =>
   a.forEach((x, i) => assert.ok(Math.abs(x - b[i]) <= eps, `${what} [${a}] vs [${b}]`));
@@ -61,6 +61,57 @@ test("hand-worked: zooming at the centre of the screen moves straight in, the ta
   const z = zoomAt(down, [0, 0], wide, 0.5);
   near(z.position, [0, 0, 5]);
   near(z.target, [0, 0, 0]);
+});
+
+test("hand-worked: zooming toward a point on the part scales about that point, not the focus plane", () => {
+  // The part's top is 8 high under the screen's centre: the cursor's ray meets it at (0, 0, 8), 2 below the camera.
+  // New camera = (0, 0, 8) + ½((0, 0, 10) − (0, 0, 8)) = (0, 0, 9); new target = (0, 0, 8) + ½((0, 0, 0) − (0, 0, 8))
+  // = (0, 0, 4). The camera is 9 − 4 = 5 from its target: half the 10, as the factor asks.
+  const z = zoomAt(down, [0, 0], wide, 0.5, [0, 0, 8]);
+  near(z.position, [0, 0, 9]);
+  near(z.target, [0, 0, 4]);
+  // Ten halvings: the camera is 8 + 2/2¹⁰ high, still above the top (about the focus plane it was at 10/2¹⁰, inside the part).
+  let pose = down;
+  for (let i = 0; i < 10; i++) pose = zoomAt(pose, [0, 0], wide, 0.5, [0, 0, 8]);
+  near(pose.position, [0, 0, 8 + 2 / 1024], 1e-12);
+});
+
+test("Ben's 1000 mm bar: zooming at its near end closes in on that end and never flies through it", () => {
+  // A 1000 × 5 × 5 bar (x 0..1000) seen from the home view's direction, framed on its middle (500, 2.5, 2.5), 1,600 mm away.
+  const dir = [1, -1, 0.7].map((x) => x / Math.hypot(1, -1, 0.7));
+  const target: Vec3 = [500, 2.5, 2.5];
+  let pose: CameraPose = { position: target.map((x, i) => x + 1600 * dir[i]) as Vec3, target, up: [0, 0, 1] };
+  const lens: Lens = { fov: 45, aspect: 1.6 };
+  const end: Vec3 = [1000, 2.5, 5]; // the top of the near end, where the cursor's ray first meets the bar
+  // The cursor sits on that point: its ndc from the pinhole picture (800 px tall).
+  const [px, py] = pixelOf(pose, lens, 800, end);
+  const ndc: [number, number] = [(px / (800 * lens.aspect)) * 2 - 1, 1 - (py / 800) * 2];
+  const gap = (p: CameraPose) => Math.hypot(...p.position.map((x, i) => x - end[i]));
+  let last = gap(pose);
+  for (let notch = 0; notch < 40; notch++) {
+    pose = zoomAt(pose, ndc, lens, 1 / 1.22, end);
+    const g = gap(pose);
+    assert.ok(g > 0 && g < last, `notch ${notch}: ${g} mm from the end after ${last}`);
+    last = g;
+    // The end stays under the cursor, to a thousandth of a pixel.
+    near(pixelOf(pose, lens, 800, end), [px, py], 1e-3, `notch ${notch}`);
+  }
+  // And the camera is still on the near side: further along +x than the end it looks at, as it started.
+  assert.ok(pose.position[0] > end[0], `camera at x = ${pose.position[0]}`);
+  // Control: about the focus plane through the bar's middle the same 40 notches carry the camera past the end.
+  let plane: CameraPose = { position: target.map((x, i) => x + 1600 * dir[i]) as Vec3, target, up: [0, 0, 1] };
+  for (let notch = 0; notch < 40; notch++) plane = zoomAt(plane, ndc, lens, 1 / 1.22);
+  assert.ok(plane.position[0] < end[0], `the old way stays past the end: x = ${plane.position[0]}`);
+});
+
+test("hand-worked: the clipping range keeps the far end of a long part when zoomed in at the other end", () => {
+  // 5 mm from its target at one end of a 1000 mm bar: the bar's sphere has radius about 500 and its centre is about 500
+  // away, so the reach is 1,000 and the far plane 2 × 1,000 = 2,000 (100 × 5 = 500 would cut the bar in half).
+  assert.deepEqual(clipRange(5, 1000), { near: 0.005, far: 2000 });
+  // Far from a small part, 100 times the distance is the further: 1,000 mm away from a 10 mm part, far 100,000.
+  assert.deepEqual(clipRange(1000, 1010), { near: 1, far: 100000 });
+  // Nothing shown (no reach) keeps the old rule.
+  assert.deepEqual(clipRange(10, Number.NaN), { near: 0.01, far: 1000 });
 });
 
 test("hand-worked: a pan moves the camera opposite to the pointer, a tenth of a millimetre a pixel", () => {
