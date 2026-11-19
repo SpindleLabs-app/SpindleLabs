@@ -17,7 +17,7 @@ import {
   UNKNOWN_BODY_WORDS,
   type KernelResponse,
 } from "../src/kernel/kernel-client.ts";
-import { CALIBRATION_TARGET, CALIBRATION_TOOL, calibrate, callUnits, checkUnits, sliceUnits, STRESS_WORST_UNITS, supportUnits, type BodySize } from "../src/kernel/time-limit.ts";
+import { CALIBRATION_TARGET, CALIBRATION_TOOL, calibrate, callUnits, checkUnits, sliceUnits, STRESS_MOST_UNITS, STRESS_WORST_UNITS, supportUnits, type BodySize } from "../src/kernel/time-limit.ts";
 
 /** A worker the test answers by hand; it keeps what it was made with. */
 class FakeWorker {
@@ -509,6 +509,6 @@ test("callUnits: the quick shapes, measures, constructions and stress tests by h
   assert.equal(callUnits("body_construct", [{ kind: "x", a: { pick: { body: 1 } }, b: null, c: undefined, d: { pick: { body: 9 } } }] as never, sizeOf), 44);
   // A stress test on a body whose size isn't known: the worst the default size can give.
   assert.equal(callUnits("stress_test", [9, {}] as never, sizeOf), STRESS_WORST_UNITS);
-  // A mesh size of 0 makes endless cells: no units (the floor), not Infinity.
-  assert.equal(callUnits("stress_test", [2, { size: 0 }] as never, sizeOf), 0);
+  // A mesh size of 0 would make endless cells: timed as the most a stress test can take.
+  assert.equal(callUnits("stress_test", [2, { size: 0 }] as never, sizeOf), STRESS_MOST_UNITS);
 });
