@@ -16,3 +16,13 @@ export function listedWorkspaces<T extends { id: string }>(all: readonly T[], ev
   return everything ? [...all] : all.filter((w) => PUBLIC_WORKSPACES.includes(w.id));
 }
 
+/**
+ * Whether DESIGN ▾ greys a workspace with its expected window: only while it
+ * is still the placeholder in this tab. A workspace whose page is turned on by
+ * its switch (`?testlab`, `?laser`, or `?all`, which turns those on) works when
+ * chosen, so it is listed as working, with no date (Ben, 2026-11-19: TestLab on
+ * ?all said "2028" though it opened).
+ */
+export function greyedInMenu(w: { id: string; status: string }, pageOn: (id: string) => boolean): boolean {
+  return w.status === "placeholder" && !pageOn(w.id);
+}
