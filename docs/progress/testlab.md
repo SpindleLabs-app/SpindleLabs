@@ -13,7 +13,8 @@ TestLab is the Simulate workspace's name for people; its id stays `simulate`. Th
   - [ ] T5c2: curved faces (holes, round parts): needs the kernel's curved mesher; until then they are refused in words.
   - [ ] T5c3: a mesh size choice (Coarse, Normal, Fine) and a check that the answer settles as the mesh gets finer (two sizes compared), said in the result.
   - [ ] T5c4: more holds (a pin that lets it turn, a slider) once the kernel has them.
-  - [ ] T5c5: the picking hint over the view at phone width, and the result's numbers next to the dots in the view.
+  - [x] T5c5a: the picking hint over the view (`#testlab-view-hint`, page.ts `pickHint`, styles `testlab-view-hint.css`), at every width, as Design's Measure has: what a tap does while faces are picked ("Tap the faces Load 2 pushes…"), gone when picking ends, on sleep and on unmount. On a phone the Properties sheet is put away while picking, so the panel's words could not be seen. Tests: `test/page.test.ts` (each picking state, two planted breaks), `apps/fission/e2e/testlab-page.mjs` (inside the window and uncovered at 1280 and 375 px). Branch `claude/project-thread-1fzq7t`, stacked on T5b.
+  - [ ] T5c5b: the result's numbers next to the dots in the view. Needs a new shared viewport call (a world point's place on screen, kept as the camera moves, or labels on overlay places in core's `overlay.ts` drawn by packages/viewport), so it is its own pull request touching core and viewport.
 - [ ] T6: benchmarks nightly.
 - [ ] T7: back into Design (stress paint, "Test strength in TestLab", the zero-exports journey).
 

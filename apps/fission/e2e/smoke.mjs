@@ -1534,6 +1534,7 @@ try {
     try {
       await wide.addInitScript(() => indexedDB.deleteDatabase("fission"));
       await wide.goto(url + "#design");
+      await startWithBox(wide); // a first visit's design is kept from its first change (#820 D-4), so the status says Saved after one
       await wide.waitForFunction(() => document.querySelector("#save-status")?.dataset.state === "saved");
       const rect = (sel) => wide.$eval(sel, (el) => el.getBoundingClientRect().toJSON());
       assert.equal((await rect("#menu-toggle")).width, 0, "no Menu");
@@ -1558,6 +1559,7 @@ try {
     phone.on("pageerror", (e) => noteError(e.message));
     try {
       await phone.goto(url + "#design");
+      await startWithBox(phone); // stored once changed: a first visit's design is kept from its first change (#820 D-4)
       await phone.waitForFunction(() => document.querySelector("#save-status")?.dataset.state === "saved");
       const id = await phone.evaluate(() => document.body.dataset.projectId);
       // Cut the stored project short, as a crash in the middle of a write might.
@@ -1619,6 +1621,7 @@ try {
         };
       });
       await phone.goto(url + "#design");
+      await startWithBox(phone); // the first write: a first visit's design is kept from its first change (#820 D-4)
       await phone.waitForFunction(() => document.querySelector("#save-status")?.dataset.state === "error");
       const words = await phone.textContent("#save-status");
       assert.match(words, /^Not saved: browser storage is full: can't save this project \(use Save to keep your work as a file\)$/);

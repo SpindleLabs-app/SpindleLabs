@@ -1,14 +1,16 @@
-// Browser check of the slicer's printer presets (slice-presets.ts, Ben 2026-11-04): with the 40 × 30 × 20 mm box
-// built, Slice for printing's Preset list starts on No preset; the settings changed and saved as "home P1S" are kept
+// Browser check of the slicer's printer presets (slice-presets.ts, Ben 2026-11-04; moved from the dialog to the Slice page,
+// SP5b2b): with the 40 × 30 × 20 mm box
+// built, the Slice page's Preset list starts on No preset; the settings changed and saved as "home P1S" are kept
 // in this browser's storage; another set saved as "work P2S"; picking each puts its settings back, and the file
 // downloaded is named by them (so the slice used them); Update, Rename and Delete (asked first) change what is kept;
-// and after a reload of the page the dialog opens on the preset picked last, with its settings. The bar shares the
-// heading's line at a desktop width (the dialog grows no taller) and every control in it is on screen at a phone's.
+// and after a reload of the page the panel opens on the preset picked last, with its settings. Every control of the bar is on
+// screen (the page stacks it full width under the heading).
 // At a desktop width with clicks and a phone's with taps. Run with `npm run e2e` (after `npm run build`); SHOTS=dir saves screenshots.
 import assert from "node:assert/strict";
 import { preview } from "vite";
 import { launch } from "./browser.mjs";
-import { chooseFile, startWithBox } from "./start.mjs";
+import { openSlice, pick, picked } from "./slice-page-lib.mjs";
+import { startWithBox } from "./start.mjs";
 
 const server = await preview({ preview: { port: 4190, strictPort: true }, logLevel: "error" });
 const url = "http://localhost:4190/";
@@ -28,6 +30,14 @@ async function check(name, fn) {
 }
 
 const KEY = "spindlelabs.slice.presets";
+// The words the page's menus show.
+const FILE = "Bambu Lab P1S (.gcode.3mf)";
+const SMOOTH = "Smooth PEI or High Temp plate";
+const TEXTURED = "Textured PEI plate";
+const STD = "0.4 mm Standard";
+const DETAILED = "Detailed (0.16 mm layers)";
+const FAST = "Fast (0.28 mm layers)";
+const TREE = "Tree (less plastic)";
 
 for (const [width, tap] of [[1280, false], [375, true]]) {
   const at = `${width} px${tap ? ", taps" : ""}`;
@@ -42,21 +52,24 @@ for (const [width, tap] of [[1280, false], [375, true]]) {
       if (m.type() === "error") errors.push(m.text());
     });
     const press = (sel) => (tap ? page.tap(sel) : page.click(sel));
-    const open = async () => {
-      await chooseFile(page, "file-slice-print", tap);
-      await page.waitForSelector("#slice-print-dialog[open]");
-    };
+    const open = () => openSlice(page, tap);
     const list = () => page.$$eval("#slice-presets-list option", (os) => os.map((o) => o.textContent));
-    const shown = () => page.$$eval("#slice-print-dialog .slice-print-choices select, #slice-print-dialog .slice-print-choices input", (es) => es.map((e) => (e.type === "checkbox" ? e.checked : e.value)));
+    // The choices as the words on screen, then the two ticks.
+    const shown = async () => {
+      const words = [];
+      for (const id of ["format", "plate", "nozzle", "quality", "walls", "infill", "supports"]) words.push(await picked(page, id));
+      for (const id of ["warm-up", "grip"]) words.push(await page.$eval(`#slice-page-${id}`, (c) => c.checked));
+      return words;
+    };
     const kept = () => page.evaluate((k) => JSON.parse(localStorage.getItem(k) ?? "null"), KEY);
-    const status = () => page.textContent("#slice-print-status");
+    const status = () => page.textContent("#slice-page-status");
     const name = async (text) => {
       await page.fill("#slice-presets-name", text);
       await press("#slice-presets-name-ok");
     };
     const download = async () => {
-      const [d] = await Promise.all([page.waitForEvent("download"), press("#slice-print-go")]);
-      await page.waitForFunction(() => document.getElementById("slice-print-status")?.textContent.startsWith("Saved"));
+      const [d] = await Promise.all([page.waitForEvent("download"), press("#slice-page-download")]);
+      await page.waitForFunction(() => document.getElementById("slice-page-status")?.textContent.startsWith("Saved"));
       return d.suggestedFilename();
     };
     try {
@@ -70,17 +83,13 @@ for (const [width, tap] of [[1280, false], [375, true]]) {
         const r = await page.$eval(`#${id}`, (e) => e.getBoundingClientRect().toJSON());
         assert.ok(r.left >= 0 && r.right <= width && r.top >= 0, `${id} on screen: ${JSON.stringify(r)}`);
       }
-      if (!tap) {
-        const [h, l] = await Promise.all(["#slice-print-heading", "#slice-presets-list"].map((s) => page.$eval(s, (e) => e.getBoundingClientRect().toJSON())));
-        assert.ok(Math.abs(h.top + h.height / 2 - (l.top + l.height / 2)) < 4, `the list beside the heading: ${JSON.stringify([h, l])}`);
-      }
       if (shots) await page.screenshot({ path: `${shots}/presets-${width}-none.png` });
 
       // home P1S: 0.16 mm, 3 walls, 25 %, the smooth plate.
-      await page.selectOption("#slice-print-quality", "0.16");
-      await page.selectOption("#slice-print-walls", "3");
-      await page.selectOption("#slice-print-infill", "25");
-      await page.selectOption("#slice-print-plate", "smooth");
+      await pick(page, "quality", "0.16");
+      await pick(page, "walls", "3");
+      await pick(page, "infill", "25");
+      await pick(page, "plate", "Smooth");
       await press("#slice-presets-save-as");
       if (shots) await page.screenshot({ path: `${shots}/presets-${width}-naming.png` });
       await name("home P1S");
@@ -91,10 +100,10 @@ for (const [width, tap] of [[1280, false], [375, true]]) {
       assert.equal(home.printer, "bambu-p1s");
 
       // work P2S: Fast, tree supports, Better grip, the textured plate. A repeated name is refused first.
-      await page.selectOption("#slice-print-quality", "0.28");
-      await page.selectOption("#slice-print-supports", "tree");
-      await page.selectOption("#slice-print-plate", "textured");
-      await press("#slice-print-grip");
+      await pick(page, "quality", "0.28");
+      await pick(page, "supports", "Tree");
+      await pick(page, "plate", "Textured");
+      await press("#slice-page-grip");
       assert.deepEqual(await list(), ["No preset", "home P1S (changed)"]);
       await press("#slice-presets-save-as");
       await name("Home p1s");
@@ -106,14 +115,14 @@ for (const [width, tap] of [[1280, false], [375, true]]) {
 
       // Picking home puts the printer's settings back and leaves the per-print ones (tree supports, Better grip) as they are; Slice and download uses them.
       await page.selectOption("#slice-presets-list", home.id);
-      assert.deepEqual(await shown(), ["p1s", "smooth", "standard", "0.16", "3", "25", "tree", true, true]);
+      assert.deepEqual(await shown(), [FILE, SMOOTH, STD, DETAILED, "3", "25 %", TREE, true, true]);
       assert.equal(await download(), "spindlelabs-0.16mm-3w-25pc-tree-supports-grip-smooth.gcode.3mf");
       await page.selectOption("#slice-presets-list", work.id);
-      assert.deepEqual(await shown(), ["p1s", "textured", "standard", "0.28", "3", "25", "tree", true, true]);
+      assert.deepEqual(await shown(), [FILE, TEXTURED, STD, FAST, "3", "25 %", TREE, true, true]);
       assert.equal(await download(), "spindlelabs-0.28mm-3w-25pc-tree-supports-grip-textured.gcode.3mf");
 
       // Update work with 40 % infill.
-      await page.selectOption("#slice-print-infill", "40");
+      await pick(page, "infill", "40");
       await press("#slice-presets-edit");
       if (shots) await page.screenshot({ path: `${shots}/presets-${width}-edit.png` });
       await press("#slice-presets-update");
@@ -125,13 +134,14 @@ for (const [width, tap] of [[1280, false], [375, true]]) {
       await name("garage P1S");
       assert.deepEqual(await list(), ["No preset", "garage P1S", "home P1S"]);
 
-      // A reload: the dialog opens on garage P1S, with its settings.
+      // A reload: the panel opens on garage P1S, with its settings.
+      await page.evaluate(() => (location.hash = "#design")); // a new design each load starts in Design
       await page.reload();
       await startWithBox(page, tap);
       await open();
       assert.equal(await page.$eval("#slice-presets-list", (s) => s.value), work.id);
       assert.deepEqual(await list(), ["No preset", "garage P1S", "home P1S"]);
-      assert.deepEqual(await shown(), ["p1s", "textured", "standard", "0.28", "3", "40", "off", true, true], "supports are per print: back to off after a reload; the ticks are remembered");
+      assert.deepEqual(await shown(), [FILE, TEXTURED, STD, FAST, "3", "40 %", "Off", true, true], "supports are per print: back to off after a reload; the ticks are remembered");
       if (shots) await page.screenshot({ path: `${shots}/presets-${width}-reloaded.png` });
 
       // Delete it: asked first (Keep keeps it), then gone; the settings stay.
@@ -145,11 +155,11 @@ for (const [width, tap] of [[1280, false], [375, true]]) {
       await press("#slice-presets-delete-yes");
       assert.deepEqual(await list(), ["No preset", "home P1S"]);
       assert.deepEqual((await kept()).presets.map((p) => p.name), ["home P1S"]);
-      assert.deepEqual(await shown(), ["p1s", "textured", "standard", "0.28", "3", "40", "off", true, true], "supports are per print: back to off after a reload; the ticks are remembered");
-      // Escape in the name box leaves naming, not the dialog.
+      assert.deepEqual(await shown(), [FILE, TEXTURED, STD, FAST, "3", "40 %", "Off", true, true], "supports are per print: back to off after a reload; the ticks are remembered");
+      // Escape in the name box leaves naming, not the page.
       await press("#slice-presets-save-as");
       await page.press("#slice-presets-name", "Escape");
-      assert.equal(await page.$eval("#slice-print-dialog", (d) => d.open), true, "the dialog stays open");
+      assert.equal(await page.isVisible("#slice-page-download"), true, "the page stays as it was");
       assert.equal(await page.$eval("#slice-presets-list", (s) => s.checkVisibility()), true, "back on the list");
     } finally {
       await context.close();

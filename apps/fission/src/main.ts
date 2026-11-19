@@ -1837,9 +1837,13 @@ phone.addEventListener("change", () => {
       (props.querySelector("#combine-panel:not([hidden])") !== null && document.querySelector("#combine-hint[hidden]") !== null) ||
       // Chamfer's size boxes and OK once an edge is picked, its hint over the view gone (44a-app2).
       (props.querySelector("#chamfer-panel:not([hidden])") !== null && document.querySelector("#chamfer-hint[hidden]") !== null) ||
+      // Shell's thickness box and OK once a face or body is picked, its hint over the view gone (35h2c-app2).
+      (props.querySelector("#shell-panel:not([hidden])") !== null && document.querySelector("#shell-hint[hidden]") !== null) ||
+      // Pattern's boxes and OK once a body is picked (or an edited Pattern's), its hint over the view gone (61c).
+      (props.querySelector("#pattern-panel:not([hidden])") !== null && document.querySelector("#pattern-hint[hidden]") !== null) ||
       // Construct's rows, lists and number (step 59a2): the sheet opens with it, a tap on the view puts it away to pick.
       props.querySelector("#construct-panel:not([hidden])") !== null;
-    const again = (props.querySelector<HTMLElement>("#combine-panel:not([hidden])") ?? props.querySelector<HTMLElement>("#construct-panel:not([hidden])"))?.dataset.shows ?? "";
+    const again = (props.querySelector<HTMLElement>("#combine-panel:not([hidden])") ?? props.querySelector<HTMLElement>("#pattern-panel:not([hidden])") ?? props.querySelector<HTMLElement>("#construct-panel:not([hidden])"))?.dataset.shows ?? "";
     const restarted = now && again !== "" && again !== shows;
     shows = again;
     if (now === wanted && !(turned && now) && !restarted) return;
@@ -1950,7 +1954,12 @@ async function start() {
       keep(newest, kept === null, newestAt, kept !== null);
       saveStatus(kept === null ? { state: "saved" } : { state: "error", message: "this browser's storage had no room for your latest changes. They're kept until it has, and Save keeps them as a file." });
       opened = newest;
-    } else keep(newId());
+      // A first visit's empty design is kept from its first change, as every new one is: kept at once, a New project
+      // or a file opened left it behind as an empty "Untitled" (a second design tab; app bug hunt 2026-11-18, D-4).
+    } else {
+      keepOnFirstChange();
+      saveStatus({ state: "saved" }); // nothing of the person's to keep yet, as after New project: the bar says Saved as it did
+    }
   } catch (e) {
     guard.finished(); // refused with a message, which is not a freeze
     keepOnFirstChange(); // stored only once changed, so a reload tries the old one again (real-use hunt A1)

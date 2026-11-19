@@ -19,6 +19,7 @@ import {
   type ViewportPick,
   type WorkspaceContext,
 } from "@fission/core";
+import { pickHint } from "../src/page.ts";
 import { HELD_OVERLAY, loadOverlay, mountTestLabPage, pickedFace, RESULT_OVERLAY, STOPPED, readTestLab, studyNode, studyOverlays, studyLost, type StudyNow } from "../src/index.ts";
 
 const { Window } = await import("happy-dom");
@@ -80,6 +81,7 @@ function context(bodies = 2) {
   const shown: DisplayMesh[] = [];
   const coloured: (readonly number[] | null)[] = [];
   const viewport = {
+    element: el(),
     onPick: null as ((p: ViewportPick) => void) | null,
     showBody: (m: DisplayMesh) => void shown.push(m),
     showColourMap: (colours: readonly number[] | null) => void coloured.push(colours),
@@ -178,6 +180,36 @@ test("a design with one body tests it without being asked, framed in the view", 
   page.unmount();
 });
 
+// App bug hunt 11-18 D-6 (SL #820): with nothing held the view showed a "Held here" tag over the body while the panel said
+// "No face yet."; and Run's "Not run: fix what is said below first." had its reasons in the same paragraph, not below it.
+test("nothing held or pushed: no Held here or Load tag in the view; Run's refusal puts its reasons below it (SL #820 D-6)", async () => {
+  const c = context(1);
+  const page = mountTestLabPage(c.ctx);
+  await page.ready;
+  c.click("[data-testlab=add-load]");
+  await c.settle();
+  const s = c.data().studies[0];
+  assert.equal(s.fixtures.flatMap((f) => f.faces).length, 0, "no face held");
+  assert.equal(c.overlays.has(HELD_OVERLAY), false, "no Held here tag with nothing held");
+  assert.equal(c.overlays.has(loadOverlay(s.loads[0].id)), false, "no Load 1 tag before it has a face");
+  // Held once a face is: the tag comes with its face.
+  c.click("[data-testlab=pick-held]");
+  await c.tap(1);
+  assert.deepEqual(c.overlays.get(HELD_OVERLAY)!.marks, [{ target: { face: 1 }, severity: "info" }]);
+  await c.tap(1); // let go again
+  assert.equal(c.overlays.has(HELD_OVERLAY), false, "let go: the tag goes too");
+  c.click("[data-testlab=run]");
+  await c.settle();
+  await c.settle();
+  const box = c.ctx.properties.querySelectorAll(".testlab-page-status");
+  const words = box[box.length - 1];
+  // The first line says only that it was not run; each reason is its own line under it.
+  assert.match(words.querySelector("p")?.textContent ?? "", /^Not run: fix what is said below first\.( Tap faces of the body to pick them; tap a picked face to let it go\.)?$/);
+  const reasons = [...words.querySelectorAll("li")].map((li) => li.textContent);
+  assert.ok(reasons.length > 0 && reasons.some((r) => /Pick at least one face to hold in place/.test(r!)), JSON.stringify(reasons));
+  page.unmount();
+});
+
 /** Chooses what the study's part is made of, as a person would in the Made of box. */
 function chooseMaterial(c: ReturnType<typeof context>, id: string) {
   const select = [...c.ctx.properties.querySelectorAll<HTMLSelectElement>("select[name=material]")].at(-1)!;
@@ -226,6 +258,43 @@ test("hold a face and push another by tapping them: each tap one named undo step
   assert.equal(c.steps.length, before);
   assert.match(c.status(), /Face 4 \(no name of its own\): it has no name of its own after the last edit/);
   page.unmount();
+});
+
+test("T5c5: the picking hint over the view says what a tap does while picking, and goes when picking ends, on sleep and on unmount", async () => {
+  const c = context(1);
+  const page = mountTestLabPage(c.ctx);
+  await page.ready;
+  const hints = () => [...c.viewport.element.querySelectorAll<HTMLElement>("#testlab-view-hint")];
+  const hint = () => hints()[0]!;
+  assert.equal(hints().length, 1, "one hint, in the view");
+  assert.equal(hint().hidden, true, "nothing picked: no hint");
+  chooseMaterial(c, "pla");
+  c.click("[data-testlab=pick-held]");
+  assert.equal(hint().hidden, false);
+  assert.equal(hint().textContent, "Tap the faces to hold. Tap a held face to let it go.");
+  c.click("[data-testlab=add-load]");
+  assert.equal(hint().textContent, "Tap the faces Load 1 pushes. Tap a pushed face to let it go.");
+  c.click("[data-testlab=add-load]");
+  assert.equal(hint().textContent, "Tap the faces Load 2 pushes. Tap a pushed face to let it go.", "the load just added, by its number");
+  c.click("[data-testlab=pick-load]"); // Load 1's Pick faces to push: Load 1 picks now
+  assert.equal(hint().textContent, "Tap the faces Load 1 pushes. Tap a pushed face to let it go.");
+  c.click("[data-testlab=pick-load][aria-pressed=true]"); // Done picking
+  assert.equal(hint().hidden, true, "done picking: no hint");
+  c.click("[data-testlab=pick-held]");
+  assert.equal(hint().hidden, false);
+  page.sleep!();
+  assert.equal(hint().hidden, true, "asleep: another workspace's view has no TestLab hint");
+  page.wake!();
+  page.unmount();
+  assert.equal(hints().length, 0, "unmounted: the hint is gone from the view");
+});
+
+test("pickHint: none when nothing is picked, no study, or a load no longer there", () => {
+  const s = { loads: [{ id: "load-a" }, { id: "load-b" }] } as unknown as Parameters<typeof pickHint>[1];
+  assert.equal(pickHint(null, s), null);
+  assert.equal(pickHint({ kind: "held", fixture: "f" }, null), null);
+  assert.equal(pickHint({ kind: "load", load: "load-b" }, s), "Tap the faces Load 2 pushes. Tap a pushed face to let it go.");
+  assert.equal(pickHint({ kind: "load", load: "gone" }, s), null);
 });
 
 test("a design edit: the faces found again by name, one taken away said in words, a shared one never moved; marked out of date until Run", async () => {
@@ -289,7 +358,8 @@ test("a design edit: the faces found again by name, one taken away said in words
   await c.settle();
   await c.settle();
   assert.match(c.status(), /Held here is on Bottom face, which now matches 2 faces after the last edit, so it was not moved to any of them/);
-  assert.deepEqual(c.overlays.get(HELD_OVERLAY)!.marks, []);
+  // Its one face not found: nothing marked, so no Held here tag either (SL #820 D-6; it showed with no face under it).
+  assert.equal(c.overlays.has(HELD_OVERLAY), false);
   design.shared.clear();
   design.names["body:feature-1"] = ["top", "bottom", "front", null];
   page.unmount();
@@ -402,7 +472,7 @@ test("Run: the result drawn bent and coloured by stress, the numbers and the saf
   assert.equal(last(c, ".testlab-results-factor")!.getAttribute("data-band"), "safe");
   assert.equal(last(c, ".testlab-results-factor-value")!.textContent, "3.5");
   assert.match(box.textContent!, /Biggest bend0\.002 mm/);
-  assert.match(box.textContent!, /Biggest stress10 MPa \(PLA's breaking strength: 35 MPa, across the layers\)/);
+  assert.match(box.textContent!, /Biggest stress10 MPa, the highest found anywhere in the part \(PLA's breaking strength: 35 MPa, across the layers\)/);
   assert.match(box.textContent!, /An estimate, not a promise: real prints are weaker across their layers/);
   // The stand-in's box diagonal is √2 mm and its bend 0.002 mm: a twentieth of √2 is 0.0707 mm, 35.4 times the bend,
   // rounded down to 1, 2 or 5 times a power of ten: 20.

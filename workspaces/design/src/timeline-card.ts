@@ -108,6 +108,10 @@ export function cardFacts(doc: DesignDocument, f: Feature, item: TimelineBarItem
     // "1 edge of Box 1, 2 mm": its summary without the verb the kind says (44a-app3).
     kind = "Chamfer";
     details = [summary.replace(/^Chamfer /, "")];
+  } else if (type === "shell") {
+    // "Box 1, 1 mm walls, 1 face open": its summary without the verb the kind says (35h2c-app2).
+    kind = "Shell";
+    details = [summary.replace(/^Shell /, "")];
   } else if (type === "combine") {
     const op = p.operation;
     kind = op === "cut" ? "Combine: cut" : op === "join" ? "Combine: join" : op === "intersect" ? "Combine: intersect" : "Combine";
@@ -422,6 +426,9 @@ export function ownBodies(scene: Scene, f: Feature): Set<number> {
   } else if (f.intent.type === "chamfer") {
     // A Chamfer's own body is the one it cuts back (44a-app3), made by another item.
     wanted = (b) => b.body === f.intent.parameters.body;
+  } else if (f.intent.type === "shell") {
+    // A Shell's own bodies are the one it hollows (made by another item) and any pieces its walls fell apart into.
+    wanted = (b) => b.body === f.intent.parameters.body || b.feature === f.id;
   } else if (f.intent.type === "sketch" || f.intent.type === "construct") return own; // a construction has no body
   scene.bodies.forEach((b, i) => wanted(b) && own.add(i));
   return own;

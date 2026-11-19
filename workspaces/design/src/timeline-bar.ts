@@ -11,7 +11,7 @@
 
 import type { Feature } from "@fission/core";
 import { CONSTRUCT_KINDS, isConstructKind } from "./construct-data.ts";
-import { buildingItems, duplicatedBody, greyedBy, greyedItems, isChamferItem, isCombineItem, isDuplicateItem, isMoveItem, isPiece, isShellItem, isSketchItem, type DesignDocument } from "./document.ts";
+import { buildingItems, duplicatedBody, greyedBy, greyedItems, isChamferItem, isCombineItem, isDuplicateItem, isMoveItem, isPatternItem, isPiece, isShellItem, isSketchItem, type DesignDocument } from "./document.ts";
 import { canEditFeature } from "./feature-edit.ts";
 import { moveKindOf } from "./move.ts";
 import { mirrorOf } from "./duplicate.ts";
@@ -20,7 +20,7 @@ import { dragItem } from "./timeline-reorder.ts";
 import { hideCard, showCard } from "./timeline-card.ts";
 import type { Scene } from "./scene.ts";
 
-export type TimelineIcon = "sketch" | "extrude" | "box" | "cylinder" | "sphere" | "move" | "combine" | "duplicate" | "scale" | "mirror" | "chamfer" | "plane" | "axis" | "point" | "feature";
+export type TimelineIcon = "sketch" | "extrude" | "box" | "cylinder" | "sphere" | "move" | "combine" | "duplicate" | "scale" | "mirror" | "chamfer" | "pattern" | "shell" | "plane" | "axis" | "point" | "feature";
 
 export interface TimelineBarItem {
   id: string;
@@ -46,7 +46,7 @@ export interface TimelineBarItem {
   warning: string | null;
 }
 
-const ICON_OF: Record<string, TimelineIcon> = { sketch: "sketch", extrude: "extrude", box: "box", cylinder: "cylinder", sphere: "sphere", move: "move", combine: "combine", duplicate: "duplicate", chamfer: "chamfer" };
+const ICON_OF: Record<string, TimelineIcon> = { sketch: "sketch", extrude: "extrude", box: "box", cylinder: "cylinder", sphere: "sphere", move: "move", combine: "combine", duplicate: "duplicate", chamfer: "chamfer", pattern: "pattern", shell: "shell" };
 
 /** A construction's icon by what its kind makes (step 59a2). */
 const CONSTRUCT_ICON = { plane: "plane", axis: "axis", point: "point" } as const;
@@ -249,17 +249,15 @@ function sketchOff(doc: DesignDocument, at: number, editing: string | null): str
 /**
  * Why Edit feature is off for `item`, in words true of what it is; null
  * when it opens an editor (workspace.ts `openEdit`: a solid's sizes, a
- * Move's, Rotate's or Scale's panel, a Combine's, a Chamfer's). A Copy or a Mirror has
+ * Move's, Rotate's or Scale's panel, a Combine's, a Chamfer's, a Pattern's, a Shell's). A Copy or a Mirror has
  * none (hunt 11-11, E2: its entry was on, and said "Copy 1 is a sketch"):
  * it follows the body it was made from, named as the item names it now. A
  * sketch is opened with Edit Sketch instead.
  */
 export function editOff(item: Feature): string | null {
-  if (isMoveItem(item) || isCombineItem(item) || isChamferItem(item) || canEditFeature(item)) return null;
+  if (isMoveItem(item) || isCombineItem(item) || isChamferItem(item) || isPatternItem(item) || isShellItem(item) || canEditFeature(item)) return null;
   const name = itemName(item);
   if (isSketchItem(item)) return `${name} is a sketch: open it with Edit Sketch`;
-  // Step 35h2c-app1: the Shell is saved and rebuilt, but its panel comes with the tool (35h2c-app2).
-  if (isShellItem(item)) return `${name} can't be edited yet: its panel comes with the Shell tool`;
   if (!isDuplicateItem(item)) return `${name} has nothing to edit`;
   const from = item.provenance.from[0]?.label;
   const body = from === undefined ? "a body" : isPiece(duplicatedBody(item)) ? `a piece of ${from}` : from;
@@ -397,6 +395,10 @@ const ICONS: Record<TimelineIcon, string> = {
   mirror: '<path d="M3 19l6-14v14zM21 19l-6-14v14zM12 2v20"/>',
   // A Chamfer (44a-app3): a block with its top right corner cut off flat, the cut's line run on past it.
   chamfer: '<path d="M4 20V4h10l6 6v10z"/><path d="M12 2l10 10"/>',
+  // A Shell (35h2c-app2): a block seen from the front, hollowed out with its top open.
+  shell: '<path d="M4 4v16h16V4M7 4v13h10V4M4 4h3M17 4h3"/>',
+  // A Pattern (step 61c): a square and two copies of it in a row.
+  pattern: '<rect x="2" y="9" width="6" height="6" rx="1"/><rect x="9" y="9" width="6" height="6" rx="1"/><rect x="16" y="9" width="6" height="6" rx="1"/>',
   // Constructions (step 59a2): a plane as a slanted square, an axis a dashed line with an arrowhead, a point a dot with crosshairs.
   plane: '<path d="M3 17 8 7h13l-5 10z"/>',
   axis: '<path d="M4 20 18 6" stroke-dasharray="3 2.5"/><path d="M12 5h7v7"/>',

@@ -423,7 +423,7 @@ try {
     await words(page, "2 parts on the bed. Sketch 1 and Sketch 2 overlap.");
     // At X = 43 its left side lies on Sketch 1's right side: a shared line and no shared area.
     await typeX("43");
-    await words(page, "2 parts on the bed. Sketch 1 and Sketch 2 touch: their cuts would share a line.");
+    await words(page, "2 parts on the bed. Sketch 1 and Sketch 2 touch: their cuts would meet.");
     assert.deepEqual(await page.$$eval(".laser-flat path.laser-flat-part", (ps) => ps.map((p) => p.classList.contains("laser-flat-part-warn"))), [false, false]);
     // Half a mm clear: nothing to say.
     await typeX("43.5");

@@ -90,3 +90,27 @@ test("#506 item 4: deleting one of two boxes a Move lifts asks, saying the Move 
   assert.ok(r.status === "built" && r.missing?.message === "Move 2 moves only Box 2: Box 1 was deleted", JSON.stringify(r));
   await b.cache.close();
 });
+
+test("SL #760 item 3 (#820): deleting the bar whose two pieces a Move lifts says the Move fails, as it does: the Combine that made the other piece fails with it", async () => {
+  // #506's bar and slot cut in two by Combine 1 (liftedTogether's first steps): the near end x 0..30 keeps Box 1's id,
+  // the far end x 40..100 is Combine 1's piece 1. Move 2 lifts both by z 30.
+  let doc = partDocument("box", 100, 20, 10);
+  const bar = `body:${doc.timeline.features[0].id}`;
+  let id: string;
+  ({ doc, id } = insertPreset(doc, "box", 10, 40, 20));
+  doc = insertMove(doc, [`body:${id}`], { ...NO_MOVE, x: 30, y: -10, z: -5 }).doc;
+  const cut = insertCombine(doc, bar, [`body:${id}`], "cut");
+  const piece = `body:${cut.id}/piece:1`;
+  doc = numberPieces(cut.doc, [piece]);
+  const lift = insertMove(doc, [bar, piece], { ...NO_MOVE, z: 30 });
+  // Box 1 deleted: Combine 1 has no target and fails, so its piece is never made, and Move 2 has neither body to lift.
+  const after = deleteItem(lift.doc, "feature-1");
+  const b = await built(after);
+  assert.equal(b.build.results[cut.id].status, "failed", "Combine 1 fails without its target");
+  assert.equal(b.build.results[lift.id].status, "failed", "Move 2 has nothing to move");
+  await b.cache.close();
+  const ask = deleteWords(lift.doc, after, "feature-1");
+  assert.ok(ask !== null, "asked first");
+  assert.ok(ask.words.includes("Move 2 has nothing left to move and fails"), ask.words);
+  assert.ok(!ask.words.includes("moves only"), ask.words);
+});
