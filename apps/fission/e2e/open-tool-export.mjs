@@ -59,7 +59,7 @@ async function refused(page, downloads, route, tap, want, where) {
   assert.equal(await page.isVisible(`#${where}`), true, `#${where} shows`);
   await page.waitForTimeout(700); // a download would have started by now
   assert.equal(downloads.length, before, "nothing saved while the tool is open");
-  assert.equal(await page.evaluate(() => document.getElementById("slice-print-dialog")?.open ?? false), false, "no slice dialog");
+  assert.equal(await page.evaluate(() => document.body.dataset.activeWorkspace), "design", "the Slice page is not shown");
 }
 
 const routes = (page, tap) => ({
@@ -106,11 +106,11 @@ try {
     await until(page, () => document.getElementById("move-panel")?.hidden === true, null, "OK closes the Move");
     await until(page, () => document.getElementById("viewport")?.dataset.rebuilding === "false", null, "the rebuild");
     near(await stlBounds(page, false), [[0, 90], [-20, 30], [0, 20]], "the STL after OK: box x 0..40, cylinder x 50..90");
-    // And Slice for printing opens its dialog again.
+    // And Slice for printing shows the Slice page again.
     await chooseFile(page, "file-slice-print");
-    await until(page, () => document.getElementById("slice-print-dialog")?.open === true, null, "the slice dialog opens with no tool open");
-    await page.click("#slice-print-close");
-    await until(page, () => document.getElementById("slice-print-dialog")?.open === false, null, "the slice dialog closes");
+    await until(page, () => document.body.dataset.activeWorkspace === "slice", null, "the Slice page opens with no tool open");
+    await page.evaluate(() => (location.hash = "#design"));
+    await until(page, () => document.body.dataset.activeWorkspace === "design", null, "back in Design");
 
     // Every other tool that changes the bodies: Rotate, Scale, Extrude, Edit feature, Combine, a sketch.
     const tools = [

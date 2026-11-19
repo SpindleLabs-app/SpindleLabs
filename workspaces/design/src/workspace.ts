@@ -695,12 +695,12 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
   let printExtras: FirstLayerExtras | null = null;
   /** Draws the build area again (set once the build area's own state exists below; the dialog may tick before then). */
   let refreshArea = () => {};
-  /** File ▾ > Slice for printing (and DESIGN ▾'s Slice): the dialog, unless a tool is still open (#639), which it says. */
+  /** File ▾ > Slice for printing (and DESIGN ▾'s Slice with the page off): the Slice page, unless a tool is still open (#639), which it says (SP5b2c). */
   async function sliceAsked() {
-    if (await exportReady("Slice for printing")) printing.ask();
+    if (await exportReady("Slice for printing")) ctx.openWorkspace("slice");
   }
   // File ▾ > Slice for printing (H2a, W6c): every body shown, as Export STL takes them, sliced and saved as the P1S's print file (.gcode.3mf) or plain G-code.
-  const printing = slicePrint(ctx.toolbar, {
+  void slicePrint(ctx.toolbar, {
     async slice(choices, file, alive) {
       const waits = openToolRefusal(toolOpen(), "Slice for printing"); // the dialog is modal, but a key may still have opened one (#639)
       if (waits !== null) throw new Error(waits);
