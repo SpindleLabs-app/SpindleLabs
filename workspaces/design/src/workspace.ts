@@ -6276,6 +6276,10 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
     },
     unmount() {
       putAway = true;
+      // A Cut or Join question still up goes as a Cancel with the design it was about: taken off the page unanswered,
+      // its OK stayed held for good, so the page asked "Leave site?" on every reload though it said Saved, and Undo
+      // waited for it (nightly monkey #749: a file opened as the question came up).
+      missAsk.close();
       unitWatch = null;
       for (const d of [pointDrag, liveDrag]) if (d) cancelDrag(d);
       putAwayByRestore = ctx.history.restoring() ? ctx.project : null;

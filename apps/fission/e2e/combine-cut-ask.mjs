@@ -12,6 +12,11 @@
 // 3. Keep tools on: the button is Record anyway (nothing would be deleted).
 // 4. A Cut that bites (Box 2 moved (35, 0, 0), 500 mm³ in common) asks
 //    nothing: recorded at once, 23,500 mm³.
+// 5. A file opened while the question is up (nightly monkey #749: a Save and
+//    Open round trip landed just as the question opened): the question goes
+//    as a Cancel with the design it was about, so nothing waits on it after.
+//    Left unanswered, the page went on saying "Saved" yet asked "Leave site?"
+//    on every reload (a reload cancelled), and Undo waited for it for good.
 // Screenshots go to E2E_SHOTS when set. Run with `npm run e2e` (after
 // `npm run build`).
 import assert from "node:assert/strict";
@@ -147,6 +152,27 @@ try {
     assert.equal(await page.$eval("#cut-ask", (d) => d.open), false, "no question");
     await rebuilt(page);
     assert.equal(await toolbarStl(page), 23500);
+    await page.context().close();
+  }
+  // 5. The question up, another file opened: it goes, and the page no longer holds an answer it can't get.
+  {
+    const page = await fresh(design([100, 0, 0]), false);
+    await cutAndOk(page, false, false);
+    await askOpen(page);
+    const other = design([35, 0, 0]);
+    other.name = "other";
+    await page.setInputFiles("#open-file", { name: "other.spindle", mimeType: "application/json", buffer: Buffer.from(JSON.stringify(other)) });
+    await until(page, () => document.getElementById("save-status")?.dataset.state === "saved", null, "the opened file was kept");
+    await rebuilt(page);
+    assert.equal(await page.evaluate(() => document.getElementById("cut-ask")?.open === true), false, "no question left up");
+    assert.equal(await page.evaluate(() => window.fissionTest.historyBusy()), false, "nothing held runs");
+    assert.equal(await page.evaluate(() => window.fissionTest.waitingToRecord()), false, "no OK waits on an answer it can't get");
+    // A reload goes at once, without asking: the page is saved and nothing waits.
+    const asked = [];
+    page.on("dialog", (d) => (asked.push(d.type()), d.accept()));
+    await page.reload();
+    await until(page, () => /kernel v/.test(document.getElementById("version")?.textContent ?? ""), null, "reloaded");
+    assert.deepEqual(asked, [], "a saved page asks nothing before a reload");
     await page.context().close();
   }
   assert.deepEqual(errors, []);
