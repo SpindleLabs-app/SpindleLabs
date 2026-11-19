@@ -386,15 +386,19 @@ export type Found = { body: number; face: number; split: boolean } | { ambiguous
  * Two pieces with the same tag, or two largest (within a billionth), are
  * never guessed between.
  */
-export function findFace(bodies: readonly ModelBody[], ref: FaceName, origin?: readonly number[], faults: { firstPiece?: boolean } = {}): Found {
+export function findFace(bodies: readonly ModelBody[], ref: FaceName, at?: readonly number[] | ((body: ModelBody, face: ModelFace) => readonly number[]), faults: { firstPiece?: boolean } = {}): Found {
   const { all, carrying, tagOf } = designFaces(bodies);
+  // SL #430 (Design's rule from SL #707, rebuild.ts `originOn`): the point judged on each face may be worked per face,
+  // as the middle of the sketch's own points carried by that face's Moves since it was drawn.
+  const origin = at === undefined ? undefined : typeof at === "function" ? at : () => at;
+  const holds = (k: number) => origin !== undefined && faceHolds(all[k].f, origin(bodies[all[k].body], all[k].f));
   const key = plainKey(ref);
   const pieces = carrying.get(key) ?? [];
   const hit = (k: number, split: boolean) => ({ body: all[k].body, face: all[k].face, split });
   if (pieces.length === 0) return null;
   // A tagged reference finding one face without its tag that doesn't hold its origin: its piece is gone and another face
   // carries the name (a kept tool's own face), so found with a warning, never silently (hunt 11-06); whole again holds it.
-  if (pieces.length === 1) return hit(pieces[0], ref.tag !== undefined && tagOf(pieces[0], key).join(",") !== ref.tag.map(plainKey).sort().join(",") && origin !== undefined && !faceHolds(all[pieces[0]].f, origin));
+  if (pieces.length === 1) return hit(pieces[0], ref.tag !== undefined && tagOf(pieces[0], key).join(",") !== ref.tag.map(plainKey).sort().join(",") && origin !== undefined && !holds(pieces[0]));
   // Planted bug ("combine-first-piece"): the first face carrying the name, never a tag, an origin or a tie.
   if (faults.firstPiece) return hit(pieces[0], false);
   if (ref.tag !== undefined) {
@@ -404,7 +408,7 @@ export function findFace(bodies: readonly ModelBody[], ref: FaceName, origin?: r
     if (match.length > 1) return { ambiguous: match.length };
     return hit(match[0], false);
   }
-  const holding = origin === undefined ? [] : pieces.filter((k) => faceHolds(all[k].f, origin));
+  const holding = pieces.filter(holds);
   if (holding.length === 1) return hit(holding[0], true);
   const largest = Math.max(...pieces.map((k) => all[k].f.area));
   const big = pieces.filter((k) => Math.abs(all[k].f.area - largest) <= 1e-9 * largest);

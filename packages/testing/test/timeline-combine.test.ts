@@ -254,3 +254,32 @@ test("hand-worked: a sketch on a tool's top that a Join merges with the target's
   assert.deepEqual(r2.results["item-5"], { status: "built", lift: 10, turn: { x: [1, 0], at: [3, 0] } });
   assert.deepEqual(r2.results["item-7"], { status: "built", lift: 10, turn: { x: [1, 0], at: [2, 0] } });
 });
+
+test("hand-worked: a sketch on a tagged piece whose Combine is suppressed is judged on the whole face by the middle of its own points, not the frame's origin (SL #430, Design's rule from SL #707)", () => {
+  // A 40 × 30 × 20 box and a 27 × 16 × 5 box from the same corner, intersected keeping the tool: the result is the small
+  // box's block x 0..27, y 0..16, z 0..5, and its top at z 5 borders the big box's front (y = 0) and left (x = 0), which
+  // lie on the small box's own front and left: that piece's tag. A circle is drawn on it, then the big box suppressed:
+  // the Combine is greyed, the small box's top is whole again (no tag), so the sketch is placed there with a warning
+  // exactly when the whole top doesn't hold the middle of its points.
+  const placed = (centre: [number, number]) => {
+    const m = createModel();
+    run(
+      m,
+      { op: "add-preset", kind: "box", sizes: [40, 30, 20] },
+      { op: "add-preset", kind: "box", sizes: [27, 16, 5] },
+      { op: "add-combine", target: "item-1", tool: "item-2", operation: "intersect", keep: true },
+    );
+    const tag = [{ feature: "item-1", role: "front" as const }, { feature: "item-1", role: "left" as const }];
+    run(m, { op: "add-face-sketch", shape: { kind: "circle", centre, radius: 10 }, face: { feature: "item-2", role: "top", tag } });
+    const sketch = m.doc.items.at(-1)!.id;
+    // With the Combine built the tag finds its piece: no warning wherever the circle is.
+    const before = rebuild(m.doc).results[sketch];
+    run(m, { op: "suppress", item: "item-1", on: true });
+    return [before, rebuild(m.doc).results[sketch]];
+  };
+  // The fuzzing's case (seed 11116828921063044366): centre (33, 6), the circle's one point, is past the top's x = 27
+  // edge; the frame's origin (0, 0, 5) is the top's corner. Design goes by the middle, so the warning.
+  assert.deepEqual(placed([33, 6]), [{ status: "built", lift: 5 }, { status: "built", lift: 5, plane: "plane-split" }]);
+  // Control: centre (10, 6) lies on the top (0 ≤ 10 ≤ 27, 0 ≤ 6 ≤ 16): found whole, silently.
+  assert.deepEqual(placed([10, 6]), [{ status: "built", lift: 5 }, { status: "built", lift: 5 }]);
+});
