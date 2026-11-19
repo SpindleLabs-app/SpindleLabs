@@ -2954,6 +2954,34 @@
     "why": "The default case is the switch's last, so without its return unitsOf falls off the end and returns undefined, which callUnits turns into 0."
   },
   {
+    "file": "packages/core/src/kernel/time-limit.ts",
+    "mutator": "LogicalOperator",
+    "original": "Number.isFinite(side) && side > 0",
+    "replacement": "Number.isFinite(side) || side > 0",
+    "why": "stressUnits: with `||` an infinite side gets through, but the cells then count Infinity and the result is capped at STRESS_MOST_UNITS, which is STRESS_WORST_UNITS, what the guard gives (a NaN side still fails both tests)."
+  },
+  {
+    "file": "packages/core/src/kernel/time-limit.ts",
+    "mutator": "ConditionalExpression",
+    "original": "side > 0",
+    "replacement": "true",
+    "why": "stressUnits: a side of 0 or less gets through, but then the thinnest side is 0 or less, so the mesh size is either not above 0 or above thinnest / STRESS_THIN_LAYERS, and the next test returns STRESS_MOST_UNITS, which is STRESS_WORST_UNITS, what the guard gives."
+  },
+  {
+    "file": "packages/core/src/kernel/time-limit.ts",
+    "mutator": "EqualityOperator",
+    "original": "side > 0",
+    "replacement": "side >= 0",
+    "why": "stressUnits: a side of exactly 0 gets through, but then the thinnest side is 0, so the mesh size is either not above 0 or above 0 / STRESS_THIN_LAYERS, and the next test returns STRESS_MOST_UNITS, which is STRESS_WORST_UNITS, what the guard gives."
+  },
+  {
+    "file": "packages/core/src/kernel/time-limit.ts",
+    "mutator": "EqualityOperator",
+    "original": "each > 0",
+    "replacement": "each >= 0",
+    "why": "stressUnits with a mesh size of exactly 0: it gets through, but every side over 0 cells is Infinity, so the result is capped at STRESS_MOST_UNITS, what the test returns."
+  },
+  {
     "file": "packages/ai/src/commands.ts",
     "mutator": "StringLiteral",
     "original": "\"\"",

@@ -17,7 +17,7 @@ import {
   UNKNOWN_BODY_WORDS,
   type KernelResponse,
 } from "../src/kernel/kernel-client.ts";
-import { CALIBRATION_TARGET, CALIBRATION_TOOL, calibrate, callUnits, checkUnits, sliceUnits, STRESS_MOST_UNITS, STRESS_WORST_UNITS, supportUnits, type BodySize } from "../src/kernel/time-limit.ts";
+import { CALIBRATION_TARGET, CALIBRATION_TOOL, calibrate, callUnits, checkUnits, sliceUnits, STRESS_MOST_UNITS, STRESS_WORST_UNITS, stressUnits, supportUnits, type BodySize } from "../src/kernel/time-limit.ts";
 
 /** A worker the test answers by hand; it keeps what it was made with. */
 class FakeWorker {
@@ -511,4 +511,15 @@ test("callUnits: the quick shapes, measures, constructions and stress tests by h
   assert.equal(callUnits("stress_test", [9, {}] as never, sizeOf), STRESS_WORST_UNITS);
   // A mesh size of 0 would make endless cells: timed as the most a stress test can take.
   assert.equal(callUnits("stress_test", [2, { size: 0 }] as never, sizeOf), STRESS_MOST_UNITS);
+  // A profile whose corners aren't a list counts NaN corners, and a body whose mesh is endless Infinity: neither is a
+  // number of units, so both get none (the floor).
+  assert.equal(callUnits("make_extrude", [{ outer: { path: { corners: 5, bulges: [] } }, holes: [] }] as never, sizeOf), 0);
+  assert.equal(callUnits("body_view", [3] as never, () => ({ faces: 1, mesh: Infinity })), 0);
+});
+
+test("stressUnits: a box side that isn't a number, or a negative mesh size, is timed as the most", () => {
+  // A NaN side with a named size of 1 mm would count NaN cells: the sides are refused first, so the worst.
+  assert.equal(stressUnits([10, 10, NaN], 1), STRESS_WORST_UNITS);
+  // A named size of −1 mm is no size: the most (as a 10 mm cube in 2 × 2 × 2 cells would be only 4 × 8 + 300 = 332).
+  assert.equal(stressUnits([10, 10, 10], -1), STRESS_MOST_UNITS);
 });
