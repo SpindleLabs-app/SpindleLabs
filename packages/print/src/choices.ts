@@ -2,7 +2,7 @@
 // nozzle), the remembered switches and the check of stored settings against the lists. Shared by Design's Slice for
 // printing dialog and Slice's page; moved from Design's slice-print.ts (Slice page step 2b).
 
-import type { BuildPlate, SupportStyle } from "@fission/core";
+import type { BuildPlate, FilamentType, SupportStyle } from "@fission/core";
 import type { PresetSettings } from "./slice-presets.ts";
 
 /**
@@ -18,10 +18,29 @@ export interface PrintChoices {
   supports: SupportStyle;
   warmUp: boolean;
   betterGrip: boolean;
+  /** The filament profile: "auto" is Bambu PLA Basic for the P1S's file and Generic PLA for plain G-code (`filamentFor`). */
+  filament: FilamentChoice;
 }
 
+/** The filament as picked: one of the two profiles, or "auto" (the file's own default). */
+export type FilamentChoice = FilamentType | "auto";
+
+/** The filaments the panel lists, with the layer time each slows a layer to (the engine's `slow_down_layer_time`). */
+export const FILAMENT_OPTIONS: readonly { label: string; value: FilamentType; layerTime: number }[] = [
+  { label: "Bambu PLA Basic", value: "bambu-pla-basic", layerTime: 4 },
+  { label: "Generic PLA", value: "generic-pla", layerTime: 8 },
+];
+
+/** The profile a file is sliced with: the one picked, else Bambu PLA Basic for the P1S's own file (Ben's printer, whose profile it is) and Generic PLA for plain G-code. */
+export function filamentFor(choice: FilamentChoice, format: PrintFormat): FilamentType {
+  return choice !== "auto" ? choice : format === "p1s" ? "bambu-pla-basic" : "generic-pla";
+}
+
+/** A profile's name, as the words say it. */
+export const filamentName = (f: FilamentType): string => FILAMENT_OPTIONS.find((o) => o.value === f)?.label ?? f;
+
 /** The P1S's defaults for a 0.4 mm nozzle and PLA, as the engine's own (0.2 mm layers, 2 walls, 15 % infill, no supports), with the warm-up loop on and Better grip off. */
-export const PRINT_DEFAULTS: PrintChoices = { layerHeight: 0.2, walls: 2, infill: 15, supports: "off", warmUp: true, betterGrip: false };
+export const PRINT_DEFAULTS: PrintChoices = { layerHeight: 0.2, walls: 2, infill: 15, supports: "off", warmUp: true, betterGrip: false, filament: "auto" };
 
 /** Each choice's options, as the dialog lists them. */
 export const QUALITY_OPTIONS: readonly { label: string; value: number }[] = [
@@ -107,6 +126,19 @@ export function rememberedBetterGrip(storage: Pick<Storage, "getItem"> | null): 
     return storage?.getItem(GRIP_KEY) === "on";
   } catch {
     return PRINT_DEFAULTS.betterGrip;
+  }
+}
+
+/** Where the page keeps the filament last picked (this browser only); none kept means "auto". */
+export const FILAMENT_KEY = "spindlelabs.slice.filament";
+
+/** The filament last picked, or "auto" when none was kept, the value is not ours, or storage is blocked. */
+export function rememberedFilament(storage: Pick<Storage, "getItem"> | null): FilamentChoice {
+  try {
+    const kept = storage?.getItem(FILAMENT_KEY);
+    return FILAMENT_OPTIONS.some((o) => o.value === kept) ? (kept as FilamentType) : "auto";
+  } catch {
+    return PRINT_DEFAULTS.filament;
   }
 }
 

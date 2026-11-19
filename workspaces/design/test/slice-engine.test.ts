@@ -30,12 +30,12 @@ test("a slice in words, worked by hand", () => {
   assert.equal(printWords(print({ layers: 1, filamentG: 12.6, filamentMm: 4220, printTimeS: 3900 })), "1 layer, 13 g of PLA (4.22 m of filament), about 1 h 5 min of printing (plus heating and levelling).");
   // An engine fault (not a number) shows no time rather than a wrong one.
   assert.equal(printWords(print({ printTimeS: Number.NaN })), "100 layers, 5.2 g of PLA (1.73 m of filament).");
-  assert.equal(gcodeName({ layerHeight: 0.16, walls: 3, infill: 20, supports: "off", warmUp: true, betterGrip: false }), "spindlelabs-0.16mm-3w-20pc.gcode");
+  assert.equal(gcodeName({ layerHeight: 0.16, walls: 3, infill: 20, supports: "off", warmUp: true, betterGrip: false, filament: "auto" }), "spindlelabs-0.16mm-3w-20pc.gcode");
   // Supports on gets its own name, so the same part with and without never overwrite each other.
-  assert.equal(gcodeName({ layerHeight: 0.16, walls: 3, infill: 20, supports: "normal", warmUp: true, betterGrip: false }), "spindlelabs-0.16mm-3w-20pc-supports.gcode");
-  assert.equal(gcodeName({ layerHeight: 0.16, walls: 3, infill: 20, supports: "tree", warmUp: true, betterGrip: false }), "spindlelabs-0.16mm-3w-20pc-tree-supports.gcode");
+  assert.equal(gcodeName({ layerHeight: 0.16, walls: 3, infill: 20, supports: "normal", warmUp: true, betterGrip: false, filament: "auto" }), "spindlelabs-0.16mm-3w-20pc-supports.gcode");
+  assert.equal(gcodeName({ layerHeight: 0.16, walls: 3, infill: 20, supports: "tree", warmUp: true, betterGrip: false, filament: "auto" }), "spindlelabs-0.16mm-3w-20pc-tree-supports.gcode");
   // The P1S's defaults, the engine's own: 0.2 mm layers, 2 walls, 15 %, no supports.
-  assert.deepEqual(PRINT_DEFAULTS, { layerHeight: 0.2, walls: 2, infill: 15, supports: "off", warmUp: true, betterGrip: false });
+  assert.deepEqual(PRINT_DEFAULTS, { layerHeight: 0.2, walls: 2, infill: 15, supports: "off", warmUp: true, betterGrip: false, filament: "auto" });
 });
 
 test("print time in words rounds to the nearest minute, worked by hand", () => {
