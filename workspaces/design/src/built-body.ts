@@ -4,13 +4,13 @@
 // so the scene needs nothing of the rebuild but its types.
 
 import type { BodyHandle, BodyView, BooleanResult, Plane } from "@fission/core";
-import { bodyFrame, carried, type BodyFrame } from "./face-sketch.ts";
+import { bodyFrame, bodyMap, carried, type BodyFrame } from "./face-sketch.ts";
 import { featureBody, type NamedBody } from "./boolean-names.ts";
 import { featureNames, type BodyNames } from "./naming.ts";
 import type { BuiltBody } from "./rebuild.ts";
 
 /** Where the Moves so far put a plain body's own frame (face-sketch.ts `bodyFrame`); null for a Combine's result, whose faces each have their own (`frameOfFace`). */
-export const frameOfBody = (b: BuiltBody): Plane | null => (b.spec === null ? null : bodyFrame(b.spec));
+export const frameOfBody = (b: BuiltBody): BodyFrame | null => (b.spec === null ? null : bodyFrame(b.spec, b.base));
 
 /**
  * Where the Moves so far put the frame face `face` is carried by (35e2h,
@@ -18,7 +18,7 @@ export const frameOfBody = (b: BuiltBody): Plane | null => (b.spec === null ? nu
  * input body the face came from, so a sketch on a face from a tool is not
  * carried by the target's Moves. Null: not moved.
  */
-export const frameOfFace = (b: BuiltBody, face: number): Plane | null => (b.spec === null ? (b.frames?.[face] ?? null) : bodyFrame(b.spec));
+export const frameOfFace = (b: BuiltBody, face: number): BodyFrame | null => (b.spec === null ? (b.frames?.[face] ?? null) : bodyFrame(b.spec, b.base));
 
 /**
  * A Combine's result body's face frames (BuiltBody `frames`) from its
@@ -59,11 +59,16 @@ export function reversedOfResult(h: BooleanResult["history"][number] | undefined
  * (SL #707). Null: the world's, not moved.
  */
 export function originFrameNow(now: BodyFrame | null | undefined, then: BodyFrame | undefined, origin: BodyFrame | null | undefined): BodyFrame | null {
+  const k = (now?.size ?? 1) / (then?.size ?? 1);
   const move = carried(then, now ?? undefined);
-  if (move === null) return origin ?? null;
+  if (move === null && k === 1) return origin ?? null;
   const o = origin ?? { origin: [0, 0, 0], xAxis: [1, 0, 0], normal: [0, 0, 1] };
-  const size = (origin?.size ?? 1) * ((now?.size ?? 1) / (then?.size ?? 1));
-  return { origin: move(o.origin, false), xAxis: move(o.xAxis, true), normal: move(o.normal, true), ...(size !== 1 && { size }) };
+  // SL #759 item 3: its origin is a point of the body, carried as the body's points are (sizes too, `bodyMap`), so a
+  // Scale since takes it about the Scale's centre (a rigid carry left it where it was) and a Scale about the face's own
+  // origin still gives it the new size (it was dropped when the face's frame kept its origin and axes).
+  const size = (origin?.size ?? 1) * k;
+  const turn = move ?? ((v: readonly number[]) => [v[0], v[1], v[2]] as [number, number, number]);
+  return { origin: bodyMap(then, now)(o.origin), xAxis: turn(o.xAxis, true), normal: turn(o.normal, true), ...(size !== 1 && { size }), ...(origin?.base && { base: origin.base }) };
 }
 
 /**

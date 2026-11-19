@@ -365,7 +365,7 @@ test("version 28 (59a3): version 27 data using a construction plane, a Mirror ac
   const as27 = (d: DesignDocument) => ({ ...JSON.parse(JSON.stringify(d)), version: 27 });
   const refused = (what: string) => ({ message: "Design data says version 27 but uses a construction plane or its eye, which version 28 brought", what });
   // A plane alone, no sketch on it, no Mirror, no eye: 26 brought it, so version 27 data with it opens (as the current version).
-  assert.equal(readDesignDocument(as27(settledDoc)).version, 29);
+  assert.equal(readDesignDocument(as27(settledDoc)).version, 30);
   const sketched = addConstructSketch(settledDoc, plane).doc;
   assert.throws(() => readDesignDocument(as27(sketched)), { message: refused("sketch").message });
   // Its `drawn` alone is enough: a version 27 reader never wrote it (the plane put back to XY, so only `drawn` says 28).
@@ -377,11 +377,11 @@ test("version 28 (59a3): version 27 data using a construction plane, a Mirror ac
   const mirrored = insertDuplicates(settledDoc, ["body:feature-1"], `construct:${plane}`).doc;
   assert.throws(() => readDesignDocument(as27(mirrored)), { message: refused("mirror").message });
   // A Mirror across an origin plane is version 12's: still opens.
-  assert.equal(readDesignDocument(as27(insertDuplicates(settledDoc, ["body:feature-1"], "XY").doc)).version, 29);
+  assert.equal(readDesignDocument(as27(insertDuplicates(settledDoc, ["body:feature-1"], "XY").doc)).version, 30);
   assert.throws(() => readDesignDocument(as27(hideRow(settledDoc, plane, true))), { message: refused("eye").message });
   assert.throws(() => readDesignDocument(as27(hideRow(settledDoc, EYE_FOLDERS.constructions, true))), { message: refused("folder").message });
   // Another eye (the Bodies folder's) is older than 28: still opens.
-  assert.equal(readDesignDocument(as27(hideRow(settledDoc, EYE_FOLDERS.bodies, true))).version, 29);
+  assert.equal(readDesignDocument(as27(hideRow(settledDoc, EYE_FOLDERS.bodies, true))).version, 30);
   // Each read back at 28 as saved.
   for (const d of [sketched, mirrored, hideRow(settledDoc, plane, true)]) assert.deepEqual(readDesignDocument(JSON.parse(JSON.stringify(d))), d);
 });
