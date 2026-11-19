@@ -49,6 +49,13 @@ export const unsavedKey = (id: string) => UNSAVED_PREFIX + id;
 export const NEWER_PREFIX = "panoshape.unsaved-newer/";
 
 /**
+ * An entry that is a project this build's readers refuse for a reason other than "newer" (a data version it skips, a
+ * reader's bug) is moved here as `<prefix><id>/<written ms>`, never deleted (issue #627 item 12): said once, out of the
+ * way of this build's autosave, and tried again by every later visit, so a build that reads it puts it back.
+ */
+export const UNREADABLE_PREFIX = "panoshape.unsaved-unreadable/";
+
+/**
  * Another tab's entry, moved out of the way when this tab must journal the same project (clumsy hunt 2026-11-04):
  * two tabs left straight after a change each, and the second's entry replaced the first's under the one key, so the
  * first tab's change was in no entry and no project. `asideKey` is this prefix, the writer, "/" and the project's id.
@@ -143,8 +150,9 @@ const message = (e: unknown) => (e instanceof Error ? e.message : String(e));
  * opened file would be, and removes each one stored. An entry older than
  * the project the store holds (another tab stored newer work after it was
  * written) is removed without being put back. Never throws: returns
- * a message for each entry that couldn't be put back. An entry that doesn't
- * read as a project is removed (the store keeps its project as it was); one
+ * a message for each entry that couldn't be put back. An entry that isn't
+ * even JSON (damaged) is removed; a project this build's readers refuse is kept aside under UNREADABLE_PREFIX
+ * (issue #627 item 12); either way the store keeps its project as it was; one
  * the store refuses is kept, so the next visit tries again. An entry that
  * names the stored state it was made from is put back only over that state;
  * over another (a stale tab's change) it is stored as a new project, under
@@ -160,7 +168,7 @@ export async function recoverUnsaved(store: ProjectStore, journal: JournalStorag
   try {
     for (let i = 0; i < journal.length; i++) {
       const k = journal.key(i);
-      if (k !== null && ((k.startsWith(UNSAVED_PREFIX) && k.length > UNSAVED_PREFIX.length) || (k.startsWith(NEWER_PREFIX) && k.length > NEWER_PREFIX.length) || asideId(k) !== null)) keys.push(k);
+      if (k !== null && ((k.startsWith(UNSAVED_PREFIX) && k.length > UNSAVED_PREFIX.length) || (k.startsWith(NEWER_PREFIX) && k.length > NEWER_PREFIX.length) || unreadableId(k) !== null || asideId(k) !== null)) keys.push(k);
     }
     // Entries put aside go back after the others: each tab's own entry first, then the ones moved out of its way.
     keys.sort((x, y) => Number(x.startsWith(ASIDE_PREFIX)) - Number(y.startsWith(ASIDE_PREFIX)));
@@ -180,9 +188,10 @@ export async function recoverUnsaved(store: ProjectStore, journal: JournalStorag
     // the store can't list: every entry is put back, as one it doesn't hold would be
   }
   for (const k of keys) {
-    const held = k.startsWith(NEWER_PREFIX);
+    const unreadable = unreadableId(k);
+    const held = k.startsWith(NEWER_PREFIX) || unreadable !== null; // kept aside by an earlier visit
     const aside = asideId(k);
-    const id = aside ?? k.slice((held ? NEWER_PREFIX : UNSAVED_PREFIX).length);
+    const id = aside ?? unreadable ?? k.slice((k.startsWith(NEWER_PREFIX) ? NEWER_PREFIX : UNSAVED_PREFIX).length);
     let text: string | null;
     try {
       text = journal.getItem(k);
@@ -224,6 +233,19 @@ export async function recoverUnsaved(store: ProjectStore, journal: JournalStorag
           // storage full or off: left where it is, which keeps it too
         }
         problems.push(`unsaved changes from your last visit were made by a newer SpindleLabs, so this one opens the project as it was last saved here; those changes are kept in this browser for the newer one (${message(e)})`);
+        continue;
+      }
+      if (held) continue; // said when it was kept aside: still kept, silently
+      // A project this build refuses (not text damaged past reading) is the person's work: kept aside for a build that
+      // reads it, never deleted (issue #627 item 12). Under its own time, so a second one never replaces the first.
+      if (looksLikeProject(text)) {
+        try {
+          journal.setItem(`${UNREADABLE_PREFIX}${id}/${entry.written?.getTime() ?? 0}`, raw);
+          journal.removeItem(k);
+        } catch {
+          // storage full or off: left where it is, which keeps it too
+        }
+        problems.push(`unsaved changes from your last visit couldn't be read, so the project is as it was last saved; they're kept in this browser in case a later SpindleLabs can read them (${message(e)})`);
         continue;
       }
       problems.push(`unsaved changes from your last visit couldn't be read, so the project is as it was last saved (${message(e)})`);
@@ -268,6 +290,23 @@ export async function recoverUnsaved(store: ProjectStore, journal: JournalStorag
     restored(id);
   }
   return problems;
+}
+
+/** The project id of a key under UNREADABLE_PREFIX (`<prefix><id>/<ms>`), or null for any other key. */
+function unreadableId(key: string): string | null {
+  if (!key.startsWith(UNREADABLE_PREFIX)) return null;
+  const m = /^(.+)\/\d{1,16}$/.exec(key.slice(UNREADABLE_PREFIX.length));
+  return m === null ? null : m[1];
+}
+
+/** Whether `text` is at least a JSON object: a project some reader might take, not text damaged past reading. */
+function looksLikeProject(text: string): boolean {
+  try {
+    const v: unknown = JSON.parse(text);
+    return typeof v === "object" && v !== null && !Array.isArray(v);
+  } catch {
+    return false;
+  }
 }
 
 /**
