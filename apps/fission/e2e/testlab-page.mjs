@@ -12,7 +12,11 @@
 //   lost, said in words; Undo brings them back.
 // - At 375 px with taps: picking puts the Properties sheet away so the body can be tapped; Run shows the result; nothing
 //   runs off the side. The picking hint over the view (T5c5) shows inside the window, uncovered, at both widths.
-// Screenshots: E2E_SHOTS=<dir> saves testlab-1280.png, testlab-taller-1280.png, testlab-lost-1280.png, testlab-375.png, and the picking hint over the view as testlab-hint-1280.png and testlab-hint-375.png.
+// - Export test file (Ben, 19 Nov): the card's button saves body-1.testlab.json with the run in it, at 1280 and 375 px.
+// - The results card (Ben, 19 Nov): the verdict, Body 1, PLA, the 5 kg on the top and the front held, and where it would
+//   start to break; 1,000 kg says Would break with no stress or bend on the card, at 1280 and 375 px.
+// Screenshots: E2E_SHOTS=<dir> saves testlab-1280.png, testlab-taller-1280.png, testlab-lost-1280.png, testlab-375.png, the picking hint over the view as testlab-hint-1280.png and testlab-hint-375.png, and the cards as testlab-card-holds-1280.png and testlab-card-breaks-{1280,375}.png (with testlab-page-breaks-*.png).
+import { readFileSync, writeFileSync } from "node:fs";
 import assert from "node:assert/strict";
 import { preview } from "vite";
 import { launch } from "./browser.mjs";
@@ -161,6 +165,94 @@ async function shownResult(page) {
   assert.match(facts[1], /^\d[\d.,]* MPa, the highest found anywhere in the part \(PLA/);
   await until(page, () => Number(document.querySelector("[data-colour-map]")?.getAttribute("data-colour-map") ?? 0) > 0, null, "the colour map drawn");
   assert.equal(await page.locator("[data-testlab=cancel]").count(), 0);
+  // The results card: the verdict and the set-up as it was run, at a glance.
+  assert.equal(await page.locator(".testlab-results-verdict").textContent(), "Holds");
+  const setUp = await page.locator(".testlab-results-setup").evaluate((dl) => [...dl.children].map((e) => e.textContent));
+  assert.deepEqual(setUp, ["Part", "Body 1", "Made of", "PLA, printed", "Pushed", "5 kg hanging (49.0 N) down on Top face", "Held", "Front face"]);
+  assert.match(await page.locator(".testlab-results-limit").textContent(), /^It could take about [\d,]+ kg before it starts to break\.$/);
+  await cardInSight(page);
+  await dotsExplained(page);
+}
+
+/**
+ * Ben (19 Nov): each dot over the result has its own legend line, in the dot's own colour and naming it (the one red
+ * "Biggest stress and bend" left the violet dot unexplained); the lines wholly on screen.
+ */
+async function dotsExplained(page) {
+  const lines = await page.locator("#viewport .overlay-legend li").evaluateAll((lis) => lis.map((li) => {
+    const r = li.getBoundingClientRect();
+    return { words: li.textContent, severity: li.dataset.severity, colour: getComputedStyle(li).color, inside: r.left >= 0 && r.right <= innerWidth && r.top >= 0 && r.bottom <= innerHeight };
+  }));
+  assert.deepEqual(lines.map((l) => [l.words, l.severity]), [["● Red dot: biggest stress", "error"], ["● Violet dot: biggest bend", "info"]]);
+  assert.notEqual(lines[0].colour, lines[1].colour, "each line in its own dot's colour");
+  assert.ok(lines.every((l) => l.inside), JSON.stringify(lines));
+}
+
+/** The card is wholly on screen in the panel once scrolled to, and nothing in it runs off its side. */
+async function cardInSight(page) {
+  await page.locator(".testlab-results-card").scrollIntoViewIfNeeded();
+  const box = await page.locator(".testlab-results-card").evaluate((c) => {
+    const r = c.getBoundingClientRect();
+    return { left: r.left, right: r.right, width: innerWidth, spill: c.scrollWidth - c.clientWidth };
+  });
+  assert.ok(box.left >= 0 && box.right <= box.width && box.spill <= 0, `the card on screen: ${JSON.stringify(box)}`);
+}
+
+/**
+ * Export test file (Ben, 19 Nov): the button on the card, wholly on screen, saves one file named for the part with the
+ * whole run in it: the 5 kg (5 × 9.80665 = 49.03 N) down on the top as sent, the part as STEP, the card's summary.
+ * E2E_SHOTS keeps the file beside the screenshots (testlab-export-<width>.testlab.json), to run again with
+ * `npm run testlab-rerun -w @fission/testing -- <file>`.
+ */
+async function exported(page, tap, width) {
+  const button = page.locator(".testlab-results-card [data-testlab=export-file]");
+  await button.scrollIntoViewIfNeeded();
+  const r = await button.evaluate((b) => {
+    const box = b.getBoundingClientRect();
+    return { left: box.left, right: box.right, top: box.top, bottom: box.bottom, width: innerWidth, height: innerHeight };
+  });
+  assert.ok(r.left >= 0 && r.right <= r.width && r.top >= 0 && r.bottom <= r.height, `Export test file on screen: ${JSON.stringify(r)}`);
+  const [download] = await Promise.all([page.waitForEvent("download"), tap ? button.tap() : button.click()]);
+  assert.equal(download.suggestedFilename(), "body-1.testlab.json");
+  const text = readFileSync(await download.path(), "utf8");
+  const file = JSON.parse(text);
+  assert.equal(file.format, "spindlelabs-testlab-run");
+  assert.equal(file.version, 1);
+  assert.match(file.part.step, /^ISO-10303-21;/);
+  assert.equal(file.sent.loads.length, 1);
+  assert.ok(Math.abs(Math.hypot(...file.sent.loads[0].force) - 49.03325) < 1e-9, JSON.stringify(file.sent.loads));
+  assert.ok(Math.abs(file.sent.loads[0].force[2] + 49.03325) < 1e-9, "straight down");
+  assert.equal(file.answer.maxVonMises, Math.max(...file.answer.vonMises));
+  assert.match(file.summary, /^TestLab result: Holds \(safety factor [\d.,]+\)\nPart: Body 1\nMade of: PLA, printed\n/);
+  assert.deepEqual(Object.keys(file.project.workspaces).sort(), ["design", "simulate"]);
+  assert.equal(await page.locator(".testlab-results-copied").textContent(), "Test file saved.");
+  if (shots) writeFileSync(`${shots}/testlab-export-${width}.testlab.json`, text);
+}
+
+/**
+ * Ben's case (19 Nov): far past breaking. 1,000 kg on the box's top: about 200 times the 5 kg that gave a factor near
+ * 100, so a factor near 0.5 or under: "Would break", where it would start to break in kg, and never the linear stress
+ * or bend on the card (not real once broken); the details say so first.
+ */
+async function breaks(page, tap, shot) {
+  await openPanel(page, "properties", tap);
+  await page.fill(".testlab-page input[name=amount]", "1000");
+  await page.press(".testlab-page input[name=amount]", "Enter");
+  await until(page, () => document.querySelector(".testlab-page-load .testlab-page-words")?.textContent === "1,000 kg hanging (9,807 N) down on 1 face", null, "1,000 kg in words");
+  if (tap) await page.tap("[data-testlab=run]");
+  else await page.click("[data-testlab=run]");
+  await until(page, () => document.querySelector(".testlab-results-verdict") !== null || /^Not run|^Stopped/.test(document.querySelector(".testlab-page-status")?.textContent ?? ""), null, "Run's result", 120000);
+  assert.equal(await page.locator(".testlab-results-verdict").textContent(), "Would break");
+  assert.equal(await page.getAttribute(".testlab-results-card", "data-band"), "fails");
+  assert.match(await page.locator(".testlab-results-limit").textContent(), /^It would start to break at about [\d,.]+ kg\.$/);
+  const card = await page.locator(".testlab-results-card").textContent();
+  assert.doesNotMatch(card, /MPa|Bends at most/, card);
+  assert.match(await page.locator(".testlab-results-broken").textContent(), /^Worked out as if the part stayed in one piece/);
+  assert.equal(await page.locator(".testlab-results-broken").isVisible(), false, "behind How it was worked out");
+  await cardInSight(page);
+  await dotsExplained(page);
+  if (shots) await page.locator(".testlab-results-card").screenshot({ path: `${shots}/${shot}` });
+  if (shots) await page.screenshot({ path: `${shots}/${shot.replace("card", "page")}` });
 }
 
 try {
@@ -181,6 +273,8 @@ try {
     await shownResult(page);
     assert.equal(await page.getAttribute(".testlab-page-state", "data-stale"), "false");
     if (shots) await page.screenshot({ path: `${shots}/testlab-1280.png` });
+    if (shots) await page.locator(".testlab-results-card").screenshot({ path: `${shots}/testlab-card-holds-1280.png` });
+    await exported(page, false, 1280);
     // Colour by Bend: the legend runs 0 mm to the biggest bend.
     await page.click("[data-testlab-by=bend]");
     await until(page, () => /^0 mm.* mm$/.test(document.querySelector(".testlab-results-legend")?.textContent ?? ""), null, "the bend's legend");
@@ -231,7 +325,18 @@ try {
     const wide = await page.evaluate(() => document.documentElement.scrollWidth);
     assert.ok(wide <= 375, `the page is ${wide} px wide`);
     if (shots) await page.screenshot({ path: `${shots}/testlab-375.png` });
+    await exported(page, tap, 375);
+    if (shots) await page.locator(".testlab-results-card").screenshot({ path: `${shots}/testlab-card-export-375.png` });
+    await breaks(page, tap, "testlab-card-breaks-375.png");
     await context.close();
+  });
+
+  await check("1280 px: 1,000 kg on the box says Would break, with no stress or bend past breaking on the card", async () => {
+    const { context, page, tap } = await newPage("?testlab&test-hooks");
+    await startWithBox(page);
+    await toTestLab(page);
+    await setUpStudy(page, tap);
+    await breaks(page, tap, "testlab-card-breaks-1280.png");
   });
   assert.deepEqual(errors, []);
 } finally {

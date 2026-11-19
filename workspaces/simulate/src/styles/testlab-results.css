@@ -3,7 +3,27 @@
 .testlab-results { margin: var(--look-space-3) 0 0; padding: var(--look-space-2); border: 1px solid var(--look-edge); border-radius: var(--look-radius-s); font-size: 13px; }
 .testlab-results[data-stale="true"] { border-style: dashed; color: var(--text-dim); }
 .testlab-results h3 { margin: 0 0 var(--look-space-2); font-size: 13px; }
-.testlab-results .testlab-results-factor { display: flex; align-items: baseline; justify-content: space-between; gap: var(--look-space-2); margin: 0; padding: 6px 8px; border-radius: var(--look-radius-s); border: 1px solid var(--look-edge); }
+/* The card: the verdict and the set-up, read at a glance and screenshot as it is. Its edge takes the band's colour. */
+.testlab-results .testlab-results-card { padding: var(--look-space-2); border: 1px solid var(--look-edge); border-left-width: 4px; border-radius: var(--look-radius-s); }
+.testlab-results .testlab-results-card[data-band="safe"] { border-left-color: var(--ok); }
+.testlab-results .testlab-results-card[data-band="close"] { border-left-color: var(--warn); }
+.testlab-results .testlab-results-card[data-band="fails"] { border-left-color: var(--danger); }
+.testlab-results .testlab-results-head { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: var(--look-space-2); }
+.testlab-results .testlab-results-verdict { font-size: 20px; line-height: 1.2; }
+.testlab-results .testlab-results-verdict[data-band="safe"] { color: var(--ok); }
+.testlab-results .testlab-results-verdict[data-band="close"] { color: var(--warn); }
+.testlab-results .testlab-results-verdict[data-band="fails"] { color: var(--danger); }
+.testlab-results .testlab-results-setup { display: grid; grid-template-columns: auto 1fr; gap: 2px var(--look-space-2); margin: var(--look-space-2) 0; }
+.testlab-results .testlab-results-setup dt { color: var(--text-dim); }
+.testlab-results .testlab-results-setup dd { margin: 0; overflow-wrap: anywhere; }
+.testlab-results .testlab-results-limit { margin: var(--look-space-2) 0 0; font-weight: 600; }
+.testlab-results .testlab-results-bend { margin: 2px 0 0; }
+.testlab-results .testlab-results-foot { display: flex; flex-wrap: wrap; align-items: center; gap: var(--look-space-1) var(--look-space-2); margin: var(--look-space-2) 0 0; font-size: 12px; }
+.testlab-results .testlab-results-foot .testlab-results-estimate { margin: 0; flex: 1; }
+.testlab-results .testlab-results-foot button { min-height: 32px; margin: 0; }
+.testlab-results .testlab-results-copied { color: var(--text-dim); }
+.testlab-results .testlab-results-copied:empty { display: none; }
+.testlab-results .testlab-results-factor { display: flex; align-items: baseline; gap: var(--look-space-1); margin: 0; padding: 4px 8px; border-radius: var(--look-radius-s); border: 1px solid var(--look-edge); }
 .testlab-results .testlab-results-factor-value { font-size: 18px; }
 /* The band in words is in the sentence below it too, so the colour is never the only sign. */
 .testlab-results .testlab-results-factor[data-band="safe"] { border-color: var(--ok); }
@@ -17,7 +37,8 @@
 .testlab-results .testlab-results-facts { display: grid; grid-template-columns: auto 1fr; gap: 2px var(--look-space-2); margin: var(--look-space-2) 0; }
 .testlab-results .testlab-results-facts dt { font-weight: 600; }
 .testlab-results .testlab-results-facts dd { margin: 0; overflow-wrap: anywhere; }
-.testlab-results .testlab-results-by { display: flex; gap: var(--look-space-1); }
+.testlab-results .testlab-results-broken { color: var(--text); font-weight: 600; }
+.testlab-results .testlab-results-by { display: flex; margin: var(--look-space-2) 0 0; gap: var(--look-space-1); }
 .testlab-results .testlab-results-by button { min-height: 32px; margin: 0; }
 .testlab-results .testlab-results-legend { display: flex; align-items: center; gap: var(--look-space-1); margin: var(--look-space-2) 0 0; font-size: 12px; }
 .testlab-results .testlab-results-bar { flex: 1; height: 10px; border-radius: 5px; border: 1px solid var(--look-edge); }

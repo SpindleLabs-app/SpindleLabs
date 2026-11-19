@@ -19,12 +19,13 @@
 // change takes them away, a design edit marks them out of date.
 // Styles: src/styles/testlab-page.css, src/styles/testlab-results.css, src/styles/testlab-view-hint.css.
 
-import type { AnalysisOverlay, FaceReference, ListedObject, MountedWorkspace, OverlaySeverity, ViewportPick, WorkspaceContext } from "@fission/core";
+import type { AnalysisOverlay, FaceReference, LentBody, ListedObject, MountedWorkspace, OverlaySeverity, StressTest, ViewportPick, WorkspaceContext } from "@fission/core";
 import { KernelError, KERNEL_TEST_STOPPED, materialLibrary } from "@fission/core";
 import { GEOMETRY_OWNER, studyNow, studyOn, type StudyNow } from "./faces.ts";
 import { materialWords, sourceLines, testMaterials } from "./materials.ts";
-import { RESULT_OVERLAY, resultColours, resultOf, resultOverlay, resultSection, type ColourBy, type Result } from "./results.ts";
+import { resultColours, resultOf, resultOverlays, resultSection, setUpOf, type ColourBy, type Result } from "./results.ts";
 import { answerProblem, STAGE_WORDS, stressTestOf } from "./run.ts";
+import { fileFaces, keptProject, type RunRecord } from "./test-file.ts";
 import {
   addLoad,
   addStudy,
@@ -340,10 +341,19 @@ export function mountTestLabPage(ctx: WorkspaceContext): MountedWorkspace {
       );
       panel.append(held, loads);
     }
-    const words = el("p", "testlab-page-status");
+    const words = el("div", "testlab-page-status");
     words.setAttribute("role", "status");
     const problems = s === null ? [] : refused !== null ? [refused] : readyProblems(s, now?.lost ?? []);
-    words.textContent = [note, picking ? "Tap faces of the body to pick them; tap a picked face to let it go." : "", ...problems].filter((x) => x !== "").join(" ");
+    // What happened on its own line, then each thing to fix on a line of its own below it (SL #820 D-6); the spaces
+    // between keep the words apart for a screen reader and for anything reading the whole status.
+    const first = [note, picking ? "Tap faces of the body to pick them; tap a picked face to let it go." : ""].filter((x) => x !== "").join(" ");
+    if (first !== "") words.append(el("p", undefined, first));
+    if (problems.length > 0) {
+      if (first !== "") words.append(" ");
+      const list = el("ul", "testlab-page-problems");
+      problems.forEach((p, i) => list.append(...(i > 0 ? [" "] : []), el("li", undefined, p)));
+      words.append(list);
+    }
     drawState();
     const run = button("Run", "run", () => void runStudy());
     run.disabled = s === null || s.body === null || running !== null;
@@ -425,14 +435,17 @@ export function mountTestLabPage(ctx: WorkspaceContext): MountedWorkspace {
       if (viewShows !== result) ctx.viewport.showBody(result.mesh);
       viewShows = result;
       ctx.viewport.showColourMap?.(resultColours(result, colourBy));
-      ctx.viewport.setOverlay(resultOverlay(result));
-      shownOverlays.push(RESULT_OVERLAY);
+      for (const o of resultOverlays(result)) {
+        ctx.viewport.setOverlay(o);
+        shownOverlays.push(o.id);
+      }
       return;
     }
     if (s === null || now === null) return;
     if (viewShows !== now) ctx.viewport.showBody(now.faces.mesh);
     viewShows = now;
     for (const o of studyOverlays(s, now)) {
+      if (o.marks.length === 0) continue; // a tag over the body with nothing held or pushed there misleads (SL #820 D-6)
       ctx.viewport.setOverlay(o);
       shownOverlays.push(o.id);
     }
@@ -509,6 +522,35 @@ export function mountTestLabPage(ctx: WorkspaceContext): MountedWorkspace {
    * with a progress line and Cancel. The answer is checked before it is shown; a refusal is said in words. A Run whose
    * set-up changed while it worked (an edit here) shows nothing: its answer was for the set-up before.
    */
+  /**
+   * What the test file keeps of a Run (test-file.ts), gathered on the lent body before the test: the project as saved
+   * (design and TestLab only), the kernel's version, the part's exact boundary as STEP and its faces, the test as sent.
+   * A STEP the kernel won't write is kept as why not, never stops the Run; a project that can't be saved gives no file.
+   */
+  const runRecord = async (s: Study, lent: LentBody, sent: StressTest, material: RunRecord["material"]): Promise<RunRecord | null> => {
+    let project: unknown;
+    try {
+      project = keptProject(ctx.project);
+    } catch {
+      return null;
+    }
+    const said = (e: unknown) => (e instanceof Error ? e.message : String(e));
+    let version: string;
+    try {
+      version = await ctx.kernel.call("kernel_version");
+    } catch (e) {
+      version = `unknown (${said(e)})`;
+    }
+    let step: string | null = null;
+    let stepRefused: string | null = null;
+    try {
+      step = await ctx.kernel.call("body_step", lent.handle);
+    } catch (e) {
+      stepRefused = said(e);
+    }
+    return { kernel: { version }, project, studyId: s.id, material, part: { step, stepRefused, faces: fileFaces(lent.faces) }, sent: structuredClone(sent) };
+  };
+
   const runStudy = async () => {
     if (running) return;
     await show(false);
@@ -544,7 +586,9 @@ export function mountTestLabPage(ctx: WorkspaceContext): MountedWorkspace {
         const test = stressTestOf(s, on, mechanical);
         if ("refused" in test) return test;
         if (run.cancelled) return { stopped: true as const };
-        return { answer: await ctx.kernel.call("stress_test", lent.handle, test), strength: test.strength };
+        const record = await runRecord(s, lent, test, { id: material.id, name: material.name, mechanical });
+        if (run.cancelled) return { stopped: true as const };
+        return { answer: await ctx.kernel.call("stress_test", lent.handle, test), strength: test.strength, record };
       });
       if (run.cancelled || "stopped" in out) said = STOPPED;
       else if ("refused" in out) said = `Not run: ${out.refused}`;
@@ -552,7 +596,7 @@ export function mountTestLabPage(ctx: WorkspaceContext): MountedWorkspace {
         const wrong = answerProblem(out.answer, out.strength);
         if (wrong !== null) said = wrong;
         else {
-          got = resultOf(out.answer, { name: material.name, mechanical });
+          got = resultOf(out.answer, { name: material.name, mechanical }, setUpOf(s), out.record);
           said = "";
         }
       }

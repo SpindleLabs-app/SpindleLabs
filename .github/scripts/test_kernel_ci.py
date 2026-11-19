@@ -212,6 +212,29 @@ class Save(unittest.TestCase):
         self.assertEqual(subprocess.run(["bash", SCRIPT, "save", "9-1", opened], capture_output=True, text=True, env=env).returncode, 0)
         self.assertIn("runs/9-1/mutants-1/tests.log", self.saved())
 
+    def test_a_lone_artifact_downloaded_flat_is_named_not_passed_over(self):
+        # download-artifact unpacks a pattern that matches one artifact straight
+        # into its path, with no sealed-NAME folder: the 18 Nov 2026 random
+        # testing night's golden-step findings were sealed, downloaded, then
+        # "no findings to save", green. Both openers must say so and fail.
+        keys = os.path.join(self.tmp.name, "keys")
+        subprocess.run(["bash", SCRIPT, "keygen", keys], check=True)
+        root = os.path.join(self.tmp.name, "downloaded")
+        subprocess.run(["bash", SCRIPT, "seal", self.logs, root, os.path.join(keys, "public.pem")], check=True)
+        env = dict(os.environ, RESULTS_REPO=self.remote, RESULTS_PATH="runs", SAVE_WAIT_SCALE="0")
+        for cmd in ("open-sealed", "save-sealed"):
+            opened = os.path.join(self.tmp.name, "opened-" + cmd)
+            out = subprocess.run(["bash", SCRIPT, cmd, root, os.path.join(keys, "private.pem"), opened], capture_output=True, text=True, env=env)
+            self.assertEqual(out.returncode, 1, cmd)
+            self.assertEqual(out.stdout, "found files but no sealed-NAME folder (one artifact downloaded flat?)\n", cmd)
+        self.assertEqual(self.saved(), ["README"])
+        # An empty or missing root (nothing was handed on) is still no error.
+        for empty in (os.path.join(self.tmp.name, "empty"), os.path.join(self.tmp.name, "missing")):
+            if empty.endswith("empty"):
+                os.makedirs(empty)
+            out = subprocess.run(["bash", SCRIPT, "open-sealed", empty, os.path.join(keys, "private.pem"), os.path.join(self.tmp.name, "o")], capture_output=True, text=True, env=env)
+            self.assertEqual((out.returncode, out.stdout), (0, ""))
+
     def test_files_over_50_mb_stay_behind_and_are_counted(self):
         # 50 MiB + 1 byte is over the limit (find -size +50M counts whole
         # MiB: over 50 means at least 50 MiB + 1 byte); exactly 50 MiB is
@@ -527,6 +550,55 @@ def jobs(text):
     for part in re.split(r"(?m)^(?=  [A-Za-z_][A-Za-z0-9_-]*:\n)", body)[1:]:
         found[part.split(":", 1)[0].strip()] = part
     return found
+
+
+class SealedDownloadsKeepTheirFolder(unittest.TestCase):
+    """A job that opens sealed artifacts with open-sealed or save-sealed looks
+    for ROOT/sealed-NAME folders. download-artifact unpacks a pattern that
+    matches a single artifact straight into its path, without that folder, so
+    a job whose sealed artifact is always just one takes it by name into
+    ROOT/sealed-NAME (18 Nov 2026: a night's oracle findings were lost so).
+    A pattern stays only where several artifacts can match."""
+
+    # Jobs whose pattern can match several sealed artifacts (a matrix or parts).
+    MANY = {("kernel-ci.yml", "checks-report"), ("kernel-ci.yml", "mutants"),
+            ("kernel-fuzz.yml", "collect"), ("kernel-nightly.yml", "collect")}
+
+    @staticmethod
+    def problems(workflow, text):
+        found = []
+        for job, lines in jobs(text).items():
+            if not re.search(r"\b(open|save)-sealed\b", lines):
+                continue
+            for step in re.findall(r"uses: actions/download-artifact@.*?(?=\n      - |\Z)", lines, re.S):
+                name = re.search(r"\n\s+name: (sealed-[\w.-]+)\s*\n", step)
+                path = re.search(r"\n\s+path: (.+)\n", step + "\n")
+                if name:
+                    if not path or not path.group(1).rstrip().endswith("/" + name.group(1)):
+                        found.append(f"{workflow} {job}: {name.group(1)} must go into a folder of that name")
+                elif re.search(r"pattern: sealed-", step) and (workflow, job) not in SealedDownloadsKeepTheirFolder.MANY:
+                    found.append(f"{workflow} {job}: a pattern matching one artifact unpacks flat")
+        return found
+
+    def test_every_workflow(self):
+        for name in sorted(os.listdir(NoNoisyKernelCheckout.WORKFLOWS)):
+            with open(os.path.join(NoNoisyKernelCheckout.WORKFLOWS, name)) as f:
+                self.assertEqual(self.problems(name, f.read()), [], name)
+
+    def test_the_many_list_names_real_jobs(self):
+        for workflow, job in sorted(self.MANY):
+            with open(os.path.join(NoNoisyKernelCheckout.WORKFLOWS, workflow)) as f:
+                self.assertIn(job, jobs(f.read()), workflow)
+
+    def test_the_check_catches_it(self):
+        head = "on: push\njobs:\n  oracle-save:\n    steps:\n      - name: Take\n        uses: actions/download-artifact@abc # v8\n        with:\n"
+        run = "      - name: Open\n        run: ci open-sealed a b c\n"
+        flat = head + "          pattern: sealed-*\n          path: ${{ runner.temp }}/sealed\n" + run
+        named_flat = head + "          name: sealed-golden-step\n          path: ${{ runner.temp }}/sealed\n" + run
+        good = head + "          name: sealed-golden-step\n          path: ${{ runner.temp }}/sealed/sealed-golden-step\n" + run
+        self.assertEqual(len(self.problems("x.yml", flat)), 1)
+        self.assertEqual(len(self.problems("x.yml", named_flat)), 1)
+        self.assertEqual(self.problems("x.yml", good), [])
 
 
 class SecretsOnlyOnMain(unittest.TestCase):
