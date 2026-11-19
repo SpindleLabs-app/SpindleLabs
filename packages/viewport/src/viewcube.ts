@@ -19,6 +19,9 @@ const TEXTURE_PX = 128;
 /** The camera's half-height in cube units: the cube (−1…1) seen from a corner spans √3 ≈ 1.73. */
 export const CUBE_VIEW_HALF = 1.9;
 
+/** A mouse or pen moving with no button held has been let go, whether or not its release was heard; a finger has no buttons to read. */
+export const cubeReleaseLost = (pointerType: string, buttons: number) => pointerType !== "touch" && buttons === 0;
+
 const dot = (a: Vec3, b: Vec3) => a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
 
 /**
@@ -74,9 +77,13 @@ export class ViewCube {
       if (name) onView(name);
     });
     this.element.addEventListener("pointercancel", () => (down = null));
+    this.element.addEventListener("lostpointercapture", () => (down = null));
     this.element.addEventListener("pointermove", (e) => {
       this.setHover(e.buttons === 0 ? this.viewAt(e.clientX, e.clientY) : null);
       if (!down || down.id !== e.pointerId) return;
+      // A mouse whose release never arrived (let go outside the window, a menu or another app took it): the drag is
+      // over, never an orbit that follows the bare pointer about (Ben 2026-11-19: the cube "stuck").
+      if (cubeReleaseLost(e.pointerType, e.buttons)) return void (down = null);
       const here = { x: e.clientX, y: e.clientY };
       if (!down.last) {
         if (isClick(down, here)) return;
