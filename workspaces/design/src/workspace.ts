@@ -92,7 +92,7 @@ import { sketchEdgeTargets, sketchPlaneCorners } from "./face-edges.ts";
 import { sketchableFaces, sketchSpot, type SketchSpot } from "./face-pick.ts";
 import { FACE_NEW_BODY, faceOpen, faceProfile, faceRegion, type FaceProfile } from "./face-extrude.ts";
 import { editRegionWords, offerOf, pickRegionWords, regionChosenWords, regionOffers, regionRefusedWords, type RegionOffer } from "./extrude-regions.ts";
-import type { RegionRef } from "./regions.ts";
+import { sketchRegions, type RegionRef } from "./regions.ts";
 import { rounding, SNAP_PIXELS, snapOnSketch, snapsNow, withSnap, type BodySnaps, type Snap } from "./snap.ts";
 import { aimOf, anchorOf, lengthRefused, liveValues, NO_AIM, typedFields, withLocks, type Locks } from "./typed-entry.ts";
 import { isShapeTool } from "./sketch-shapes.ts";
@@ -1142,6 +1142,7 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
     failedNow = failedIds(doc, build.results, new Set(Object.keys(build.bodies)));
     noteRebuild(doc, failedNow); // what other workspaces are handed (SL #761)
     builtFor = doc;
+    builtBodies = new Set(Object.keys(build.bodies));
     slowNow = new Set(Object.keys(build.results).filter((id) => { const r = build.results[id]; return r.status === "failed" && r.cause === "timed-out"; }));
     resultsNow = build.results;
     reasonsNow = new Map(Object.entries(build.results).flatMap(([id, r]) => (r.status === "failed" && r.message ? [[id, r.message] as const] : [])));
@@ -1491,7 +1492,15 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
     // SL #760 item 5: an OK being checked goes first (it shuts the panels below), and what is selected is read after it,
     // as when pressed slowly.
     if (okChecks.size > 0) return afterOk(() => void duplicateBodies(bodies, mirror));
-    const picked = bodies ?? pickedBodies(ctx.selection.items, lastScene);
+    let picked = bodies ?? pickedBodies(ctx.selection.items, lastScene);
+    if (bodies !== undefined) {
+      // SL #820 B-4: a pasted body a later Combine used up is no longer built, so it pastes nothing, as a deleted one
+      // (`pastedBodies`); read from the design as built now, once a rebuild under way (an OK's) has ended.
+      const now = designDoc();
+      if (!(await builtNow()) || designDoc() !== now) return;
+      picked = bodies.filter((b) => builtBodies.has(b));
+      if (okChecks.size > 0) return afterOk(() => void duplicateBodies(bodies, mirror));
+    }
     if (picked.length === 0) return;
     leaveExtrude();
     leaveEdit();
@@ -1522,6 +1531,8 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
   let failedNow: ReadonlySet<string> = new Set();
   /** The design `failedNow` was last worked out for (the same design with its points followed counts, `takeIn`): an export reads nothing until it is the design as it is now (`builtNow`). */
   let builtFor: DesignDocument | null = null;
+  /** The bodies the rebuild of `builtFor` made: a paste copies only these (SL #820 B-4). */
+  let builtBodies: ReadonlySet<string> = new Set();
   /** show() calls not yet ended, and who waits for the last to end (`builtNow`). */
   let showsRunning = 0;
   const showsDone: (() => void)[] = [];
@@ -1859,6 +1870,8 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
   /** Shows a document the project now holds and builds its part: the browser, sketches, selection, then the body or the reason it failed. */
   /** The design last shown and built: a sketch left after edits to it differs, and is rebuilt (25a3). */
   let shownDoc: DesignDocument | null = null;
+  /** The design the line after a Combine's OK speaks of (`sayCombineDone`), null while it is not shown. */
+  let combineDoneFor: DesignDocument | null = null;
   /** Counts show() calls: one overtaken while its settle waited on the kernel draws nothing (app hunt 2026-11-04). */
   let showing = 0;
   /** Set once unmounted: a show() still waiting on the kernel then draws nothing. */
@@ -1877,6 +1890,7 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
     return ctx.history.hold(work.finally(told), true); // nothing recorded yet: leaving now asks first (SL #708 item 1)
   }
   async function show(doc: DesignDocument, kind: PartKind) {
+    if (combineDoneFor !== null && doc !== combineDoneFor) sayCombineDone(null); // Undo, Redo or any later step: the Combine's line no longer holds (SL #820 D-8)
     shownDoc = doc;
     const n = ++showing;
     const view = viewport.element;
@@ -2677,7 +2691,14 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
 
   /** Says what the edited sketch holds and whether it makes one closed outline, or the kernel's reason it doesn't. */
   // Every answer goes through one latestOnly, those needing no kernel too, so an older ask answered later never shows over a newer one.
-  const outlineOf = latestOnly(async (sketch: Sketch) => (sketch.curves.length === 0 ? null : (projectedOpen(sketch) ?? (await askOutline(kernel, sketchCurves(sketch))))));
+  const outlineOf = latestOnly(async (sketch: Sketch) => {
+    if (sketch.curves.length === 0) return null;
+    const out = projectedOpen(sketch) ?? (await askOutline(kernel, sketchCurves(sketch)));
+    // Separate closed loops are not one outline, but Extrude offers each region since step 48: said as such (SL #820 D-5).
+    if (typeof out === "string" || "closed" in out || !/separate loops/.test(out.open)) return out;
+    const regions = (await sketchRegions(kernel, sketch)).regions.filter((r) => r.extrudes).length;
+    return regions === 0 ? out : { regions };
+  });
   async function showOutline() {
     if (mode.kind !== "edit") return;
     const id = mode.tool.sketch;
@@ -2686,7 +2707,7 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
     const n = curveCount(sketch);
     try {
       const { current, value } = await outlineOf(sketch);
-      if (current) outlineWords = value === null ? `${n}.` : typeof value === "string" ? `${n}, not closed: ${value}.` : "closed" in value ? `${n}, a closed outline.` : `${n}, not closed: ${value.open}.`;
+      if (current) outlineWords = value === null ? `${n}.` : typeof value === "string" ? `${n}, not closed: ${value}.` : "closed" in value ? `${n}, a closed outline.` : "regions" in value ? `${n}, closed: ${value.regions} ${value.regions === 1 ? "region" : "regions"} to extrude.` : `${n}, not closed: ${value.open}.`;
     } catch (e) {
       outlineWords = `${n}: ${e instanceof Error ? e.message : String(e)}`;
     }
@@ -4645,6 +4666,7 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
   function sayCombineDone(words: string | null) {
     if (combineDoneTimer !== null) clearTimeout(combineDoneTimer);
     combineDoneTimer = null;
+    combineDoneFor = words === null ? null : designDoc();
     combineDone.textContent = words ?? "";
     combineDone.hidden = words === null;
     if (words !== null) combineDoneTimer = setTimeout(() => sayCombineDone(null), COMBINE_DONE_MS);
@@ -4731,6 +4753,7 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
    * calls this as it starts, so Measure (35e2l2) is put away here too: one tool at a time.
    */
   function leaveCombine() {
+    sayCombineDone(null); // its "Undo puts it back" stops being true once anything else is opened or recorded (SL #820 D-8)
     measureBox.close();
     constructBox.close(); // Construct (59a2) is put away by every other tool the same way
     leaveChamfer(); // Chamfer (44a-app2) is put away by every other tool the same way

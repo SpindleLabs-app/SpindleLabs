@@ -151,7 +151,15 @@ jobs:
     # instead of the 2.7.2 the slicer oracle's settings are pinned to), which
     # broke the SolveSpace build and the slicer oracle on every part. Move it
     # on purpose, with the oracles re-pinned, never by drift.
-    runs-on: ubuntu-24.04
+    # The repository variable KERNEL_CHECKS_RUNNER, when set, sends the parts
+    # to a paid larger runner instead (Ben, 2026-11-19: spindle-8core, to land
+    # a long stack sooner). It must run the Ubuntu 24.04 image for the reason
+    # above. It costs per minute and stops at the spending limit: delete the
+    # variable (Settings > Secrets and variables > Actions > Variables) and new
+    # runs go back to the free runners; nothing else changes.
+    # Only for a run started by workflow_dispatch (which needs write access
+    # here), never for anything a fork could start.
+    runs-on: ${{ github.event_name == 'workflow_dispatch' && vars.KERNEL_CHECKS_RUNNER || 'ubuntu-24.04' }}
     environment: kernel
     # The slowest part takes about 25 minutes; the whole checks once took 80
     # and one run on a slow runner was cancelled at 90 (2026-11-05). 150,

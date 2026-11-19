@@ -134,6 +134,9 @@ test("a link to a Combine's result, by its face or by its item, hands over the j
     assert.ok(representation.kind === "mesh");
     assert.deepEqual(measure(representation.positions, representation.indices), { volume: 1875, bounds: [[0, 0, 0], [15, 15, 15]] }, s.origin.label);
     await assert.rejects(r.deliver(o, ["solid"]), /only the kernel holds it/);
+    // App bug hunt 11-18 (SL #820): said with the body's name, never its raw id ("body:feature-1"), and not as "a Combine's
+    // result" alone, which a Chamfer's, Shell's or Pattern's body is not.
+    await assert.rejects(r.deliver(o, ["solid"]), (e: Error) => !/body:/.test(e.message) && e.message.startsWith("Box 1 "));
   }
   // B, used up by the join, is no body of its own any more: a link to it is gone.
   assert.equal(lookup({ kind: "geometry", origin: { workspace: "design", id: "feature-2", label: "Body 2" }, ref: { kind: "body", id: "body:feature-2" as StableId } }), null);

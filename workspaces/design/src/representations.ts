@@ -11,6 +11,7 @@ import { bodyFeatures, designBodies, failedIds } from "./browser.ts";
 import { bodyHidden, bodyIdOf, bodyItem, bodyNumbers, kernelHeld, profileLabel, readDesignDocument, type DesignDocument } from "./document.ts";
 import { endSpec, endStls } from "./move-tool.ts";
 import { BodyCache, rebuildTimeline } from "./rebuild.ts";
+import { bodyWords } from "./body-uses.ts";
 import { outline } from "./profiles.ts";
 import { bodyReference, readDesignReference, profileReference, readProfileReference } from "./references.ts";
 import { bodyOf, findInScene, joinBodies, sceneHit, shownBodies, shownReference, type Scene } from "./scene.ts";
@@ -61,9 +62,10 @@ async function bodyNow(kernel: KernelCalls, document: DesignDocument, body: stri
   try {
     const build = await rebuildTimeline(document, cache, kernel);
     const built = build.bodies[body];
-    if (built === undefined) throw new Error(`${body} is not built`);
+    if (built === undefined) throw new Error(`${bodyWords(document, body)} is not built`);
     if (want === "spec") {
-      if (built.spec === null) throw new Error(`${body} is a Combine's result: only the kernel holds it, so it is handed over as a mesh, not as an exact solid`);
+      // Named as the timeline's messages name it, never by its raw id, and not only as a Combine's (a Chamfer, Shell or Pattern too): SL #820.
+      if (built.spec === null) throw new Error(`${bodyWords(document, body)} was shaped by a Combine or another tool, so only the kernel holds it: it is handed over as a mesh, not as an exact solid`);
       return built.spec;
     }
     const { mesh } = await cache.view(built.handle);

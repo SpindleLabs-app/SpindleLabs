@@ -27,3 +27,7 @@
   .testlab-page:is(#workspace:not([data-split="on"]) #properties > .testlab-page):is(:hover, :focus-within) { scrollbar-color: var(--line-4a515c) transparent; }
 }
 .testlab-page .testlab-page-progress { margin: var(--look-space-2) 0; font-size: 13px; font-weight: 600; }
+/* The status: what happened on its first line, then each thing to fix on its own line below (SL #820 D-6), not as the list rows above. */
+.testlab-page .testlab-page-status p { margin: 0; }
+.testlab-page .testlab-page-status .testlab-page-problems { display: block; list-style: disc; margin: var(--look-space-1) 0 0; padding-left: 1.2em; }
+.testlab-page .testlab-page-status .testlab-page-problems li { display: list-item; min-height: 0; padding: 0; margin: 2px 0; background: none; border: 0; }
