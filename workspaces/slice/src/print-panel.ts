@@ -4,7 +4,7 @@
 // hands them out as data), never from Design's code; the engine calls are @fission/print's. Styles: src/styles/slice-page.css.
 
 import { GCODE_KIND, repeatGuard } from "@fission/ui";
-import type { BuildPlate, KernelCalls, SliceProgress, SupportStyle, ListedObject, RepresentationRegistry } from "@fission/core";
+import type { BuildPlate, FilamentType, KernelCalls, SliceProgress, SupportStyle, ListedObject, RepresentationRegistry } from "@fission/core";
 import {
   costWords,
   fileCrawl,
@@ -44,6 +44,10 @@ import {
   rememberedBetterGrip,
   rememberedNozzle,
   rememberedWarmUp,
+  rememberedFilament,
+  filamentFor,
+  FILAMENT_KEY,
+  FILAMENT_OPTIONS,
   SliceDropped,
   sliceStls,
   stopSlices,
@@ -71,8 +75,8 @@ export async function plateFiles(registry: RepresentationRegistry, objects: read
 export const PRINT_LOGGED_WORDS = "Added to your print log.";
 
 /** What a finished slice says: its layers, filament and time, a warning for plastic left out and the note on how the bodies sit. */
-export function sliceWords(done: Parameters<typeof printWords>[0]): string {
-  return [printWords(done), unprintedWords(done), done.levelNote].filter((x) => x).join(" ");
+export function sliceWords(done: Parameters<typeof printWords>[0], filament?: FilamentType): string {
+  return [printWords(done, filament), unprintedWords(done), done.levelNote].filter((x) => x).join(" ");
 }
 
 interface Choice<T> {
@@ -123,7 +127,7 @@ export interface PrintPanel {
 }
 
 export function printPanel(doc: Document, parts: PrintPanelParts): PrintPanel {
-  let choices: PrintChoices = { ...PRINT_DEFAULTS, warmUp: rememberedWarmUp(parts.storage), betterGrip: rememberedBetterGrip(parts.storage) };
+  let choices: PrintChoices = { ...PRINT_DEFAULTS, warmUp: rememberedWarmUp(parts.storage), betterGrip: rememberedBetterGrip(parts.storage), filament: rememberedFilament(parts.storage) };
   let format: PrintFormat = FILE_DEFAULTS.format;
   let plate: BuildPlate = FILE_DEFAULTS.plate;
   let nozzle: NozzleType = rememberedNozzle(parts.storage);
@@ -210,6 +214,24 @@ export function printPanel(doc: Document, parts: PrintPanelParts): PrintPanel {
     into.append(label);
     return select;
   };
+  // The filament: Bambu PLA Basic or Generic PLA. Until one is picked it follows the file (Bambu PLA Basic for the P1S's, Generic PLA for plain G-code); a pick holds and is remembered.
+  const filamentSelect: { el: HTMLSelectElement | null } = { el: null };
+  filamentSelect.el = addChoice({
+    label: "Filament",
+    options: FILAMENT_OPTIONS,
+    current: filamentFor(choices.filament, format),
+    read: () => filamentFor(choices.filament, format),
+    pick: (v: FilamentType) => {
+      choices = { ...choices, filament: v };
+      try {
+        (parts.storage as Storage | null)?.setItem?.(FILAMENT_KEY, v);
+      } catch {
+        // storage blocked: the choice still holds for this page
+      }
+    },
+  }, "slice-page-filament");
+  /** The choices with the filament as the file will use it, so the plain slice and the file agree on one profile. */
+  const asSliced = (): PrintChoices => ({ ...choices, filament: filamentFor(choices.filament, format) });
   let showHint: () => void = () => undefined;
   const numbers = (list: readonly number[], unit: string) => list.map((v) => ({ label: `${v}${unit}`, value: v }));
   addChoice({ label: "Supports", options: SUPPORT_OPTIONS, current: choices.supports, read: () => choices.supports, pick: (v: PrintChoices["supports"]) => {
@@ -232,6 +254,7 @@ export function printPanel(doc: Document, parts: PrintPanelParts): PrintPanel {
     pick: (v: PrintFormat) => {
       format = v;
       plateAndNozzleMatter();
+      if (filamentSelect.el) filamentSelect.el.value = String(Math.max(0, FILAMENT_OPTIONS.findIndex((o) => o.value === filamentFor(choices.filament, format)))); // an unpicked filament follows the file
     },
   }, "slice-page-format", choicesBox);
   plateSelect.el = addChoice({ label: "Build plate", options: PLATE_OPTIONS, current: plate, read: () => plate, pick: (v: BuildPlate) => (plate = v) }, "slice-page-plate", choicesBox);
@@ -515,12 +538,12 @@ export function printPanel(doc: Document, parts: PrintPanelParts): PrintPanel {
     try {
       // The file the download would save: the P1S's own G-code (its time, filament and start routine), else the plain slice.
       const files = () => plateFiles(parts.registry, objects);
-      const file = format === "p1s" ? await printFileOfStls(parts.kernel, files, choices, plate, nozzle) : null;
+      const file = format === "p1s" ? await printFileOfStls(parts.kernel, files, asSliced(), plate, nozzle) : null;
       const moves = file ? printMovesOf(gcodeOfPackage(file.package) ?? "") : null;
-      const done = file && moves !== null ? { ...file, gcode: moves } : await sliceStls(parts.kernel, files, choices);
+      const done = file && moves !== null ? { ...file, gcode: moves } : await sliceStls(parts.kernel, files, asSliced());
       if (!live || stopped) return;
       status.textContent = "";
-      parts.openPreview(done.gcode, sliceWords(done));
+      parts.openPreview(done.gcode, sliceWords(done, filamentFor(choices.filament, format)));
     } catch (e) {
       if (live && !stopped && !(e instanceof SliceDropped)) status.textContent = refusalOf(e);
     } finally {
@@ -545,15 +568,15 @@ export function printPanel(doc: Document, parts: PrintPanelParts): PrintPanel {
     try {
       const files = () => plateFiles(parts.registry, objects);
       const p1s = format === "p1s";
-      const done = p1s ? await printFileOfStls(parts.kernel, files, choices, plate, nozzle) : await sliceStls(parts.kernel, files, choices);
+      const done = p1s ? await printFileOfStls(parts.kernel, files, asSliced(), plate, nozzle) : await sliceStls(parts.kernel, files, asSliced());
       if (!live || stopped) return;
-      const suggestedName = p1s ? printFileName(choices, plate, nozzle, parts.projectName?.()) : gcodeName(choices, parts.projectName?.());
+      const suggestedName = p1s ? printFileName(asSliced(), plate, nozzle, parts.projectName?.()) : gcodeName(asSliced(), parts.projectName?.());
       const bytes = p1s ? (done as { package: Uint8Array<ArrayBuffer> }).package : (new TextEncoder().encode((done as { gcode: string }).gcode) as Uint8Array<ArrayBuffer>);
       const r = await parts.save({ suggestedName, kind: p1s ? P1S_KIND : GCODE_KIND, bytes });
       if (!live || stopped) return;
       const saved = r.status === "saved" ? `Saved ${r.name}:` : r.status === "failed" ? `Sliced, but not saved (${r.message}):` : "Sliced, but not saved:";
       const logged = r.status === "saved" && parts.log?.({ name: parts.projectName?.() ?? "", settings: settingsWords(choices, nozzle), grams: done.filamentG, seconds: done.printTimeS });
-      status.textContent = [saved, sliceWords(done), ...(logged ? [PRINT_LOGGED_WORDS] : [])].join(" ");
+      status.textContent = [saved, sliceWords(done, filamentFor(choices.filament, format)), ...(logged ? [PRINT_LOGGED_WORDS] : [])].join(" ");
       showCost(done);
     } catch (e) {
       if (live && !stopped && !(e instanceof SliceDropped)) status.textContent = refusalOf(e);
@@ -573,9 +596,9 @@ export function printPanel(doc: Document, parts: PrintPanelParts): PrintPanel {
     status.textContent = "";
     showCost(null);
     try {
-      const done = await sliceStls(parts.kernel, () => plateFiles(parts.registry, objects), choices);
+      const done = await sliceStls(parts.kernel, () => plateFiles(parts.registry, objects), asSliced());
       if (live && !stopped) {
-        status.textContent = sliceWords(done);
+        status.textContent = sliceWords(done, filamentFor(choices.filament, format));
         showCost(done);
       }
     } catch (e) {

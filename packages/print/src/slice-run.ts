@@ -3,9 +3,9 @@
 // for a refusal, the file names, the progress and the time-lapse's words. Moved from Design's slice-print.ts (Slice page
 // step 3); Design's dialog and Slice's page both use it, each making the bodies' STL files its own way.
 
-import type { BuildPlate, KernelCalls, P1sPrintFile, SlicedPrint, SliceProgress, SupportStyle } from "@fission/core";
+import type { BuildPlate, FilamentType, KernelCalls, P1sPrintFile, SlicedPrint, SliceProgress, SupportStyle } from "@fission/core";
 import { firstLayerReach, NO_EXTRAS, P1S_AREA, type FirstLayerExtras } from "./build-area.ts";
-import { FILE_DEFAULTS, SUPPORT_OPTIONS, type NozzleType, type PrintChoices } from "./choices.ts";
+import { FILE_DEFAULTS, filamentFor, filamentName, SUPPORT_OPTIONS, type NozzleType, type PrintChoices, type PrintFormat } from "./choices.ts";
 import { FIT_PEG, FIT_THICK, fitPieceStl } from "./fit-piece.ts";
 import { overhangArea } from "./overhang.ts";
 import { grams, timeWords } from "./print-cost.ts";
@@ -246,7 +246,7 @@ async function runStl(run: SliceRun, files: () => Promise<readonly Uint8Array[]>
 export function sliceStls(kernel: KernelCalls, files: () => Promise<readonly Uint8Array[]>, choices: PrintChoices): Promise<SlicedPrint & { levelNote: string; overhangMm2: number }> {
   return asRun(kernel, async (run) => {
     const { stl, note, height, overhang } = await runStl(run, files);
-    return { ...(await engine(height, () => kernel.call("slice_stl", stl, choices.layerHeight, choices.walls, choices.infill, choices.supports, choices.warmUp, choices.betterGrip))), levelNote: note, overhangMm2: overhang };
+    return { ...(await engine(height, () => kernel.call("slice_stl", stl, choices.layerHeight, choices.walls, choices.infill, choices.supports, choices.warmUp, choices.betterGrip, filamentFor(choices.filament, "gcode")))), levelNote: note, overhangMm2: overhang };
   });
 }
 
@@ -254,7 +254,7 @@ export function sliceStls(kernel: KernelCalls, files: () => Promise<readonly Uin
 export function printFileOfStls(kernel: KernelCalls, files: () => Promise<readonly Uint8Array[]>, choices: PrintChoices, plate: BuildPlate, nozzle: NozzleType = FILE_DEFAULTS.nozzle): Promise<P1sPrintFile & { levelNote: string; overhangMm2: number }> {
   return asRun(kernel, async (run) => {
     const { stl, note, height, overhang } = await runStl(run, files);
-    return { ...(await engine(height, () => kernel.call("print_file_stl", stl, choices.layerHeight, choices.walls, choices.infill, choices.supports, plate, nozzle, choices.warmUp, choices.betterGrip))), levelNote: note, overhangMm2: overhang };
+    return { ...(await engine(height, () => kernel.call("print_file_stl", stl, choices.layerHeight, choices.walls, choices.infill, choices.supports, plate, nozzle, choices.warmUp, choices.betterGrip, filamentFor(choices.filament, "p1s")))), levelNote: note, overhangMm2: overhang };
   });
 }
 
@@ -263,7 +263,7 @@ export function testPieceFile(kernel: KernelCalls, choices: PrintChoices, plate:
   return asRun(kernel, async (run) => {
     const stl = fitPieceStl();
     if (run.stopped) throw new SliceDropped();
-    return engine(FIT_THICK + FIT_PEG, () => kernel.call("print_file_stl", stl, choices.layerHeight, choices.walls, choices.infill, "off", plate, nozzle, choices.warmUp, choices.betterGrip));
+    return engine(FIT_THICK + FIT_PEG, () => kernel.call("print_file_stl", stl, choices.layerHeight, choices.walls, choices.infill, "off", plate, nozzle, choices.warmUp, choices.betterGrip, filamentFor(choices.filament, "p1s")));
   });
 }
 
@@ -395,7 +395,7 @@ export function refusalWords(message: string, height?: number): string {
 
 /** The plain file's name: the layer height, the walls and infill, its supports, "no-warm-up" without the loop and "grip" with Better grip, so two slices of one part never share a name. */
 export function gcodeName(choices: PrintChoices, project?: string): string {
-  return fitName(nameLead(project), settingsPart(choices), ".gcode");
+  return fitName(nameLead(project), settingsPart(choices, "gcode"), ".gcode");
 }
 
 /** Each plate's part of a P1S file's name. */
@@ -406,7 +406,7 @@ const PLATE_NAMES: Readonly<Record<BuildPlate, string>> = { textured: "textured"
  * plate or nozzle is never taken for another's.
  */
 export function printFileName(choices: PrintChoices, plate: BuildPlate, nozzle: NozzleType = FILE_DEFAULTS.nozzle, project?: string): string {
-  return fitName(nameLead(project), `${settingsPart(choices)}-${PLATE_NAMES[plate]}${nozzle === "high-flow" ? "-high-flow" : ""}`, P1S_KIND.extension);
+  return fitName(nameLead(project), `${settingsPart(choices, "p1s")}-${PLATE_NAMES[plate]}${nozzle === "high-flow" ? "-high-flow" : ""}`, P1S_KIND.extension);
 }
 
 /**
@@ -425,7 +425,11 @@ export const nameLead = (project?: string): string => {
  */
 export const printLead = (project: string | undefined, file: string | null | undefined): string | undefined => (nameLead(project) === "spindlelabs" && file && file.trim() !== "" ? file : project);
 
-const settingsPart = (choices: PrintChoices) => `-${choices.layerHeight}mm-${choices.walls}w-${choices.infill}pc${SUPPORT_SUFFIX[choices.supports]}${choices.warmUp ? "" : "-no-warm-up"}${choices.betterGrip ? "-grip" : ""}`;
+/** A file's name says the filament only when it is not the file's own default (Bambu PLA Basic for the P1S's file, Generic PLA for plain G-code), so a name keeps its old form until the filament is changed. */
+const filamentPart = (choices: PrintChoices, format: PrintFormat) =>
+  filamentFor(choices.filament, format) === filamentFor("auto", format) ? "" : choices.filament === "generic-pla" ? "-generic-pla" : "-bambu-pla-basic";
+
+const settingsPart = (choices: PrintChoices, format: PrintFormat) => `-${choices.layerHeight}mm-${choices.walls}w-${choices.infill}pc${SUPPORT_SUFFIX[choices.supports]}${choices.warmUp ? "" : "-no-warm-up"}${choices.betterGrip ? "-grip" : ""}${filamentPart(choices, format)}`;
 
 /** The most a file's name may hold, as the save box cuts it (packages/ui save-file.ts): characters and bytes of UTF-8. */
 const NAME_CHARS = 120;
@@ -465,10 +469,11 @@ export { timeWords };
  * The time is the engine's estimate of the moves alone, so the words say
  * the printer's own warm-up comes on top.
  */
-export function printWords(print: PrintFacts): string {
+export function printWords(print: PrintFacts, filament?: FilamentType): string {
   const layers = `${print.layers} ${print.layers === 1 ? "layer" : "layers"}`;
   const time = timeWords(print.printTimeS);
-  const timePart = time === null ? "" : `, about ${time} of printing (plus heating and levelling)`;
+  // The profile the time is for sits beside it: its layer time sets how long small parts take (Bambu PLA Basic 4 s, Generic PLA 8 s a layer).
+  const timePart = time === null ? "" : `, about ${time} of printing${filament === undefined ? "" : ` with ${filamentName(filament)}`} (plus heating and levelling)`;
   return `${layers}, ${grams(print.filamentG)} g of PLA (${(print.filamentMm / 1000).toFixed(2)} m of filament)${timePart}.`;
 }
 

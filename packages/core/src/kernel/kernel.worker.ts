@@ -9,7 +9,7 @@ import { startKernel } from "./handshake.ts";
 import type { KernelTestProgress, ProgressCallback } from "./kernel-client.ts";
 import { isTrap, KERNEL_NOT_DOWNLOADED, kernelFailure, progressPoster, type KernelReady, type KernelRequest, type KernelResponse } from "./kernel-client.ts";
 import { calibrate } from "./time-limit.ts";
-import type { BodyHandle, BodySpec, BooleanOp, Motion, BooleanResult, BuildPlate, ChamferResult, ChamferSize, ShellResult, ConstructMade, ConstructMake, Measured, MeasurePick, NozzleType, Outline, SketchArc, SketchCircle, SketchLine, SupportStyle, PatternSpec, StressStage, StressTest } from "./kernel-types.ts";
+import type { BodyHandle, BodySpec, BooleanOp, Motion, BooleanResult, BuildPlate, ChamferResult, ChamferSize, ShellResult, ConstructMade, ConstructMake, Measured, MeasurePick, FilamentType, NozzleType, Outline, SketchArc, SketchCircle, SketchLine, SupportStyle, PatternSpec, StressStage, StressTest } from "./kernel-types.ts";
 
 // A .wasm that didn't download or compile fails every call with the app's
 // words, not the browser's; a build that doesn't take the app's key keeps
@@ -91,13 +91,17 @@ const ops = {
   body_measure: (first: MeasurePick, second: MeasurePick | null): Measured => kernel.body_measure(first, second),
   body_construct: (make: ConstructMake): ConstructMade => kernel.body_construct(make),
   body_count: () => kernel.body_count(),
-  slice_stl: (stl: Uint8Array<ArrayBuffer>, layerHeight: number, wallCount: number, infillPercent: number, supports: SupportStyle, warmUp: boolean, betterGrip: boolean, told?: ProgressCallback) =>
-    loose(kernel.slice_stl)(stl, layerHeight, wallCount, infillPercent, supports, warmUp, betterGrip, told),
-  print_file_stl: (stl: Uint8Array<ArrayBuffer>, layerHeight: number, wallCount: number, infillPercent: number, supports: SupportStyle, plate: BuildPlate, nozzle: NozzleType, warmUp: boolean, betterGrip: boolean, told?: ProgressCallback) =>
-    loose(kernel.print_file_stl)(stl, layerHeight, wallCount, infillPercent, supports, plate, nozzle, warmUp, betterGrip, told),
+  slice_stl: (stl: Uint8Array<ArrayBuffer>, layerHeight: number, wallCount: number, infillPercent: number, supports: SupportStyle, warmUp: boolean, betterGrip: boolean, filament?: FilamentType, told?: ProgressCallback) =>
+    // The filament goes after the progress callback: an older module ignores it, and an app that sends none gets Generic PLA.
+    loose(kernel.slice_stl)(stl, layerHeight, wallCount, infillPercent, supports, warmUp, betterGrip, told, filament),
+  print_file_stl: (stl: Uint8Array<ArrayBuffer>, layerHeight: number, wallCount: number, infillPercent: number, supports: SupportStyle, plate: BuildPlate, nozzle: NozzleType, warmUp: boolean, betterGrip: boolean, filament?: FilamentType, told?: ProgressCallback) =>
+    loose(kernel.print_file_stl)(stl, layerHeight, wallCount, infillPercent, supports, plate, nozzle, warmUp, betterGrip, told, filament),
   stress_test: (body: BodyHandle, test: StressTest, told?: (stage: StressStage) => void) => loose(kernel.stress_test)(body, test, told),
   wasm_bytes: () => memory?.buffer.byteLength ?? 0,
 } satisfies Record<KernelRequest["op"], (...args: never[]) => unknown>;
+
+/** How many arguments each slice has of its own (the progress callback comes after them). */
+const SLICE_ARGS: Partial<Record<KernelRequest["op"], number>> = { slice_stl: 8, print_file_stl: 10 };
 
 self.onmessage = async (event: MessageEvent<KernelRequest>) => {
   const { id, op, args } = event.data;
@@ -112,7 +116,10 @@ self.onmessage = async (event: MessageEvent<KernelRequest>) => {
         : op === "stress_test"
           ? [(testStage: StressStage) => self.postMessage({ id, testStage } satisfies KernelTestProgress)]
           : [];
-    reply = { id, ok: true, value: fn(...args, ...told) };
+    // The callback follows the slice's own arguments, filament included, so a call that left the later ones off is padded to its length.
+    const own = SLICE_ARGS[op as "slice_stl"];
+    const given = own === undefined ? args : Array.from({ length: Math.max(own, args.length) }, (_, i) => args[i]);
+    reply = { id, ok: true, value: fn(...given, ...told) };
   } catch (e) {
     // A trap leaves this kernel unfit for another call: the client replaces this worker (kernel-client.ts, restart).
     // A kernel that never downloaded says so, so the client can tell the app (kernel-client.ts, onMissing).

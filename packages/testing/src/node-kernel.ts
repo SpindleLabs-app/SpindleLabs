@@ -56,8 +56,8 @@ export function nodeKernel(): KernelCalls {
     body_count: () => entry.body_count(),
     body_measure: (first, second) => entry.body_measure(first, second),
     body_construct: (make) => entry.body_construct(make),
-    slice_stl: (stl, layerHeight, wallCount, infillPercent, supports, warmUp, betterGrip) => entry.slice_stl(stl, layerHeight, wallCount, infillPercent, supports, warmUp, betterGrip),
-    print_file_stl: (stl, layerHeight, wallCount, infillPercent, supports, plate, nozzle, warmUp, betterGrip) => entry.print_file_stl(stl, layerHeight, wallCount, infillPercent, supports, plate, nozzle, warmUp, betterGrip),
+    slice_stl: (stl, layerHeight, wallCount, infillPercent, supports, warmUp, betterGrip, filament) => entry.slice_stl(stl, layerHeight, wallCount, infillPercent, supports, warmUp, betterGrip, undefined, filament),
+    print_file_stl: (stl, layerHeight, wallCount, infillPercent, supports, plate, nozzle, warmUp, betterGrip, filament) => entry.print_file_stl(stl, layerHeight, wallCount, infillPercent, supports, plate, nozzle, warmUp, betterGrip, undefined, filament),
     stress_test: (body, test) => entry.stress_test(body, test, (stage: StressStage) => testListeners.forEach((l) => l(stage))),
     wasm_bytes: () => loaded!.memory.buffer.byteLength,
   };

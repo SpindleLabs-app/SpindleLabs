@@ -142,7 +142,7 @@ test("the panel starts on the beginner's defaults, and picking a choice changes 
   const { doc, panel } = panelIn(async () => ({}));
   assert.deepEqual(panel.choices(), PRINT_DEFAULTS);
   const selects = choiceSelects(doc);
-  assert.equal(selects.length, 7, "quality, walls, infill, supports, file, build plate, nozzle");
+  assert.equal(selects.length, 8, "quality, walls, infill, supports, filament, file, build plate, nozzle");
   choiceSelect(doc, "walls").value = "3"; // Walls: the options are 1..6, index 3 is 4 walls
   choiceSelect(doc, "walls").dispatchEvent(new (doc.defaultView as unknown as { Event: typeof Event }).Event("change"));
   assert.deepEqual(panel.choices(), { ...PRINT_DEFAULTS, walls: 4 });
@@ -574,4 +574,60 @@ test("stop() drops a slice under way: nothing is saved, no words appear, and the
   assert.deepEqual(saves, [], "nothing saved");
   assert.equal(doc.getElementById("slice-page-status")!.textContent, "", "no words");
   assert.equal(button.disabled, false, "ready again");
+});
+
+test("the filament: Bambu PLA Basic for the P1S's file and Generic PLA for plain G-code until one is picked; a pick holds, is remembered, is sent to the engine and said beside the time", async () => {
+  const stored = new Map<string, string>();
+  const storage = { getItem: (k: string) => stored.get(k) ?? null, setItem: (k: string, v: string) => void stored.set(k, v) };
+  const calls: unknown[][] = [];
+  const saved: { suggestedName: string }[] = [];
+  const answer = { layers: 12, filamentMm: 1000, filamentG: 3, printTimeS: 600, unprintedVolume: 0, package: new Uint8Array([1]), gcode: "G1 X1\n" };
+  const { doc, panel } = panelIn(async (...a) => (calls.push(a), answer), objects, { storage, save: async (r) => (saved.push(r), { status: "saved", name: r.suggestedName }) });
+  const Ev = (doc.defaultView as unknown as { Event: typeof Event }).Event;
+  const set = (id: string, v: string) => {
+    choiceSelect(doc, id).value = v;
+    choiceSelect(doc, id).dispatchEvent(new Ev("change"));
+  };
+  const words = () => doc.querySelector(".slice-page-slice-words")!.textContent!;
+  // Options: 0 Bambu PLA Basic, 1 Generic PLA. The P1S's file is the default, so the box shows Bambu PLA Basic, and nothing is picked yet.
+  assert.equal(choiceSelect(doc, "filament").selectedOptions[0].textContent, "Bambu PLA Basic");
+  assert.equal(panel.choices().filament, "auto");
+  await panel.download();
+  assert.equal(calls[0][0], "print_file_stl");
+  assert.equal(calls[0][10], "bambu-pla-basic", "the P1S's file goes with Bambu PLA Basic");
+  assert.match(words(), /about 10 min of printing with Bambu PLA Basic \(plus heating/);
+  assert.doesNotMatch(saved[0].suggestedName, /pla/, "the file's own default is not in its name");
+  // The Slice button, which asks the plain slice, agrees with the P1S file: Bambu PLA Basic, not the plain file's Generic PLA.
+  await panel.slice();
+  assert.equal(calls[1][0], "slice_stl");
+  assert.equal(calls[1][8], "bambu-pla-basic");
+  calls.length = 0;
+  // Plain G-code follows with Generic PLA: the box moves with the file while none is picked.
+  set("format", "1");
+  assert.equal(choiceSelect(doc, "filament").selectedOptions[0].textContent, "Generic PLA");
+  await panel.download();
+  assert.equal(calls[0][0], "slice_stl");
+  assert.equal(calls[0][8], "generic-pla");
+  assert.match(words(), /with Generic PLA \(plus heating/);
+  await panel.slice();
+  assert.equal(calls[1][8], "generic-pla");
+  // Picking Bambu PLA Basic for the plain file holds, is remembered, goes to the engine and is in the name.
+  set("filament", "0");
+  assert.equal(stored.get("spindlelabs.slice.filament"), "bambu-pla-basic");
+  await panel.download();
+  assert.equal(calls[2][8], "bambu-pla-basic");
+  assert.match(saved[2].suggestedName, /-bambu-pla-basic\.gcode$/);
+  // A pick holds when the file changes: Generic PLA picked, then the P1S's file, is sent as Generic PLA and named so.
+  set("filament", "1");
+  set("format", "0");
+  assert.equal(choiceSelect(doc, "filament").selectedOptions[0].textContent, "Generic PLA");
+  await panel.download();
+  assert.equal(calls[3][10], "generic-pla");
+  assert.match(saved[3].suggestedName, /-generic-pla-textured\.gcode\.3mf$/);
+  // A page opened later starts on what was picked.
+  const again = panelIn(async () => answer, objects, { storage });
+  assert.equal(again.panel.choices().filament, "generic-pla");
+  // A kept value that is not a filament is ignored.
+  const junk = panelIn(async () => answer, objects, { storage: { getItem: () => "abs", setItem: () => undefined } });
+  assert.equal(junk.panel.choices().filament, "auto");
 });

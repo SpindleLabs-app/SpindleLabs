@@ -305,6 +305,9 @@ export type BuildPlate = "textured" | "smooth" | "cool_plate" | "supertack_plate
 /** The nozzle fitted to the P1S, named in its print file: Bambu Studio refuses to send a file whose nozzle type is not the printer's. Standard is the stock hotend; High Flow is Bambu's high-flow hotend. Both are 0.4 mm and print the same moves. */
 export type NozzleType = "standard" | "high-flow";
 
+/** The filament profile a slice is made for, as the engine names it: Generic PLA's layers take at least 8 s, Bambu PLA Basic's 4 s (kernel 0.33.82). A module from before the choice slices as Generic PLA whatever is sent. */
+export type FilamentType = "generic-pla" | "bambu-pla-basic";
+
 /** Supports under overhangs (P5d3): none, normal (columns straight down) or tree (branches merging going down), both under the same dense roof. */
 export type SupportStyle = "off" | "normal" | "tree";
 
