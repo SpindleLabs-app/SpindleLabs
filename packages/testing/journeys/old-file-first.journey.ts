@@ -64,9 +64,9 @@ async function editMove(a: App, id: string, v: Record<string, string>) {
 /**
  * Box 1 40 × 30 × 20; Box 2 the same moved (20, 0, `z`); Combine 1 joins them. Create sketch clicked at (50, 15) on the
  * top over Box 2's part (z 20 + `z`), a rectangle x 45..55, y 10..20, extruded 5: a block of 500 mm³. Saved, the file
- * written as `version` (version 21 data holds the same sketch; `body`, when given, what version 21 recorded instead).
+ * written as today's data or relabelled version 21 (version 21 data holds the same sketch; `body`, when given, what version 21 recorded instead).
  */
-async function drawnAndOpened(z: number, version: 21 | 22, body?: object) {
+async function drawnAndOpened(z: number, version: 21 | "today", body?: object) {
   let doc = partDocument("box", 40, 30, 20);
   let b2: string;
   ({ doc, id: b2 } = insertPreset(doc, "box", 40, 30, 20));
@@ -84,8 +84,8 @@ async function drawnAndOpened(z: number, version: 21 | 22, body?: object) {
   await a.settle();
   const saved = JSON.parse(file(a.doc()));
   assert.ok(await a.close());
-  assert.equal(saved.workspaces.design.version, 22);
-  saved.workspaces.design.version = version;
+  assert.ok(saved.workspaces.design.version >= 22, "written by a build with the merged-face fix");
+  if (version === 21) saved.workspaces.design.version = 21;
   const sketch = saved.workspaces.design.sketches.find((s: { face?: object }) => s.face);
   if (body !== undefined) sketch.face.body = body;
   return { opened: reopen(JSON.stringify(saved)), move: m.id };
@@ -97,8 +97,8 @@ const firstOf = (d: DesignDocument) => d.sketches.find((s) => s.face)?.face?.fir
 // block stands on Box 2's own top, x 45..55, z 25..30. Box 2's Move edited to z 0 brings it down 5, the tops level and
 // merged: the block goes with Box 2, x 45..55, z 20..25. Carried by Box 1 (the merged face's first input, which has not
 // moved) it went by Box 2's frame's (20, 0, 5) taken off, to x 25..35, z 20..25.
-for (const version of [22, 21] as const) {
-  test(`SL #759 item 2${version === 22 ? " (the control: drawn today)" : ""}: a block on Box 2's own top from a version ${version} file goes with Box 2 when the tops merge`, async () => {
+for (const version of ["today", 21] as const) {
+  test(`SL #759 item 2${version === "today" ? " (the control: drawn today)" : ""}: a block on Box 2's own top from a ${version === 21 ? "version 21" : "today's"} file goes with Box 2 when the tops merge`, async () => {
     const { opened, move } = await drawnAndOpened(5, version);
     assert.equal(firstOf(opened), version === 21 ? true : undefined, "the upgrade marks it");
     const once = await built(opened);
