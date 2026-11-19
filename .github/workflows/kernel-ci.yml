@@ -157,7 +157,9 @@ jobs:
     # above. It costs per minute and stops at the spending limit: delete the
     # variable (Settings > Secrets and variables > Actions > Variables) and new
     # runs go back to the free runners; nothing else changes.
-    runs-on: ${{ vars.KERNEL_CHECKS_RUNNER || 'ubuntu-24.04' }}
+    # Only for a run started by workflow_dispatch (which needs write access
+    # here), never for anything a fork could start.
+    runs-on: ${{ github.event_name == 'workflow_dispatch' && vars.KERNEL_CHECKS_RUNNER || 'ubuntu-24.04' }}
     environment: kernel
     # The slowest part takes about 25 minutes; the whole checks once took 80
     # and one run on a slow runner was cancelled at 90 (2026-11-05). 150,
