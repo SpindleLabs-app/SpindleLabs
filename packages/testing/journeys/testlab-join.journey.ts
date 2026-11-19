@@ -9,7 +9,8 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { ChangeNotes, DependencyGraph, emptyProject, materialLibrary, RepresentationRegistry, weakerWay, type AnalysisOverlay, type DisplayMesh, type ViewportPick, type WorkspaceContext } from "@fission/core";
 import { changePreset, insertMove, insertPreset, partDocument, registerDesign, syncGraph, type DesignDocument } from "@fission/design";
-import { mountTestLabPage, readTestLab, setLoad } from "@fission/simulate";
+import { mountTestLabPage, readTestFile, readTestLab, setLoad } from "@fission/simulate";
+import { rerunTestFile, type RerunReport } from "../src/testlab-rerun.ts";
 import { nodeKernel } from "../src/node-kernel.ts";
 
 const { Window } = await import("happy-dom");
@@ -95,7 +96,20 @@ function setUp(start: DesignDocument) {
   };
   /** Waits for the join check started by the last look-up. */
   const checked = () => settle(() => false);
-  return { ctx, project, graph, notes, last, inList, testBody, tick, tap, choose, status, run, data, load, checked, mesh: () => mesh! };
+  /** Export test file pressed: the text the browser would save (its Blob caught where it is made). */
+  const exported = async (): Promise<string> => {
+    let blob: Blob | null = null;
+    const w = win as unknown as typeof globalThis;
+    w.URL.createObjectURL = ((b: Blob) => ((blob = b), "blob:test")) as typeof URL.createObjectURL;
+    w.URL.revokeObjectURL = () => {};
+    const click0 = w.HTMLAnchorElement.prototype.click;
+    w.HTMLAnchorElement.prototype.click = () => {};
+    last("[data-testlab=export-file]")!.click();
+    w.HTMLAnchorElement.prototype.click = click0;
+    assert.ok(blob, "a file was saved");
+    return (blob as Blob).text();
+  };
+  return { ctx, project, graph, notes, last, inList, testBody, tick, tap, choose, status, run, data, load, checked, exported, mesh: () => mesh! };
 }
 
 /** Joins the bodies through the Join chooser (each of `ids` after the first ticked, or All), waits for the view of them. */
@@ -253,4 +267,37 @@ test("a face inside the join is lost in words; faces made one with an unpicked f
   await t.checked();
   page.unmount();
   assert.equal(await kernel.call("body_count"), before);
+});
+
+test("Export test file of a joined run keeps the joined part, and runs again headless on it", async () => {
+  const before = await kernel.call("body_count");
+  const design = twoBars(50, 50);
+  const t = setUp(design);
+  const page = mountTestLabPage(t.ctx);
+  await page.ready;
+  await t.testBody(0);
+  await joinAll(t, [`body:${design.timeline.features[0].id}`, `body:${design.timeline.features[1].id}`]);
+  await cantilever(t, 100);
+  await t.checked();
+  await t.run();
+  assert.equal(t.status(), "");
+  const text = await t.exported();
+  page.unmount();
+  const file = readTestFile(text);
+  // The part recorded is the joined one, worked by hand: the two 50 × 10 × 10 bars meet face to face at x = 50, so the
+  // union is one 100 × 10 × 10 bar, its four long sides merged from level halves: two ends of 10 × 10 = 100 mm² and
+  // four sides of 100 × 10 = 1,000 mm². Body 1 alone would have four sides of 500 mm².
+  assert.deepEqual(file.part.faces.map((f) => Math.round(f.area * 1e6) / 1e6).sort((a, b) => a - b), [100, 100, 1000, 1000, 1000, 1000]);
+  assert.match(file.part.step!, /^ISO-10303-21;/);
+  const kept = readTestLab((file.project as { workspaces: { simulate: unknown } }).workspaces.simulate);
+  assert.deepEqual(kept.studies[0].joined, t.data().studies[0].joined, "the join is in the file's project");
+  // Run again headless: it joins the bodies as the page did, so every check passes.
+  const failed = (r: RerunReport) => r.checks.filter((c) => !c.ok).map((c) => c.name);
+  assert.deepEqual(failed(await rerunTestFile(text, kernel)), []);
+  // Deliberate break: the join taken out of the file's project, the re-run tests Body 1 alone, a 50 mm bar, and says so.
+  const f = JSON.parse(text);
+  delete f.project.workspaces.simulate.studies[0].joined;
+  const broken = failed(await rerunTestFile(JSON.stringify(f), kernel));
+  assert.ok(broken.includes("same exact part (STEP)") && broken.includes("same faces"), broken.join(", "));
+  assert.equal(await kernel.call("body_count"), before, "every body the run, the file and the re-runs built is freed");
 });
