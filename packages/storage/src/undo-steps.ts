@@ -22,6 +22,16 @@ export const STEPS_PROJECTS = 10;
 export const STEPS_FORMAT = 1;
 
 const STEPS = "steps/";
+const SUMMARY = "summary/";
+/** The save time (ms) a summary entry holds, or NaN when it holds none (a deletion mark, damaged). */
+function savedAt(summary: string): number {
+  try {
+    const m = (JSON.parse(summary) as { modified?: unknown }).modified;
+    return typeof m === "string" ? new Date(m).getTime() : NaN;
+  } catch {
+    return NaN;
+  }
+}
 const STEPS_AT = "steps-at/";
 
 type Kept = SavedHistory["kept"][number];
@@ -101,9 +111,13 @@ export interface StepsStore {
   /**
    * Keeps `saved` as `id`'s steps, written at `at` (ms), past STEPS_CHAR_LIMIT trimmed (`encodeSteps`); then forgets the
    * steps of all but the STEPS_PROJECTS projects written most recently. Never throws: a write that fails forgets `id`'s
-   * steps instead, so older ones can't come back.
+   * steps instead, so older ones can't come back. Given `own` (the save times of this tab's own states of the project:
+   * `Autosave.ownTimes`), nothing is written unless the store holds one of them or no summary at all, checked in the
+   * same step as the write: another tab saved since, so these steps are a stale tab's and must not replace that tab's
+   * (export hunt 2026-11-12, #642 item 4: two windows both on screen, a stale tab edited and hidden within a second,
+   * before it learnt its save was refused).
    */
-  write(id: string, saved: SavedHistory, at: number): Promise<void>;
+  write(id: string, saved: SavedHistory, at: number, own?: readonly Date[]): Promise<void>;
   /** Forgets `id`'s steps (the project deleted). Never throws. */
   forget(id: string): Promise<void>;
   /** Forgets every project's steps (no room for a save). Never throws. */
@@ -131,14 +145,22 @@ export function stepsStore(kv: KeyValue, { charLimit = STEPS_CHAR_LIMIT, project
         return null;
       }
     },
-    async write(id, saved, at) {
+    async write(id, saved, at, own) {
       const text = encodeSteps(saved, charLimit);
       if (text === null) return forget(id);
+      let stale = false;
       try {
-        await kv.update([], () => ({ [STEPS + id]: text, [STEPS_AT + id]: String(at) }));
+        await kv.update(own === undefined ? [] : [SUMMARY + id], ([summary]) => {
+          if (own !== undefined && summary !== undefined && !own.some((t) => t.getTime() === savedAt(summary))) {
+            stale = true; // another tab's state: its steps stay
+            return {};
+          }
+          return { [STEPS + id]: text, [STEPS_AT + id]: String(at) };
+        });
       } catch {
         return forget(id);
       }
+      if (stale) return;
       try {
         const written: [string, number][] = [];
         for (const key of await kv.keys(STEPS_AT)) {

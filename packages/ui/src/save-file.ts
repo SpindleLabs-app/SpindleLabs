@@ -27,7 +27,11 @@ export interface SaveRequest {
   /** The name offered, with or without the ending. */
   suggestedName: string;
   kind: SaveKind;
-  bytes: BlobPart;
+  /**
+   * What the file holds; given as a function, it is asked once the file's name is known (the picker's or the name
+   * typed), so a project never named can take its file's name inside the file too (SL #644 item 3).
+   */
+  bytes: BlobPart | ((fileName: string) => BlobPart);
   /** The file this project was last saved to: written again without asking. */
   handle?: FileHandle | null;
 }
@@ -170,7 +174,8 @@ export function askName(doc: Document, suggested: string, kind: SaveKind): Promi
  */
 export async function saveFile(doc: Document, request: SaveRequest): Promise<SaveResult> {
   const win = doc.defaultView!;
-  const { kind, bytes } = request;
+  const { kind } = request;
+  const bytes = (name: string): BlobPart => (typeof request.bytes === "function" ? request.bytes(name) : request.bytes);
   const suggested = fileNameFor(request.suggestedName, kind.extension);
   // The kept file that could not be written again, and why: asked where to save instead, a person who then
   // chooses nowhere is told nothing was saved, rather than nothing at all.
@@ -178,7 +183,7 @@ export async function saveFile(doc: Document, request: SaveRequest): Promise<Sav
   try {
     if (request.handle) {
       try {
-        await write(request.handle, bytes);
+        await write(request.handle, bytes(request.handle.name));
         return { status: "saved", name: request.handle.name, handle: request.handle };
       } catch (e) {
         // Gone or no longer allowed: ask again below.
@@ -199,7 +204,7 @@ export async function saveFile(doc: Document, request: SaveRequest): Promise<Sav
         // The file was picked but can't be written (disk full, no permission): say so, rather than quietly asking
         // for a name and downloading somewhere else (weak-spot hunt 10-29).
         try {
-          await write(handle, bytes);
+          await write(handle, bytes(handle.name));
         } catch (e) {
           const why = e instanceof Error ? e.message : String(e);
           return { status: "failed", message: `Couldn't write "${handle.name}"${why ? `: ${why}` : ""}. Nothing was saved there; try again, or pick another place.` };
@@ -209,7 +214,7 @@ export async function saveFile(doc: Document, request: SaveRequest): Promise<Sav
     }
     const name = driven(win) ? suggested : await askName(doc, suggested, kind);
     if (name === null) return lost ?? { status: "cancelled" };
-    download(doc, bytes, name, kind.mime);
+    download(doc, bytes(name), name, kind.mime);
     return { status: "saved", name, handle: null };
   } catch (e) {
     return { status: "failed", message: e instanceof Error ? e.message : String(e) };

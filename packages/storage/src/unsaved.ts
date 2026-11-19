@@ -292,6 +292,52 @@ export async function recoverUnsaved(store: ProjectStore, journal: JournalStorag
   return problems;
 }
 
+/**
+ * Every project whose newest state only the journal holds, because recovery couldn't store it (storage full, marked
+ * kept): its id, name and when it was written, newest first. A project the store never took (a file opened, or a
+ * first visit, while storage was full) is in no store list, so without these it was hidden after a reload while the app
+ * said its changes were "shown" (issue #627 item 5, #643 item 3). Never throws.
+ */
+export function heldProjects(journal: JournalStorage | null): { id: string; name: string; written: Date }[] {
+  const held: { id: string; name: string; written: Date }[] = [];
+  if (!journal) return held;
+  try {
+    for (let i = 0; i < journal.length; i++) {
+      const k = journal.key(i);
+      if (k === null || !k.startsWith(UNSAVED_PREFIX) || k.length === UNSAVED_PREFIX.length) continue;
+      const raw = journal.getItem(k);
+      if (raw === null) continue;
+      const entry = readJournalEntry(raw);
+      if (!entry.kept) continue;
+      let name = "";
+      try {
+        const n = (JSON.parse(entry.text) as { name?: unknown }).name;
+        if (typeof n === "string") name = n;
+      } catch {
+        // its name can't be read: listed as Untitled, and opening it says why it can't be
+      }
+      held.push({ id: k.slice(UNSAVED_PREFIX.length), name, written: entry.written ?? new Date(0) });
+    }
+  } catch {
+    // storage off: nothing held
+  }
+  return held.sort((a, b) => b.written.getTime() - a.written.getTime());
+}
+
+/** Every key kept aside under UNREADABLE_PREFIX for project `id`. Never throws. */
+export function unreadableKeysOf(journal: JournalStorage, id: string): string[] {
+  const keys: string[] = [];
+  try {
+    for (let i = 0; i < journal.length; i++) {
+      const k = journal.key(i);
+      if (k !== null && unreadableId(k) === id) keys.push(k);
+    }
+  } catch {
+    // storage off
+  }
+  return keys;
+}
+
 /** The project id of a key under UNREADABLE_PREFIX (`<prefix><id>/<ms>`), or null for any other key. */
 function unreadableId(key: string): string | null {
   if (!key.startsWith(UNREADABLE_PREFIX)) return null;
