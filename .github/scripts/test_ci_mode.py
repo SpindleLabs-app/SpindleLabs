@@ -352,7 +352,8 @@ class Workflows(unittest.TestCase):
         # Every job of these workflows starts after `idle` (directly or through
         # a job that needs it), which waits for no CI job queued and no merge
         # queue run (branch_testing.py wait-idle); the kernel's coverage
-        # report runs only for main's runs.
+        # report runs only for main's runs (never twice: not again in a
+        # run that takes over the checks from the kernel repo, checks=only).
         for name in ("nightly.yml", "kernel-nightly.yml", "fuzz.yml", "kernel-fuzz.yml"):
             found = jobs(os.path.join(WORKFLOWS, name))
             self.assertRegex(found["idle"], r"run: python3 \.github/scripts/branch_testing\.py wait-idle \S+", name)
@@ -362,8 +363,9 @@ class Workflows(unittest.TestCase):
                     with self.subTest(workflow=name, job=job):
                         self.assertRegex(block, r"(?m)^    needs: ")
         kernel = jobs(os.path.join(WORKFLOWS, "kernel-ci.yml"))
-        self.assertIn("    if: inputs.label == 'main'\n", kernel["coverage"])
-        self.assertIn("run-name: Kernel CI ${{ inputs.label }}\n", open(os.path.join(WORKFLOWS, "kernel-ci.yml")).read())
+        self.assertIn("    if: inputs.label == 'main' && inputs.checks != 'only'\n", kernel["coverage"])
+        self.assertIn("run-name: Kernel CI ${{ inputs.label }}${{ inputs.checks == 'only' && ' checks' || '' }}\n",
+                      open(os.path.join(WORKFLOWS, "kernel-ci.yml")).read())
 
 
 def main_not_last(text):

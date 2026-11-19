@@ -26,7 +26,15 @@ name: Kernel CI
 # all-in-one secret of that name is no longer used, security hunt H3.)
 # The title names the label, so the kernel repo's ci.yml can find and cancel
 # a pull request's run when it goes back to draft.
-run-name: Kernel CI ${{ inputs.label }}
+#
+# The kernel repo may run the full checks on its own self-hosted runner
+# instead, never from here: that runner's group refuses public repositories,
+# and no job here may name a self-hosted runner (test_kernel_ci.py checks).
+# checks=home: the kernel repo runs the checks itself, so this run does the
+# rest (mutants, coverage) without them. checks=only: that runner gave no
+# verdict, so this run does just the checks, in its own concurrency group so
+# it never cancels the same pull request's mutants run.
+run-name: Kernel CI ${{ inputs.label }}${{ inputs.checks == 'only' && ' checks' || '' }}
 
 on:
   workflow_dispatch:
@@ -44,10 +52,14 @@ on:
       label:
         description: "pr-<number>, train-<number> or main"
         required: true
+      checks:
+        description: "here (default), home (the kernel repo runs them) or only (the checks alone)"
+        required: false
+        default: "here"
 
 # A newer push to the same pull request cancels the older run; main's finish.
 concurrency:
-  group: kernel-ci-${{ inputs.label }}
+  group: kernel-ci-${{ inputs.label }}${{ inputs.checks == 'only' && '-checks' || '' }}
   cancel-in-progress: ${{ inputs.label != 'main' }}
 
 # The jobs need no rights on this repo: they use the two keys above.
@@ -58,6 +70,7 @@ env:
   HEAD_SHA: ${{ inputs.head }}
   BASE: ${{ inputs.base }}
   LABEL: ${{ inputs.label }}
+  CHECKS: ${{ inputs.checks || 'here' }}
 
 jobs:
   # The kernel's checks run in parts at once, one runner each (the kernel's
@@ -89,7 +102,7 @@ jobs:
     steps:
       - name: Inputs are commit ids and a label, nothing else
         run: |
-          [[ $SHA =~ ^[0-9a-f]{40}$ && $HEAD_SHA =~ ^[0-9a-f]{40}$ && ( -z $BASE || $BASE =~ ^[0-9a-f]{40}$ ) && $LABEL =~ ^(pr-[0-9]+|train-[0-9]+|main)$ ]] || { echo "bad inputs"; exit 1; }
+          [[ $SHA =~ ^[0-9a-f]{40}$ && $HEAD_SHA =~ ^[0-9a-f]{40}$ && ( -z $BASE || $BASE =~ ^[0-9a-f]{40}$ ) && $LABEL =~ ^(pr-[0-9]+|train-[0-9]+|main)$ && $CHECKS =~ ^(here|home|only)$ ]] || { echo "bad inputs"; exit 1; }
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           sparse-checkout: .github/scripts
@@ -98,7 +111,8 @@ jobs:
         env:
           KERNEL_READ: ${{ secrets.KERNEL_STATUS }}
         run: |
-          .github/scripts/kernel_ci.sh status kernel-ci/checks pending "Running on SpindleLabs' runners"
+          # checks=home: the kernel repo marks them itself.
+          [ "$CHECKS" = home ] || .github/scripts/kernel_ci.sh status kernel-ci/checks pending "Running on SpindleLabs' runners"
           [ -z "$BASE" ] || .github/scripts/kernel_ci.sh status kernel-ci/mutants pending "Counting the mutants in the changed lines"
       - name: A key pair for this run (the private half only in kernel-results)
         id: keys
@@ -114,6 +128,7 @@ jobs:
           echo "folder=$folder/key" >> "$GITHUB_OUTPUT"
 
   checks-plan:
+    if: inputs.checks != 'home'
     runs-on: ubuntu-latest
     environment: kernel
     timeout-minutes: 10
@@ -159,7 +174,10 @@ jobs:
     # runs go back to the free runners; nothing else changes.
     # Only for a run started by workflow_dispatch (which needs write access
     # here), never for anything a fork could start.
-    runs-on: ${{ github.event_name == 'workflow_dispatch' && vars.KERNEL_CHECKS_RUNNER || 'ubuntu-24.04' }}
+    # Only the paid GitHub-hosted runner's own name is taken from the
+    # variable: whatever else it held (a self-hosted label above all) runs on
+    # the free runners.
+    runs-on: ${{ github.event_name == 'workflow_dispatch' && vars.KERNEL_CHECKS_RUNNER == 'spindle-8core' && 'spindle-8core' || 'ubuntu-24.04' }}
     environment: kernel
     # The slowest part takes about 25 minutes; the whole checks once took 80
     # and one run on a slow runner was cancelled at 90 (2026-11-05). 150,
@@ -271,7 +289,7 @@ jobs:
   # once: the job that ran the kernel's code holds no key to report with.
   checks-report:
     needs: [keys, checks-plan, checks]
-    if: always()
+    if: always() && inputs.checks != 'home'
     runs-on: ubuntu-24.04
     environment: kernel
     timeout-minutes: 15
@@ -333,7 +351,7 @@ jobs:
   # with only KERNEL_SOURCE, coverage-save holds RESULTS_WRITE.
   coverage:
     needs: keys
-    if: inputs.label == 'main'
+    if: inputs.label == 'main' && inputs.checks != 'only'
     runs-on: ubuntu-latest
     environment: kernel
     timeout-minutes: 60
@@ -374,7 +392,7 @@ jobs:
           retention-days: 1
   coverage-save:
     needs: [keys, coverage]
-    if: always() && inputs.label == 'main' && needs.keys.result == 'success'
+    if: always() && inputs.label == 'main' && inputs.checks != 'only' && needs.keys.result == 'success'
     runs-on: ubuntu-24.04
     environment: kernel
     timeout-minutes: 15
