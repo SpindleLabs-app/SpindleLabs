@@ -9,7 +9,7 @@ import { fitDistance, keepAngleBasis, orbitSafeOffset, planeViewBasis, refitScal
 import { ViewCube } from "./viewcube.ts";
 import { releaseShared } from "./release.ts";
 import { firstHit } from "./ray-pick.ts";
-import { copyChanged, edgeColourArray, faceColourArray, linearOf } from "./body-colours.ts";
+import { copyChanged, edgeColourArray, faceColourArray, linearOf, mapColourArray } from "./body-colours.ts";
 import { isDoublePick, type ViewClick } from "./double-pick.ts";
 import { faceFraming, lookAtFraming, partFraming, pieceCount, pointsInPlane, selectionFraming } from "./framing.ts";
 import { checkTextureSize, imageSheet, imageZoomRange, topDownDistance } from "./image-sheet.ts";
@@ -17,6 +17,8 @@ import { gridSheet, pixelSize, rayOnPlane, sketchGrid, toWorld } from "./sketch-
 import { MOUSE_ATTRIBUTE, MOUSE_EVENT, leftDragOf, readMousePreset } from "@fission/core";
 import { clampZoom, cubeDragAngles, FARTHEST_VIEW, NEAREST_VIEW, dragAction, orbitBy, dragZoomFactor, panBy, wheelFactor, zoomAt, type CameraPose, type NavMode } from "./navigation.ts";
 import { navBar } from "./nav-bar.ts";
+import { faceLook, faceLookPose } from "./face-look.ts";
+import { GLIDE_MS, glidePose, reducedMotion, type GlidePose } from "./glide.ts";
 import { ARROW_GRAB_PX, ARROW_PX, arrowDistance, arrowLength } from "./extrude-pick.ts";
 import { ExtrudeLayer } from "./extrude-layer.ts";
 import { gripPoint, handleAxis, handleNear, isRing, MOVE_GRAB_PX, placedLine, placeHandles, ringAngle, turnBetween, type Placed } from "./move-handles.ts";
@@ -132,6 +134,8 @@ export class ViewportView {
   private moveDrag: { id: number; handle: MoveHandle; centre: [number, number, number]; start: number; last: number; turned: number; amount: number } | null = null;
   /** A sketch point pressed on (47d3): which (editing.grab), where the press was, whether it has moved past a click yet. */
   private pointDrag: { id: number; grab: number; start: { x: number; y: number }; moved: boolean; touch: boolean } | null = null;
+  /** The camera gliding to a face (lookAtFace): from, to, and when it started (ms); any press, wheel or other framing stops it. */
+  private glide: { from: GlidePose; to: GlidePose; start: number } | null = null;
 
   constructor(host: ViewHost, container: HTMLElement) {
     this.host = host;
@@ -190,6 +194,8 @@ export class ViewportView {
     this.dragMoveHandle(); // and a press on a Move handle (35e2c)
     this.dragSketchPoint(); // and a press on a sketch point the Select tool can drag (47d3)
     this.navigate();
+    // A press or the wheel on the view stops a glide where it is (glide.ts): the person has taken the camera.
+    for (const type of ["pointerdown", "wheel"] as const) this.element.addEventListener(type, () => void (this.glide = null), { capture: true, passive: true, signal: this.listening.signal });
     this.followMouse();
     this.setMode(this.home);
 
@@ -343,6 +349,7 @@ export class ViewportView {
   }
 
   private draw = () => {
+    this.stepGlide();
     this.controls.update();
     this.bar.canLookAt(!this.image && this.host.sketchPlane() !== null);
     this.host.frame(this);
@@ -1098,7 +1105,35 @@ export class ViewportView {
     return framing;
   }
 
+  /**
+   * Turns the camera to face `face` of the body shown (TestLab's results card): square onto its outward side (a face round
+   * on itself, from where the camera looks now), framed round the face, gliding there in about half a second, or at once
+   * under reduced motion (face-look.ts, glide.ts). Null, camera untouched, with no such face or while this view shows an image.
+   */
+  lookAtFace(face: number): Framing | null {
+    const mesh = this.host.mesh();
+    if (!mesh || this.image) return null;
+    const look = faceLook(mesh, face);
+    if (look === null) return null;
+    const towardNow = this.camera.position.clone().sub(this.controls.target).toArray();
+    const to = faceLookPose(look, towardNow, this.camera.fov, this.camera.aspect);
+    if (reducedMotion(window)) this.place(to.position, to.target, to.up);
+    else this.glide = { from: this.cameraPose(), to, start: performance.now() };
+    return look.framing;
+  }
+
+  /** One frame of a glide: the camera where it is by now, the glide over once it arrives. */
+  private stepGlide() {
+    const glide = this.glide;
+    if (glide === null) return;
+    const t = (performance.now() - glide.start) / GLIDE_MS;
+    const at = glidePose(glide.from, glide.to, t);
+    this.place(at.position, at.target, at.up); // place stops a glide: put it back until it arrives
+    this.glide = t < 1 ? glide : null;
+  }
+
   private place(position: readonly number[], target: readonly number[], up: readonly number[]) {
+    this.glide = null;
     // The orbit stays about Z (camera.up); straight down or up, the view's
     // own up picks the camera's roll (orbitSafeOffset).
     const raw = new THREE.Vector3(...position).sub(new THREE.Vector3(...target));
@@ -1898,6 +1933,10 @@ export class Viewer implements SharedViewport {
     return this.main.lookAt(plane, side);
   }
 
+  lookAtFace(face: number): Framing | null {
+    return this.main.lookAtFace(face);
+  }
+
   /** The edited sketch's points (line ends, placed points) on screen, in the main view's pixels, for keeping a box clear of them. */
   editedScreenPoints(): { x: number; y: number }[] {
     return this.main.screenPoints(this.editedWorld).filter((p): p is { x: number; y: number } => p !== null);
@@ -2104,7 +2143,7 @@ export class Viewer implements SharedViewport {
     // A run alone only with one renderer: each view's renderer uploads by itself and three.js forgets the runs after
     // the first upload, so with two views (split) a second renderer could miss a run; it gets the whole array then.
     const ranged = this.views.length === 1;
-    const nextFaces = this.colourMap && this.colourMap.length === this.mesh.positions.length ? this.colourMap : faceColourArray(this.mesh, overlays, this.highlight, this.hover.face, scratchOf(this.paintScratch, "faces", this.mesh.positions.length));
+    const nextFaces = this.colourMap && this.colourMap.length === this.mesh.positions.length ? mapColourArray(this.mesh, this.colourMap, this.highlight, scratchOf(this.paintScratch, "faces", this.mesh.positions.length)) : faceColourArray(this.mesh, overlays, this.highlight, this.hover.face, scratchOf(this.paintScratch, "faces", this.mesh.positions.length));
     const colour = faces.getAttribute("color") as THREE.BufferAttribute | undefined;
     if (colour && colour.array.length === nextFaces.length && colour.array instanceof Float32Array) {
       const changed = copyChanged(colour.array, nextFaces);

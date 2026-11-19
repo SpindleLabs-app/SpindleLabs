@@ -17,7 +17,7 @@ import type { AnalysisOverlay, DisplayMesh, Mechanical, StressTestResult } from 
 import { weakerWay } from "@fission/core";
 import { mpaWords } from "./materials.ts";
 import { bends, bentMesh, boxDiagonal, drawnScale, ESTIMATE, figure, safetyBand, safetyWords, scaleColour, vertexColours, type SafetyBand } from "./run.ts";
-import { DIRECTION_WORDS, newtons, newtonWords, type Load, type Study } from "./study.ts";
+import { DIRECTION_WORDS, newtons, newtonWords, type HeldFace, type Load, type Study } from "./study.ts";
 
 /** What the view's colours show. */
 export type ColourBy = "stress" | "bend";
@@ -36,10 +36,10 @@ export interface Result {
   setUp: RunSetUp;
 }
 
-/** What was tested: the body's name, the held faces' names and the loads, copied at Run. */
+/** What was tested: the body's name, the held faces (by stable reference and name) and the loads, copied at Run. */
 export interface RunSetUp {
   body: string;
-  held: string[];
+  held: HeldFace[];
   loads: Load[];
 }
 
@@ -47,7 +47,7 @@ export interface RunSetUp {
 export function setUpOf(study: Pick<Study, "body" | "fixtures" | "loads">): RunSetUp {
   return {
     body: study.body?.label ?? "the part",
-    held: study.fixtures.flatMap((f) => f.faces.map((face) => face.label)),
+    held: study.fixtures.flatMap((f) => f.faces.map((face) => ({ ...face }))),
     loads: study.loads.map((l) => ({ ...l, faces: l.faces.map((face) => ({ ...face })) })),
   };
 }
@@ -135,10 +135,16 @@ export function methodWords(r: Result): string {
   return `A mesh of ${a.elements.toLocaleString("en")} tetrahedra (ten points each) with ${a.nodes.toLocaleString("en")} points, about ${figure(a.size)} mm apart, solved ${a.method === "direct" ? "directly" : "step by step"}; the loads and what holds the part balance to within ${off < 1e-9 ? "a billionth" : `${figure(off * 100)}%`}.`;
 }
 
-/** Names in a list: "A", "A and B", "A, B and C". */
-function listWords(names: readonly string[]): string {
-  if (names.length === 0) return "nothing";
-  return names.length === 1 ? names[0] : `${names.slice(0, -1).join(", ")} and ${names.at(-1)}`;
+/** A piece of a card line: words, or a face named by its words (a button on the card that shows the face). */
+export type CardPart = string | HeldFace;
+
+/** A card line's parts as plain words. */
+export const partsWords = (parts: readonly CardPart[]): string => parts.map((p) => (typeof p === "string" ? p : p.label)).join("");
+
+/** Faces in a list: "A", "A and B", "A, B and C"; "nothing" for none. */
+function listParts(faces: readonly HeldFace[]): CardPart[] {
+  if (faces.length === 0) return ["nothing"];
+  return faces.flatMap((f, i): CardPart[] => (i === 0 ? [f] : [i === faces.length - 1 ? " and " : ", ", f]));
 }
 
 /** A number to three significant figures with thousands commas ("1,780", "117", "0.182"). */
@@ -149,13 +155,18 @@ function threeFigures(x: number): string {
 /** What breaking means for the material: a metal starts to bend for good at its yield, a plastic breaks. */
 const brokenVerb = (m: Mechanical) => (m.strengthKind === "yield" ? "bend for good" : "break");
 
+/** A load as the card says it, its faces as parts: "9,800 N down on " + Top face, "20 kPa pressing square into " + Top face. */
+export function pushedParts(load: Load): CardPart[] {
+  const faces = listParts(load.faces);
+  const amount = load.amount.toLocaleString("en", { maximumFractionDigits: 6 });
+  if (load.unit === "kPa") return [`${amount} kPa pressing square into `, ...faces];
+  const force = load.unit === "kg" ? `${amount} kg hanging (${newtonWords(newtons(load)!)})` : `${amount} N`;
+  return load.direction === "into" ? [`${force} square into `, ...faces] : [`${force} ${DIRECTION_WORDS[load.direction]} on `, ...faces];
+}
+
 /** A load as the card says it, with its faces by name: "9,800 N down on Top face", "20 kPa pressing square into Top face". */
 export function pushedWords(load: Load): string {
-  const faces = listWords(load.faces.map((f) => f.label));
-  const amount = load.amount.toLocaleString("en", { maximumFractionDigits: 6 });
-  if (load.unit === "kPa") return `${amount} kPa pressing square into ${faces}`;
-  const force = load.unit === "kg" ? `${amount} kg hanging (${newtonWords(newtons(load)!)})` : `${amount} N`;
-  return load.direction === "into" ? `${force} square into ${faces}` : `${force} ${DIRECTION_WORDS[load.direction]} on ${faces}`;
+  return partsWords(pushedParts(load));
 }
 
 /** The card's one-word verdict, from the safety factor's band. */
@@ -180,15 +191,20 @@ export function limitWords(r: Result): string | null {
   return factor < 1 ? `It would start to ${verb} at about ${at}.` : `It could take about ${at} before it starts to ${verb}.`;
 }
 
-/** The card's set-up lines, each a label and its words: the part, what it is made of, each load, what holds it. */
-export function cardLines(r: Result): { label: string; words: string }[] {
+/** The card's set-up lines, each a label and its parts (a face named is a part of its own): the part, what it is made of, each load, what holds it. */
+export function cardParts(r: Result): { label: string; parts: CardPart[] }[] {
   const m = r.material.mechanical;
   return [
-    { label: "Part", words: r.setUp.body },
-    { label: "Made of", words: m.printed ? `${r.material.name}, printed` : r.material.name },
-    ...r.setUp.loads.map((l) => ({ label: "Pushed", words: pushedWords(l) })),
-    { label: "Held", words: listWords(r.setUp.held) },
+    { label: "Part", parts: [r.setUp.body] },
+    { label: "Made of", parts: [m.printed ? `${r.material.name}, printed` : r.material.name] },
+    ...r.setUp.loads.map((l) => ({ label: "Pushed", parts: pushedParts(l) })),
+    { label: "Held", parts: listParts(r.setUp.held) },
   ];
+}
+
+/** The card's set-up lines, each a label and its words. */
+export function cardLines(r: Result): { label: string; words: string }[] {
+  return cardParts(r).map((l) => ({ label: l.label, words: partsWords(l.parts) }));
 }
 
 /** The card as plain text, for Copy summary. */
@@ -208,8 +224,20 @@ export function brokenWords(r: Result): string | null {
   return `Worked out as if the part stayed in one piece: it would ${brokenVerb(r.material.mechanical)} before these loads are reached, so the bend and stress below are bigger than a real part would show.`;
 }
 
-/** The results section of the panel (`stale`: the design changed since the Run). */
-export function resultSection(doc: Document, r: Result, by: ColourBy, stale: boolean, colourBy: (by: ColourBy) => void): HTMLElement {
+/**
+ * What the card's face names do (Ben, 19 Nov: a face named on the card is a button that turns the view to it): `whyNot`
+ * says why a face can't be shown now (an edit took it away or gave its name to two), else null; `show` shows it.
+ */
+export interface FaceButtons {
+  whyNot(face: HeldFace): string | null;
+  show(face: HeldFace): void;
+}
+
+/**
+ * The results section of the panel (`stale`: the design changed since the Run). With `faces`, every face the card names
+ * is a button that shows it in the view; one that can't be shown now is marked and says why when tapped.
+ */
+export function resultSection(doc: Document, r: Result, by: ColourBy, stale: boolean, colourBy: (by: ColourBy) => void, faces?: FaceButtons): HTMLElement {
   const el = <K extends keyof HTMLElementTagNameMap>(tag: K, cls?: string, text?: string): HTMLElementTagNameMap[K] => {
     const e = doc.createElement(tag);
     if (cls) e.className = cls;
@@ -232,14 +260,38 @@ export function resultSection(doc: Document, r: Result, by: ColourBy, stale: boo
   const head = el("div", "testlab-results-head");
   head.append(verdict, factor);
   const setUp = el("dl", "testlab-results-setup");
-  for (const line of cardLines(r)) setUp.append(el("dt", undefined, line.label), el("dd", undefined, line.words));
+  // Said in the card's status line (under Copy summary): a face that can't be shown now, and why.
+  const copied = el("span", "testlab-results-copied");
+  copied.setAttribute("role", "status");
+  const facePart = (f: HeldFace): HTMLElement => {
+    if (!faces) return el("span", undefined, f.label);
+    const b = el("button", "testlab-results-face", f.label);
+    b.type = "button";
+    b.dataset.testlabFace = f.ref.id;
+    b.setAttribute("aria-label", `Show ${f.label} in the view`);
+    const why = faces.whyNot(f);
+    b.title = why ?? `Turn the view to ${f.label}`;
+    if (why !== null) b.setAttribute("aria-disabled", "true");
+    b.addEventListener("click", () => {
+      const now = faces.whyNot(f);
+      if (now !== null) copied.textContent = now;
+      else {
+        copied.textContent = "";
+        faces.show(f);
+      }
+    });
+    return b;
+  };
+  for (const line of cardParts(r)) {
+    const dd = el("dd");
+    dd.append(...line.parts.map((p) => (typeof p === "string" ? doc.createTextNode(p) : facePart(p))));
+    setUp.append(el("dt", undefined, line.label), dd);
+  }
   card.append(head, setUp);
   const limit = limitWords(r);
   if (limit !== null) card.append(el("p", "testlab-results-limit", limit));
   if (band !== "fails") card.append(el("p", "testlab-results-bend", `Bends at most ${figure(r.answer.maxDisplacement)} mm.`));
   const foot = el("div", "testlab-results-foot");
-  const copied = el("span", "testlab-results-copied");
-  copied.setAttribute("role", "status");
   const copy = el("button", undefined, "Copy summary");
   copy.type = "button";
   copy.dataset.testlab = "copy-summary";

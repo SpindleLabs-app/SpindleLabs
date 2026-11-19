@@ -235,3 +235,15 @@ test("issue #219: the view's menu on a body goes to the pane that set it most re
   assert.equal(scene.onMenu, null, "none left: null");
   assert.equal(scene.onPick, null, "picking is separate");
 });
+
+test("looking at a face (TestLab's card) turns only the pane's own view; a view without it offers none", () => {
+  const { scene, calls } = fakeScene();
+  const pane = paneViewports(scene);
+  const view = fakeView("left", calls);
+  const framed: Framing = { centre: [1, 1, 1], radius: 2 };
+  const left = pane({ ...view, lookAtFace: (face) => (calls.push(`left.lookAtFace ${face}`), framed) });
+  const right = pane(fakeView("right", calls));
+  assert.deepEqual(left.lookAtFace?.(3), framed);
+  assert.equal(right.lookAtFace, undefined);
+  assert.deepEqual(calls, ["left.lookAtFace 3"]);
+});

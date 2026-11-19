@@ -14,6 +14,8 @@ export interface PaneCamera {
   setView(name: ViewName): Framing | null;
   fitSelection(): Framing | null;
   lookAt(plane: Plane, side?: 1 | -1): Framing | null;
+  /** Turns this view's camera to a face of the body shown (TestLab's results card, face-look.ts). */
+  lookAtFace?(face: number): Framing | null;
   showImage(image: ImageRep | null): void;
   clearImage(): void;
   leaveNavTool(): boolean;
@@ -61,6 +63,7 @@ export function paneViewports(scene: SharedViewport): (view: PaneCamera) => Shar
       setView: (name: ViewName) => view.setView(name),
       fitSelection: () => view.fitSelection(),
       lookAt: (plane: Plane, side?: 1 | -1) => view.lookAt(plane, side),
+      ...(view.lookAtFace ? { lookAtFace: (face: number) => view.lookAtFace!(face) } : {}),
       leaveNavTool: () => view.leaveNavTool(),
       editedScreenPoints: () => scene.editedScreenPoints(),
       sketchScreenPoint: (at: SketchXY) => scene.sketchScreenPoint(at),

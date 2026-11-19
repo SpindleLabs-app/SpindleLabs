@@ -341,6 +341,12 @@ export interface SharedViewport {
    * sees it, the front at the top).
    */
   lookAt(plane: Plane, side?: 1 | -1): Framing | null;
+  /**
+   * Turns the camera to face face `face` (an index of the body shown) square on from outside, framed round it, gliding
+   * there in about half a second (at once under reduced motion; a press or the wheel stops it): TestLab's results card
+   * shows where a face it names is. Returns what it framed; null, camera untouched, with no such face. Absent on a stand-in view.
+   */
+  lookAtFace?(face: number): Framing | null;
   /** Escape on the view bar (U7b): Pan or Zoom lit goes back to Orbit, true; Orbit lit, nothing changes, false. Absent on a stand-in view. */
   leaveNavTool?(): boolean;
   /** The edited sketch's points on screen (pixels from the view's top left), so a box can keep clear of them. */
