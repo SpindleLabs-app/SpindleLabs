@@ -31,7 +31,9 @@ export const close = (got: number, want: number) => Math.abs(got - want) <= 1e-6
  * The app around Design, as the shell runs it: slots in a real DOM, one
  * undo history over the project as JSON whose restore mounts the
  * workspace afresh, a viewport that keeps the last mesh, and a kernel that
- * counts its body_build calls. `plugin` is Design, or a planted copy.
+ * counts its body_build calls. `plugin` is Design, or a planted copy;
+ * `options.actions` the verbs registered (none by default: an export test
+ * registers the real ones with a recorder for what they save).
  */
 /** The app last made, put away before the next is made: a test that failed part way leaves it mounted, and Design keeps the open sketch in its module. */
 let previous: { close(): Promise<boolean> } | null = null;
@@ -50,7 +52,7 @@ export function chooseShape(a: { window: { document: unknown; Event: unknown } }
   choice.dispatchEvent(new (a.window.Event as typeof Event)("change", { bubbles: true }));
 }
 
-export async function app(start: DesignDocument, plugin: WorkspacePlugin = designWorkspace) {
+export async function app(start: DesignDocument, plugin: WorkspacePlugin = designWorkspace, options: { actions?: ActionRegistry } = {}) {
   await previous?.close();
   const window = new Window({ width: 1280, height: 800 });
   const document = window.document as unknown as Document;
@@ -142,7 +144,7 @@ export async function app(start: DesignDocument, plugin: WorkspacePlugin = desig
     timeline: slot(),
     viewport,
     representations: new RepresentationRegistry(),
-    actions: new ActionRegistry(),
+    actions: options.actions ?? new ActionRegistry(),
     downstream: new DownstreamRegistry(),
     changeNotes: new ChangeNotes(),
     openWorkspace() {},
