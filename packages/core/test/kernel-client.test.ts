@@ -710,22 +710,22 @@ test("a body's view, STL and STEP are timed by the body it is: a sphere's mesh i
 test("a stress test is timed by the box its body's view said (TestLab T5b): worst case before any view", (t) =>
   withFakeWorker(async (client, worker) => {
     t.mock.timers.enable({ apis: ["setTimeout"] });
-    // 100 ms a unit. Before a view: the worst default-size ratio, 0.5 · 3596^1.35 units × 100 ms × 4.
+    // 100 ms a unit. Before a view: the most the default size can give, (3.5 · 3,600 + 300) · 8 = 103,200 units × 100 ms × 4.
     worker.ready(100);
     const built = client.call("body_build", { box: { width: 100, depth: 10, height: 10 } });
     worker.answer(1, 1);
     const b = await built;
     const test = { youngsModulus: 2000, poissonsRatio: 0.35, strength: 30, held: [0], loads: [{ faces: [1], force: [0, 0, -10] as [number, number, number] }] };
-    const worst = 0.5 * 3596 ** 1.35 * 100 * 4;
+    const worst = 103_200 * 100 * 4;
     const first = client.call("stress_test", b, test);
     assert.equal(keptAfter(t, worker, worst * 0.9), true, "unviewed at 0.9 ×");
     worker.answer(2, "done");
     await first;
-    // A view says the bar's box 100 × 10 × 10: default size 5, ratio 80, 0.5 · 80^1.35 = 186 units, about 74,600 ms (over the 10 s floor).
+    // A view says the bar's box 100 × 10 × 10: default size 5, cells 20 · 2 · 2 = 80, 3.5 · 80 + 300 = 580 units, 232,000 ms (over the 10 s floor).
     const view = client.call("body_view", b);
     worker.answer(3, { faces: 6, bounds: [[0, 0, 0], [100, 10, 10]] });
     await view;
-    const bar = 0.5 * 80 ** 1.35 * 100 * 4;
+    const bar = 580 * 100 * 4;
     const second = client.call("stress_test", b, test);
     assert.equal(keptAfter(t, worker, bar * 0.9), true, "the bar at 0.9 ×");
     worker.answer(4, "done");
