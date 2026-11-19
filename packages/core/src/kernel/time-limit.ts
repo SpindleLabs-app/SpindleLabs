@@ -324,54 +324,57 @@ export interface BodySize {
 
 /**
  * The stress test (TestLab T5b, re-timed at T5c1 for the kernel's faster
- * solver). Its cost follows how many elements the mesh has. From the box
- * sides and the mesh size s (named, or the kernel's default: half the
- * thinnest side, no finer than a sixtieth of the diagonal) the cells are
- * each side over s, at least 2 a side, multiplied: a cost of STRESS_UNITS_PER_CELL a cell plus
- * STRESS_BASE_UNITS. A part thinner than s needs elements about as small as
- * it is thick, so far more of them (or the kernel refuses it, but only after
- * a long time): the cost is multiplied by
- * (s / t)^STRESS_THIN_POWER for a thinnest side t under s, at most
- * STRESS_THIN_MOST times.
+ * solver and at T5c1b for kernel 0.33.81's thin-plate meshing). Its cost
+ * follows how many elements the mesh has. From the box sides and the mesh
+ * size s (named, or the kernel's default: half the thinnest side t, no finer
+ * than a sixtieth of the diagonal, and never more than t / STRESS_THIN_LAYERS)
+ * the cells are each side over s, at least 2 a side, multiplied: a cost of
+ * STRESS_UNITS_PER_CELL a cell plus STRESS_BASE_UNITS, at most
+ * STRESS_MOST_UNITS. A named size coarser than t / STRESS_THIN_LAYERS leaves
+ * the mesher to refine through the thickness to a size of its own, so it
+ * gets the most.
  *
- * Timed on the local WebAssembly build of the kernel's 2026-11-19 main in Node
- * (2026-11-19, the warm calibration unit 3.9 to 4.2 ms, the smallest seen,
- * so the units are the most a device could need), each run against this
- * model: a 100 x 10 x 10 bar at the default 5 mm 426 units (model 580); a
- * 100 mm cube at 50 mm 9 (328); 100 x 100 plates at the default 2.358 mm,
- * 8 mm thick 2,752 (4,675), 4 mm 8,499 (12,890), 3 mm 10,750 (12,890);
- * named sizes: the bar at 2 and 1.5 mm 2,001 and 4,446 (4,675, 10,670), the
- * cube at 10, 7 and 5.5 mm 804, 3,096 and 6,353 (3,800, 10,500, 21,340), the
- * 4 mm plate at 1.8 and 1.55 mm 18,578 and 30,346 (24,300, 37,880; 128,779
- * points, near the solver's 150,000). Thin plates the kernel refuses (after
- * a long time): 2.5 mm 10,700 (12,890), 2 mm 24,300 (29,520), 1.5 mm 82,500
- * (103,200), 1 mm 44,000 and 0.5 mm 15,900 (103,200). The model is above
- * every one, by 1.2 times at the least. (The kernel before the faster solver took
- * 47,214 units for the 4 mm plate: 215 s against 33 s now, the same answer.)
+ * STRESS_MOST_UNITS is the most a run can take: the kernel counts the mesh's
+ * points exactly while it makes them and refuses once they pass its solver's
+ * limit (150,000), so no run solves a bigger mesh. The slowest a point took
+ * was 1.14 ms (30 x 30 x 1 mm at 1.1 mm, 146,140 points, 166.7 s, in units
+ * of 3.71 ms 44,923), so 60,000 units, 0.4 a point, is 1.34 times that.
+ *
+ * Timed on the WebAssembly build of kernel 0.33.81 in Node (2026-11-19),
+ * counted in the smallest warm calibration unit seen there, 3.71 ms (most
+ * runs saw 4.3 to 4.6), so the units are the most a device could need; each
+ * run against this model: a 100 x 10 x 10 bar at the default 5 mm 412 units
+ * (model 620); 100 x 100 plates at the default size, 8 mm 2,890 (5,300),
+ * 4 mm 8,991 (14,688), 3 mm 12,309 (20,300), 2.5 mm 18,931 (29,100), 2.2 mm
+ * 27,686 (37,490), 2 mm 29,625 (45,300), 1.9 mm 34,723 (50,161, 146,752
+ * points); 50 x 50 x 1 mm 32,015 (45,300), 100 x 20 x 1 mm 27,960 (36,300,
+ * the closest, 1.30 times), 20 x 20 x 0.5 mm 18,275 (29,100); named sizes:
+ * the 4 mm plate at 1.8 mm 19,384 (27,735), the cube at 5.5 mm 6,442
+ * (24,342). Refused, early: 100 mm plates 1.8 mm and thinner (343 to 1,702),
+ * and every named size over the thickness that went past the limit (2,459
+ * to 4,227). The other runs: time-limit.test.ts. (Before 0.33.81 the default
+ * size could be as coarse as the plate was thick, and plates under about
+ * 2.6 mm made the mesher refine for minutes before it refused them.)
  * A wall much thinner than the box's thinnest side (a thin rib on a block)
- * is not seen here; the kernel should refuse those early (TestLab's notes).
+ * is not seen here; the kernel refuses those near the end of meshing if
+ * they are too big (TestLab's notes).
  */
-export const STRESS_UNITS_PER_CELL = 3.5;
+export const STRESS_UNITS_PER_CELL = 4;
 export const STRESS_BASE_UNITS = 300;
-export const STRESS_THIN_POWER = 5;
-export const STRESS_THIN_MOST = 8;
-/**
- * The most the default size can give, for when the sides are not known yet:
- * with t under s = diagonal / 60 the cells are (a/s)(b/s)·2 =
- * 7200ab / (a² + b² + t²), under 3,600 (a square as t goes to 0), and the
- * thin factor at most STRESS_THIN_MOST; with t at least s (s = t/2 or t
- * reaches the sixtieth) they are 8ab/t² at most, again at most 3,600 where
- * t/2 meets the sixtieth. So (3.5 · 3,600 + 300) · 8.
- */
-export const STRESS_WORST_UNITS = (STRESS_UNITS_PER_CELL * 3600 + STRESS_BASE_UNITS) * STRESS_THIN_MOST;
+/** The kernel's THIN_LAYERS: its default size is never more than the thinnest side over this. */
+export const STRESS_THIN_LAYERS = 1.5;
+export const STRESS_MOST_UNITS = 60000;
+/** For when the sides are not known yet (no view): the most. */
+export const STRESS_WORST_UNITS = STRESS_MOST_UNITS;
 
 /** The stress test's units for a body of box `sides` meshed at `size` (none: the kernel's default). */
 export function stressUnits(sides: readonly [number, number, number] | undefined, size?: number): number {
   if (!sides || !sides.every((side) => Number.isFinite(side) && side > 0)) return STRESS_WORST_UNITS;
-  const each = size ?? Math.max(0.5 * Math.min(...sides), Math.hypot(...sides) / 60);
+  const thinnest = Math.min(...sides);
+  const each = size ?? Math.min(Math.max(0.5 * thinnest, Math.hypot(...sides) / 60), thinnest / STRESS_THIN_LAYERS);
+  if (!(each > 0) || each > thinnest / STRESS_THIN_LAYERS) return STRESS_MOST_UNITS;
   const cells = sides.reduce((product, side) => product * Math.max(2, side / each), 1);
-  const thin = Math.min(STRESS_THIN_MOST, Math.max(1, each / Math.min(...sides)) ** STRESS_THIN_POWER);
-  return (STRESS_UNITS_PER_CELL * cells + STRESS_BASE_UNITS) * thin;
+  return Math.min(STRESS_MOST_UNITS, STRESS_UNITS_PER_CELL * cells + STRESS_BASE_UNITS);
 }
 
 const loopCorners = (loop: Loop) => ("circle" in loop ? 1 : loop.path.corners.length / 2);

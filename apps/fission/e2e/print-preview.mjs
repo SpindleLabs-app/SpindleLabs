@@ -71,6 +71,28 @@ async function drawnAfter(page, act, what) {
     .waitForFunction((f) => Number(document.querySelector("#print-preview-view canvas")?.dataset.frames ?? 0) > f, f, { timeout: 30000 })
     .catch(() => assert.fail(`${what}: no frame drawn after it within 30 s`));
 }
+/** Presses each of `selectors` in turn, waiting for a drawn frame after every press: a wait after only the first of several presses (a frame drawn by the first) read the picture before the last had changed it ("Everything": 147 vs 260243 on CI). */
+async function drawnAfterEach(page, selectors, press, what) {
+  for (const sel of selectors) await drawnAfter(page, () => press(sel), `${what} (${sel})`);
+}
+/**
+ * Like drawnAfter, then waits until the view stops drawing (no new frame for
+ * 600 ms), for an act that starts more than one redraw: two presses in a row
+ * each redraw, and measuring after the first of them read a half-done view
+ * (SpindleLabs #858's queue run, 19 Nov: 147 coloured pixels vs 260243).
+ */
+async function settledAfter(page, act, what) {
+  await drawnAfter(page, act, what);
+  await page
+    .waitForFunction(() => {
+      const n = Number(document.querySelector("#print-preview-view canvas")?.dataset.frames ?? 0);
+      const w = window;
+      const now = performance.now();
+      if (w.__settleFrames !== n) { w.__settleFrames = n; w.__settleSince = now; return false; }
+      return now - w.__settleSince >= 600;
+    }, null, { timeout: 30000, polling: 100 })
+    .catch(() => assert.fail(`${what}: the view kept drawing for 30 s`));
+}
 /** Waits for the view's first frame. */
 const firstFrame = (page) => page.waitForFunction(() => Number(document.querySelector("#print-preview-view canvas")?.dataset.frames ?? 0) > 0, null, { timeout: 30000 });
 
@@ -150,13 +172,13 @@ for (const [width, tap] of [[1280, false], [375, true]]) {
       // Infill off: the top's pink solid infill goes (the walls stay, so plenty is still drawn).
       const pink = await hued(page, 330, 359);
       assert.ok(pink > 2000, `the top's solid infill is in view: ${pink}`);
-      await drawnAfter(page, async () => { for (const k of ["solid-infill", "sparse-infill"]) await press(`#print-preview-show-${k}`); }, "infill off");
+      await drawnAfterEach(page, ["solid-infill", "sparse-infill"].map((k) => `#print-preview-show-${k}`), press, "infill off");
       const walls = await coloured(page);
       const pinkLeft = await hued(page, 330, 359);
       assert.ok(pinkLeft < pink * 0.05 && walls > 2000, `walls alone: ${pinkLeft} pink of ${pink}, ${walls} coloured`);
       if (shots) await page.screenshot({ path: `${shots}/print-preview-${width}-walls.png` });
       // Every kind off: next to nothing left (the nozzle).
-      await drawnAfter(page, async () => { for (const id of await page.$$eval("#print-preview-legend button[aria-pressed='true']", (bs) => bs.map((b) => b.id))) await press(`#${id}`); }, "every kind off");
+      await drawnAfterEach(page, (await page.$$eval("#print-preview-legend button[aria-pressed='true']", (bs) => bs.map((b) => `#${b.id}`))), press, "every kind off");
       const none = await coloured(page);
       assert.ok(none < whole * 0.1, `everything off: ${none} vs ${whole}`);
       // Travel on: its lines appear.
@@ -164,7 +186,7 @@ for (const [width, tap] of [[1280, false], [375, true]]) {
       const travel = await coloured(page);
       assert.ok(travel > none, `travel lines drawn: ${travel} vs ${none}`);
       if (shots) await page.screenshot({ path: `${shots}/print-preview-${width}-travel.png` });
-      await drawnAfter(page, async () => { await press("#print-preview-show-travel"); await press("#print-preview-preset-all"); }, "Everything");
+      await settledAfter(page, async () => { await press("#print-preview-show-travel"); await press("#print-preview-preset-all"); }, "Everything");
       const back = await coloured(page);
       assert.ok(Math.abs(back - whole) < whole * 0.02, `Everything brings it all back: ${back} vs ${whole}`);
       // The Show card on a phone is one strip, never most of the view.

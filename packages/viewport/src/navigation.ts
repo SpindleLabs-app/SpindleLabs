@@ -52,14 +52,19 @@ export function focusPoint(pose: CameraPose, ndc: readonly [number, number], len
 }
 
 /**
- * Zoom toward the cursor: the camera and its target both scale about the
- * focus point P under the cursor by `factor` (the new distance to the
- * target over the old; below 1 zooms in). Scaling about P keeps the
- * direction from the camera to P, so P stays under the cursor, and the
- * camera keeps its direction, so nothing turns.
+ * Zoom toward the cursor: the camera and its target both scale about a
+ * point P under the cursor by `factor` (the new distance to the target over
+ * the old; below 1 zooms in). P is `onBody`, where the cursor's ray first
+ * meets the part, when it meets it, else the focus point. Scaling about P
+ * keeps the direction from the camera to P, so P stays under the cursor,
+ * and the camera keeps its direction, so nothing turns. About the part's
+ * own point the camera never passes it, however far in, and the target
+ * (the orbit's pivot) closes in on it; the focus plane alone lies through
+ * the middle of a long part, so zooming at its near end flew the camera
+ * through that end and on past it (Ben's 1000 mm bar, 2026-11-19).
  */
-export function zoomAt(pose: CameraPose, ndc: readonly [number, number], lens: Lens, factor: number): CameraPose {
-  const p = focusPoint(pose, ndc, lens);
+export function zoomAt(pose: CameraPose, ndc: readonly [number, number], lens: Lens, factor: number, onBody: Vec3 | null = null): CameraPose {
+  const p = onBody ?? focusPoint(pose, ndc, lens);
   return { position: add(p, scale(sub(pose.position, p), factor)), target: add(p, scale(sub(pose.target, p), factor)), up: pose.up };
 }
 
@@ -116,6 +121,18 @@ export function dragZoomFactor(dy: number): number {
  */
 export const FARTHEST_VIEW = 1e8;
 export const NEAREST_VIEW = 1e-4;
+
+/**
+ * The camera's near and far clipping distances (mm) for a camera `distance` from its target and `reach` from the far
+ * side of everything shown (its distance to the framed sphere's centre plus the radius): near a thousandth of the
+ * distance (depth precision follows the near plane, so this keeps edges crisp), far 100 times the distance or twice
+ * the reach, whichever is further. With far at 100 times the distance alone, a camera zoomed in 5 mm from one end of
+ * a 1000 mm bar lost everything past 500 mm of it (Ben's bar, 2026-11-19).
+ */
+export function clipRange(distance: number, reach: number): { near: number; far: number } {
+  const far = Math.max(distance * 100, Number.isFinite(reach) ? 2 * reach : 0);
+  return { near: distance / 1000, far };
+}
 
 /** Keeps a zoom inside the view's allowed distances: the factor that lands `distance` within [min, max]. */
 export function clampZoom(distance: number, factor: number, min: number, max: number): number {
