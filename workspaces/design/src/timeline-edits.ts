@@ -245,8 +245,8 @@ export function reorderItem(doc: DesignDocument, id: string, to: number): Reorde
   const earlier = to < k;
   const holds = sketchHolds(doc, item);
   for (const x of holds === null ? [] : passed) {
-    const body = bodiesChanged(x).find((b) => holds(b) !== null);
-    if (body === undefined) continue;
+    const body = bodiesChanged(x).find((b) => holds?.(b) != null);
+    if (body === undefined || holds === null) continue;
     const how = `${holds(body)} ${bodyWords(doc, body)}`;
     return earlier
       ? { refused: "before-dependency", message: `${itemName(item)} can't go before ${itemName(x)}: it is ${how} as ${itemName(x)} leaves it` }
