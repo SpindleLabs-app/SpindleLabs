@@ -48,3 +48,11 @@
   .combine-panel #combine-error { order: 5; flex: 1 1 100%; margin: 0; }
   .combine-panel .combine-panel-buttons { order: 6; margin: 0; }
 }
+/* The narrowest phones (under 360 px): the sheet that opens by itself on the second pick covered 51% of the view at
+   320 × 568 (SL #764 item 8; Ben's rule is 40% for one tap). There the title is read out but not drawn, so the operation
+   and Keep tools share the first row, and the sheet's OK and Cancel make way for the bar over the view's Finish and
+   Cancel (phone-float.ts), which press them and stay in sight over the sheet: two rows, about a third of the view. */
+@media (max-width: 359px) {
+  .combine-panel h2:not(#none) { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+  .combine-panel .combine-panel-buttons { display: none; }
+}

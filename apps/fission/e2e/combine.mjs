@@ -16,7 +16,7 @@
 // `npm run build`).
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
-import { launch } from "./browser.mjs";
+import { chosen, launch } from "./browser.mjs";
 import { preview } from "vite";
 import { closePanels, openPanel } from "./start.mjs";
 
@@ -149,6 +149,7 @@ const fields = (page, want, what) =>
 
 let failed = 0;
 async function check(name, fn) {
+  if (!chosen(name)) return;
   try {
     await fn();
     console.log(`ok - ${name}`);
@@ -397,8 +398,67 @@ try {
         assert.ok(keep.bottom <= target.top, `Keep tools above the fields: ${all}`);
         assert.equal(target.top, tools.top, `the two fields side by side: ${all}`);
         assert.ok(target.left < tools.left, `Target body left of Tool bodies: ${all}`);
-        assert.ok(Math.max(target.bottom, tools.bottom) <= ok.top && ok.top === cancel.top, `OK and Cancel on their own row under the fields: ${all}`);
-        assert.ok(cancel.right <= width, `nothing past the right edge: ${all}`);
+        if (width < 360) {
+          // SL #764 item 8: under 360 px the sheet's own OK and Cancel make way (they made it cover 51% of the view);
+          // the bar over the view's Finish and Cancel press them, in sight over the open sheet.
+          assert.ok(ok.bottom === ok.top && cancel.bottom === cancel.top, `the sheet's OK and Cancel not drawn: ${all}`);
+          for (const id of ["float-finish", "float-cancel"]) {
+            const b = await box(`#${id}`);
+            const hit = await page.evaluate(([x, y]) => document.elementFromPoint(x, y)?.closest("button")?.id, [(b.left + b.right) / 2, (b.top + b.bottom) / 2]);
+            assert.equal(hit, id, `${id} on top over the open sheet: ${all}`);
+          }
+        } else assert.ok(Math.max(target.bottom, tools.bottom) <= ok.top && ok.top === cancel.top, `OK and Cancel on their own row under the fields: ${all}`);
+        assert.ok(Math.max(cancel.right, tools.right) <= width, `nothing past the right edge: ${all}`);
+      } finally {
+        await page.context().close();
+      }
+    });
+  }
+
+  // SL #764 item 8 (app-wide hunt 2026-11-14, L1 and the #504 leftover): at 320 × 568 the bar over the view wrapped to
+  // two rows, its second (Cancel) under the tool's hint, and the sheet that opens by itself on the second pick covered
+  // 51% of the view (37% at 375 px). Ben's phone rule: one tap never covers more than 40% of it.
+  for (const [width, height] of [[320, 568], [375, 667], [393, 852]]) {
+    await check(`${width} × ${height}, taps: the bar over the view is one row clear of the hint and the view cube, and the sheet that opens by itself covers at most 40% of the view`, async () => {
+      const page = await fresh(width, height, true, "&combine");
+      try {
+        await press(page, '[data-view="top"]', true);
+        await settle(page);
+        await press(page, "#modify-menu", true);
+        await press(page, "#modify-menu-combine", true);
+        await opened(page);
+        await at(page, TOP1, true);
+        await page.waitForTimeout(300);
+        const rect = (sel) => page.$eval(sel, (e) => { const r = e.getBoundingClientRect(); return { left: r.left, top: r.top, right: r.right, bottom: r.bottom, height: r.height }; });
+        const [bar, hint, view] = [await rect("#phone-float"), await rect("#combine-hint"), await rect("#viewport")];
+        const all = JSON.stringify({ bar, hint, view });
+        // One row: the card's 6 px padding and edges round one 44 px button (58 px), never two (108).
+        assert.ok(bar.height <= 60, `the bar is one row: ${all}`);
+        assert.ok(hint.top >= bar.bottom, `the hint is under the bar, not over its Cancel: ${all}`);
+        // The view cube stands in the view's top right corner, 8 px in and 96 px wide (phone-start.mjs): the bar stays left of it.
+        assert.ok(bar.right <= view.right - 8 - 96, `the bar left of the view cube: ${all}`);
+        for (const id of ["float-finish", "float-cancel"]) {
+          const b = await rect(`#${id}`);
+          const hit = await page.evaluate(([x, y]) => document.elementFromPoint(x, y)?.closest("button")?.id, [(b.left + b.right) / 2, (b.top + b.bottom) / 2]);
+          assert.equal(hit, id, `${id} takes a tap at its middle: ${all}`);
+        }
+        // Its accessible name stays whole where the tool's word is hidden.
+        assert.equal(await page.$eval("#float-finish", (b) => b.textContent), "Finish Combine");
+        await at(page, TOP2, true);
+        await fields(page, "Body 1 | Body 2", "Box 2 a tool");
+        await page.waitForTimeout(400);
+        const covered = () =>
+          Promise.all([rect("#properties"), rect("#viewport")]).then(([sheet, v]) => Math.max(0, Math.min(sheet.bottom, v.bottom) - Math.max(sheet.top, v.top)) / v.height);
+        assert.equal(await page.getAttribute("#properties-toggle", "aria-expanded"), "true", "the sheet opened by itself");
+        const c = await covered();
+        if (shots) await page.screenshot({ path: `${shots}/combine-${width}-auto-sheet.png` });
+        assert.ok(c <= 0.4, `the sheet covers ${(c * 100).toFixed(0)}% of the view`);
+        for (const id of ["combine-target", "combine-tools", "combine-operation"]) assert.ok(await page.isVisible(`#${id}`), `${id} in the sheet`);
+        // Finish on the bar ends it as OK does: the Combine is recorded.
+        await page.tap("#float-finish");
+        await closed(page);
+        await rebuilt(page);
+        await until(page, () => document.querySelectorAll("#timeline li[data-item]").length === 6, null, "Combine 1 in the timeline");
       } finally {
         await page.context().close();
       }

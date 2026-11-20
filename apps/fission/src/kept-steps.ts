@@ -7,7 +7,9 @@
 // steps written by an older SpindleLabs, whose snapshots are brought up to date first (`upgrade`), and steps that stop
 // one change short of the project because that change came back from the unsaved-changes journal (`follow`'s `left`).
 // A tab whose saves are refused because another tab stored the project since writes none (save/load hunt C6: a stale
-// tab's steps, written over the good tab's, left that tab with nothing to undo after its reload).
+// tab's steps, written over the good tab's, left that tab with nothing to undo after its reload). A project with no
+// steps kept has its first change written at once, so a reload before that change's save lands still finds them
+// (#764 item 5); a fresh start with nothing changed still writes nothing.
 
 import type { History } from "@fission/core";
 import { alignSteps, extendSteps, type StepsStore } from "@fission/storage";
@@ -67,10 +69,19 @@ export function keptSteps(history: History, steps: StepsStore, capture: () => st
   const write = () => {
     if (id === null || !ready || !dirty || refused()) return;
     dirty = false;
+    none = false;
     void steps.write(id, history.save(), now(), options.ownTimes?.());
   };
+  /**
+   * Nothing is kept for the project followed yet (none read, none written since). Its first change is then written at
+   * once, not at the save, since the page may go first and a write started as it goes may never land (#764 item 5, S-4:
+   * a file opened, changed and reloaded within the second came back with nothing kept to extend, and Undo off). Later
+   * changes wait for the save as before; kept steps that didn't fit are never replaced before this tab's save lands.
+   */
+  let none = false;
   history.onChange(() => {
     if (id !== null && ready) dirty = true;
+    if (none && dirty) write();
   });
 
   const api: KeptSteps = {
@@ -113,6 +124,8 @@ export function keptSteps(history: History, steps: StepsStore, capture: () => st
         ready = true;
         // Steps that couldn't go back are replaced by this history at the next save; ones put back are already kept.
         dirty = loaded ? changed : saved !== null || history.steps().length > 1;
+        none = saved === null;
+        if (none && history.steps().length > 1) write();
       });
     },
     saved: write,
@@ -123,6 +136,7 @@ export function keptSteps(history: History, steps: StepsStore, capture: () => st
       id = null;
       ready = false;
       dirty = false;
+      none = false;
     },
     following: () => id,
     settled: () => reading,
