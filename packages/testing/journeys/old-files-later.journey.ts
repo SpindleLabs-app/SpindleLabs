@@ -247,6 +247,12 @@ test("what each version added survives the upgrade: the construction line, the h
   const piece = join.bodies!.find((b) => b.id === "body:feature-11")!;
   // The rectangle's four sides and its two caps.
   assert.deepEqual(piece.faces, ["face:feature-11/end", "face:feature-11/side:line-10", "face:feature-11/side:line-5", "face:feature-11/side:line-7", "face:feature-11/side:line-9", "face:feature-11/start"]);
+  // SL #512 item 1: the Copy of that piece (saved as "Copy of a piece of Extrude 1") now copies Extrude 1's own body, and
+  // its row says so as a Copy made today does (duplicate.ts: "Copy of" and the body's item's name); the Move's words named
+  // no piece and stay.
+  const words = (id: string) => join.timeline.features.find((f) => f.id === id)!.intent.summary;
+  assert.equal(words("feature-23"), "Copy of Extrude 1");
+  assert.equal(words("feature-22"), "Move Extrude 1 by (100, 0, 0) mm");
 });
 
 test("every later file builds on today's kernel the bodies worked out by hand: each one's exact volume and bounding box", async () => {
