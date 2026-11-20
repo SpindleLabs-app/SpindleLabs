@@ -1,0 +1,54 @@
+{
+ "seed": "3111812464379357679",
+ "check": "the rebuild differs from the model",
+ "issue": "SpindleLabs-app/SpindleLabs#430",
+ "what": "Six steps: a Move, a sketch on a face, the marker, a Copy, a Combine, the marker again. The model judged the face sketch's face by its frame's origin where Design (SL #707) judges it by the middle of the sketch's own points, so the two disagreed on which face holds it. Seen 19 Nov on 2702a77; fails with the model before the seed 11116828921063044366 fix and passes after.",
+ "steps": [
+  {
+   "op": "add-move",
+   "pick": 0.9410506093072323,
+   "other": null,
+   "shift": [
+    0,
+    4,
+    0
+   ],
+   "turnZ": 180,
+   "pivot": [
+    29,
+    -21
+   ]
+  },
+  {
+   "op": "add-face-sketch",
+   "pick": 0.20172976343620708,
+   "shape": {
+    "kind": "circle",
+    "centre": [
+     -12,
+     3
+    ],
+    "radius": 16
+   }
+  },
+  {
+   "op": "marker",
+   "pick": 0.6626950284028474
+  },
+  {
+   "op": "add-duplicate",
+   "pick": 0.5302821845329777
+  },
+  {
+   "op": "add-combine",
+   "target": 0.6822924270157608,
+   "tool": 0.7908196527034581,
+   "operation": "intersect",
+   "keep": true
+  },
+  {
+   "op": "marker",
+   "pick": 0.35029357919427706
+  }
+ ]
+}
