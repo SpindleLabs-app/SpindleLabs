@@ -1,16 +1,14 @@
-// Slicer printer presets (slice-presets.ts, Ben 2026-11-04): the stored shape read and written by hand-written JSON,
-// each setting checked against the dialog's lists (each broken in turn), names (empty, the 40-character limit either
-// side, a clash), a newer app's store left alone, blocked storage, and the dialog in a real DOM (happy-dom): save,
-// pick, the "changed" mark, update, rename, delete, Escape, and a dialog built again on the same storage (a reload)
-// opening on the preset picked last. The Chromium check is apps/fission/e2e/slice-presets.mjs.
+// The printer presets' bar on the Slice page (SP5b2c: moved from Design's slice-presets.test.ts, which tested the same bar in the
+// dialog): save the settings as a preset, pick it, the "changed" mark, update, rename, delete, a page built again on the same
+// storage (a reload), another tab's changes, full storage and a store a newer app wrote. The pure store tests are in packages/print.
 import { test } from "node:test";
 import assert from "node:assert/strict";
+import { RepresentationRegistry } from "@fission/core";
+import { printPanel } from "../src/index.ts";
+import { FORMAT_OPTIONS, INFILL_OPTIONS, NOZZLE_OPTIONS, PLATE_OPTIONS, QUALITY_OPTIONS, SUPPORT_OPTIONS, WALL_OPTIONS } from "@fission/print";
 import { byName, SETTINGS_OPEN_KEY, GRIP_KEY, NAME_MAX, nameProblem, NOZZLE_KEY, PRINT_DEFAULTS, FILE_DEFAULTS, presetSettingsOf, PRESET_PICKED_KEY, PRESETS_KEY, PRESETS_MAX, readPresets, sameSettings, WARM_UP_KEY, writePresets, type FileChoices, type PresetSettings, type PrintChoices, type PrintPreset } from "@fission/print";
-import { slicePrint } from "../src/slice-print.ts";
-
 const DEFAULTS: PresetSettings = { layerHeight: PRINT_DEFAULTS.layerHeight, walls: PRINT_DEFAULTS.walls, infill: PRINT_DEFAULTS.infill, ...FILE_DEFAULTS };
 const WORK: PresetSettings = { layerHeight: 0.16, walls: 3, infill: 40, format: "p1s", plate: "smooth", nozzle: "high-flow" };
-
 /** A Storage-like map, optionally refusing writes. */
 function memory(initial: Record<string, string> = {}, full = false) {
   const m = new Map(Object.entries(initial));
@@ -24,114 +22,40 @@ function memory(initial: Record<string, string> = {}, full = false) {
     removeItem: (k: string) => void m.delete(k),
   };
 }
-
-test("the stored shape, read from hand-written JSON: presets this app can use are shown, others kept untouched when written back", () => {
-  // Written by hand: one preset for the P1S, one for a printer that doesn't exist yet, one with a quality the dialog
-  // doesn't list (0.3 mm), one with no name, and a second preset reusing the first one's id.
-  const home = { id: "a1", name: "  home P1S ", printer: "bambu-p1s", settings: DEFAULTS, updatedAt: 1000 };
-  const p2s = { id: "b2", name: "work P2S", printer: "bambu-p2s", settings: DEFAULTS, updatedAt: 2000 };
-  const odd = { id: "c3", name: "odd", printer: "bambu-p1s", settings: { ...DEFAULTS, layerHeight: 0.3 }, updatedAt: 3000 };
-  const unnamed = { id: "d4", name: "   ", printer: "bambu-p1s", settings: DEFAULTS, updatedAt: 4000 };
-  const twin = { id: "a1", name: "twin", printer: "bambu-p1s", settings: DEFAULTS, updatedAt: 5000 };
-  const s = memory({ [PRESETS_KEY]: JSON.stringify({ version: 1, presets: [home, p2s, odd, unnamed, twin] }) });
-  const store = readPresets(s, presetSettingsOf);
-  // Only the first is usable; its name is trimmed. The other four are kept as they were, in order.
-  assert.deepEqual(store.presets, [{ id: "a1", name: "home P1S", printer: "bambu-p1s", settings: DEFAULTS, updatedAt: 1000 }]);
-  assert.deepEqual(store.kept, [p2s, odd, unnamed, twin]);
-  assert.equal(store.writable, true);
-  // Written back with a new preset: the version, ours first, then the kept ones, unchanged.
-  const work: PrintPreset = { id: "e5", name: "work", printer: "bambu-p1s", settings: WORK, updatedAt: 6000 };
-  assert.equal(writePresets(s, { ...store, presets: [...store.presets, work] }), true);
-  assert.deepEqual(JSON.parse(s.m.get(PRESETS_KEY)!), { version: 1, presets: [{ ...home, name: "home P1S" }, work, p2s, odd, unnamed, twin] });
-  // Nothing kept, text that is not JSON, or JSON that is not a store: no presets, and the store may be written.
-  for (const v of [undefined, "{not json", "null", "[]", '{"version":1}', '{"version":1,"presets":{}}']) {
-    const r = readPresets(memory(v === undefined ? {} : { [PRESETS_KEY]: v }), presetSettingsOf);
-    assert.deepEqual(r, { presets: [], kept: [], writable: true }, String(v));
-  }
-  // A missing time reads as 0 (the oldest), so a sync would keep any other copy.
-  const old = readPresets(memory({ [PRESETS_KEY]: JSON.stringify({ version: 1, presets: [{ ...home, updatedAt: "yesterday" }] }) }), presetSettingsOf);
-  assert.equal(old.presets[0].updatedAt, 0);
-});
-
-test("a store written by a newer app is never overwritten; blocked or full storage says no", () => {
-  const text = JSON.stringify({ version: 2, presets: [{ id: "x", name: "future", printer: "bambu-p1s", settings: DEFAULTS, updatedAt: 1 }] });
-  const s = memory({ [PRESETS_KEY]: text });
-  const store = readPresets(s, presetSettingsOf);
-  assert.deepEqual(store, { presets: [], kept: [], writable: false });
-  assert.equal(writePresets(s, { ...store, presets: [{ id: "y", name: "mine", printer: "bambu-p1s", settings: DEFAULTS, updatedAt: 2 }] }), false);
-  assert.equal(s.m.get(PRESETS_KEY), text, "left exactly as it was");
-  // The other side: version 1 is ours.
-  assert.equal(readPresets(memory({ [PRESETS_KEY]: text.replace('"version":2', '"version":1') }), presetSettingsOf).writable, true);
-  // Blocked: reading throws, so nothing shows and nothing is written; full: the write is refused.
-  const blocked = { getItem: () => { throw new Error("SecurityError"); } };
-  assert.deepEqual(readPresets(blocked, presetSettingsOf), { presets: [], kept: [], writable: false });
-  assert.deepEqual(readPresets(null, presetSettingsOf), { presets: [], kept: [], writable: true });
-  assert.equal(writePresets(memory({}, true), { presets: [], kept: [], writable: true }), false);
-  assert.equal(writePresets(null, { presets: [], kept: [], writable: true }), false);
-});
-
-test("stored settings are checked choice by choice: each one broken in turn is refused", () => {
-  assert.deepEqual(presetSettingsOf(WORK), WORK);
-  assert.deepEqual(presetSettingsOf({ ...DEFAULTS, extra: 1 }), DEFAULTS, "a field this app doesn't know is left out");
-  const breaks: [keyof PresetSettings, unknown][] = [
-    ["layerHeight", 0.3],
-    ["layerHeight", "0.2"],
-    ["walls", 7],
-    ["walls", 0],
-    ["infill", 30],
-    ["format", "stl"],
-    ["plate", "glass"],
-    ["nozzle", "hardened"],
-  ];
-  // Presets saved before 2026-11-16 hold supports, the warm-up loop and Better grip: read, and the three dropped (they are per print).
-  assert.deepEqual(presetSettingsOf({ ...WORK, supports: "tree", warmUp: false, betterGrip: true }), WORK);
-  assert.deepEqual(presetSettingsOf({ ...WORK, supports: "bogus", warmUp: "x", betterGrip: 1 }), WORK, "nothing about them can refuse a preset");
-  for (const [k, v] of breaks) assert.equal(presetSettingsOf({ ...DEFAULTS, [k]: v }), null, `${k} = ${JSON.stringify(v)}`);
-  for (const k of Object.keys(DEFAULTS)) {
-    const missing: Record<string, unknown> = { ...DEFAULTS };
-    delete missing[k];
-    assert.equal(presetSettingsOf(missing), null, `${k} missing`);
-  }
-  for (const v of [null, undefined, "settings", 3, []]) assert.equal(presetSettingsOf(v), null, String(v));
-});
-
-test("names: one is needed, up to 40 characters (40 passes, 41 is refused), never another preset's, whatever its case", () => {
-  const list: PrintPreset[] = [{ id: "a", name: "home P1S", printer: "bambu-p1s", settings: DEFAULTS, updatedAt: 0 }];
-  assert.equal(nameProblem(list, "   "), "Give the preset a name, such as home P1S.");
-  assert.equal(NAME_MAX, 40);
-  assert.equal(nameProblem(list, "x".repeat(40)), null);
-  assert.equal(nameProblem(list, ` ${"x".repeat(40)} `), null, "spaces round it are trimmed first");
-  assert.equal(nameProblem(list, "x".repeat(41)), "Keep the name to 40 characters or fewer.");
-  assert.equal(nameProblem(list, "HOME p1s"), "There is already a preset called home P1S: pick another name, or choose it and update it.");
-  // Renaming a preset to its own name in another case is no clash.
-  assert.equal(nameProblem(list, "Home P1S", "a"), null);
-  // The list shows them by name, ignoring case.
-  const names = byName([
-    { ...list[0], id: "1", name: "work P2S" },
-    { ...list[0], id: "2", name: "Home P1S" },
-    { ...list[0], id: "3", name: "garage" },
-  ]).map((p) => p.name);
-  assert.deepEqual(names, ["garage", "Home P1S", "work P2S"]);
-  // Settings the same choice by choice; one choice different is not.
-  assert.equal(sameSettings(DEFAULTS, { ...DEFAULTS }), true);
-  const other: PresetSettings = { ...WORK, format: "gcode" };
-  for (const k of Object.keys(DEFAULTS) as (keyof PresetSettings)[]) assert.equal(sameSettings(DEFAULTS, { ...DEFAULTS, [k]: other[k] }), false, k);
-});
-
 const { Window } = await import("happy-dom");
 
-/** The dialog on `window`'s storage (a second call on the same window is the page reloaded). */
+/** The page's print panel on `window`'s storage (a second call on the same window is the page reloaded). */
 function dialog(window: InstanceType<typeof Window>) {
   const doc = window.document as unknown as Document;
   doc.body.replaceChildren();
-  const slot = doc.createElement("div");
-  doc.body.append(slot);
   const asked: { c: PrintChoices; f: FileChoices }[] = [];
-  const d = slicePrint(slot, { slice: async (c, f) => (asked.push({ c, f }), { print: { layers: 1, filamentMm: 1, filamentG: 1, printTimeS: 1, unprintedVolume: 0 }, saved: true, name: "x" }), preview: async () => {} });
+  const build = () => {
+    doc.body.replaceChildren();
+    const made = printPanel(doc, { kernel: { call: async () => ({}), stopSlicing: () => undefined } as never, registry: new RepresentationRegistry(), objects: () => [], storage: window.localStorage as unknown as Storage });
+    doc.body.append(made.element);
+    return made;
+  };
+  let panel = build();
+  // Asking again is the page shown again: built anew from what the storage holds now.
+  let asks = 0;
+  const d = { ask: () => void (asks++ > 0 && (panel = build())) };
   const $ = <T extends HTMLElement>(i: string) => doc.getElementById(i) as T;
   const change = (e: HTMLElement) => e.dispatchEvent(new window.Event("change") as unknown as Event);
+  // The page's choice boxes hold the option's place as their value: the tables turn a setting into its place and back.
+  const table: Record<string, readonly (string | number)[]> = {
+    "slice-page-quality": QUALITY_OPTIONS.map((o) => o.value),
+    "slice-page-walls": WALL_OPTIONS,
+    "slice-page-infill": INFILL_OPTIONS,
+    "slice-page-supports": SUPPORT_OPTIONS.map((o) => o.value),
+    "slice-page-format": FORMAT_OPTIONS.map((o) => o.value),
+    "slice-page-plate": PLATE_OPTIONS.map((o) => o.value),
+    "slice-page-nozzle": NOZZLE_OPTIONS.map((o) => o.value),
+  };
+  const read = (i: string) => String(table[i][Number($<HTMLSelectElement>(i).value)]);
   const set = (i: string, v: string) => {
-    $<HTMLSelectElement>(i).value = v;
+    const at = table[i]?.findIndex((x) => String(x) === v);
+    if (at !== undefined) assert.ok(at >= 0, `${v} is not a choice of ${i}`);
+    $<HTMLSelectElement>(i).value = at === undefined ? v : String(at);
     change($(i));
   };
   const tick = (i: string, on: boolean) => {
@@ -143,25 +67,25 @@ function dialog(window: InstanceType<typeof Window>) {
     $(i).dispatchEvent(e as unknown as Event);
     return e.defaultPrevented;
   };
-  /** The dialog's settings as the selects and tick boxes show them. */
+  /** The panel's settings as the selects and tick boxes show them. */
   const shown = () => ({
-    format: $<HTMLSelectElement>("slice-print-format").value,
-    plate: $<HTMLSelectElement>("slice-print-plate").value,
-    nozzle: $<HTMLSelectElement>("slice-print-nozzle").value,
-    layerHeight: $<HTMLSelectElement>("slice-print-quality").value,
-    walls: $<HTMLSelectElement>("slice-print-walls").value,
-    infill: $<HTMLSelectElement>("slice-print-infill").value,
+    format: read("slice-page-format"),
+    plate: read("slice-page-plate"),
+    nozzle: read("slice-page-nozzle"),
+    layerHeight: read("slice-page-quality"),
+    walls: read("slice-page-walls"),
+    infill: read("slice-page-infill"),
   });
   /** The per-print choices: not part of any preset. */
   const perPrint = () => ({
-    supports: $<HTMLSelectElement>("slice-print-supports").value,
-    warmUp: $<HTMLInputElement>("slice-print-warm-up").checked,
-    betterGrip: $<HTMLInputElement>("slice-print-grip").checked,
+    supports: read("slice-page-supports"),
+    warmUp: $<HTMLInputElement>("slice-page-warm-up").checked,
+    betterGrip: $<HTMLInputElement>("slice-page-grip").checked,
   });
   const list = () => [...$<HTMLSelectElement>("slice-presets-list").options].map((o) => o.textContent);
   const visible = () => ["pick", "editing", "naming", "asking"].filter((m) => !(doc.querySelector(`.slice-presets-${m}`) as HTMLElement).hidden);
-  const status = () => $("slice-print-status").textContent;
-  return { d, $, set, tick, key, shown, perPrint, list, visible, status, asked, settle: () => new Promise((r) => setTimeout(r, 0)) };
+  const status = () => $("slice-page-status").textContent;
+  return { d, $, set, tick, key, shown, perPrint, list, visible, status, asked, get panel() { return panel; }, settle: () => new Promise((r) => setTimeout(r, 0)) };
 }
 
 /** Settings as the dialog shows them (its selects hold text). */
@@ -199,9 +123,9 @@ test("the dialog: save the settings as a preset, pick it, see it marked changed,
   assert.equal(storage.getItem(PRESET_PICKED_KEY), home.id);
   assert.equal(t.$<HTMLSelectElement>("slice-presets-list").value, home.id);
   // Every setting changed to WORK's, and saved as "work P2S" (a name may not repeat another's, whatever its case).
-  for (const [i, v] of [["slice-print-format", "p1s"], ["slice-print-plate", "smooth"], ["slice-print-nozzle", "high-flow"], ["slice-print-quality", "0.16"], ["slice-print-walls", "3"], ["slice-print-infill", "40"], ["slice-print-supports", "tree"]]) t.set(i, v);
-  t.tick("slice-print-warm-up", false);
-  t.tick("slice-print-grip", true);
+  for (const [i, v] of [["slice-page-format", "p1s"], ["slice-page-plate", "smooth"], ["slice-page-nozzle", "high-flow"], ["slice-page-quality", "0.16"], ["slice-page-walls", "3"], ["slice-page-infill", "40"], ["slice-page-supports", "tree"]]) t.set(i, v);
+  t.tick("slice-page-warm-up", false);
+  t.tick("slice-page-grip", true);
   // Now the picked preset no longer matches: it says so, and Update turns on.
   assert.deepEqual(t.list(), ["No preset", "home P1S (changed)"]);
   t.$("slice-presets-save-as").click();
@@ -224,9 +148,8 @@ test("the dialog: save the settings as a preset, pick it, see it marked changed,
   assert.deepEqual(Object.keys(stored().presets[0].settings).sort(), ["format", "infill", "layerHeight", "nozzle", "plate", "walls"], "a preset holds the printer's settings only");
   assert.equal(storage.getItem(PRESET_PICKED_KEY), home.id);
   // And a slice uses them.
-  t.$("slice-print-go").click();
-  await t.settle();
-  assert.deepEqual(t.asked.at(-1), { c: { ...PRINT_DEFAULTS, supports: "tree", warmUp: false, betterGrip: true }, f: FILE_DEFAULTS });
+  assert.deepEqual(t.panel.choices(), { ...PRINT_DEFAULTS, supports: "tree", warmUp: false, betterGrip: true });
+  assert.deepEqual(t.panel.file(), FILE_DEFAULTS);
   // Picking work puts its settings in, the plate and nozzle with it.
   t.set("slice-presets-list", work.id);
   assert.deepEqual(t.shown(), asShown(WORK));
@@ -237,7 +160,7 @@ test("the dialog: save the settings as a preset, pick it, see it marked changed,
   assert.equal(t.$("slice-presets-editing-name").textContent, "work P2S");
   assert.equal(t.$<HTMLButtonElement>("slice-presets-update").disabled, true);
   t.$("slice-presets-back").click();
-  t.set("slice-print-infill", "60");
+  t.set("slice-page-infill", "60");
   assert.deepEqual(t.list(), ["No preset", "home P1S", "work P2S (changed)"]);
   t.$("slice-presets-edit").click();
   assert.equal(t.$<HTMLButtonElement>("slice-presets-update").disabled, false);
@@ -255,7 +178,6 @@ test("the dialog: save the settings as a preset, pick it, see it marked changed,
   assert.match(t.status()!, /^There is already a preset called home P1S/);
   assert.equal(t.key("slice-presets-name", "Escape"), true, "Escape is taken by the name box");
   assert.deepEqual(t.visible(), ["editing"]);
-  assert.equal(t.d.open, true);
   t.$("slice-presets-rename").click();
   t.$<HTMLInputElement>("slice-presets-name").value = "garage P1S";
   t.$("slice-presets-name-ok").click();
@@ -302,7 +224,6 @@ test("another tab's change shows when the dialog is opened again; a preset delet
   t.$("slice-presets-save-as").click();
   t.$<HTMLInputElement>("slice-presets-name").value = "home P1S";
   t.$("slice-presets-name-ok").click();
-  t.$("slice-print-close").click();
   // The other tab adds one and deletes ours.
   const other: PrintPreset = { id: "other", name: "work P2S", printer: "bambu-p1s", settings: WORK, updatedAt: 5 };
   storage.setItem(PRESETS_KEY, JSON.stringify({ version: 1, presets: [other] }));
@@ -343,13 +264,11 @@ test("full storage: the preset isn't saved and the dialog says so; at the cap of
   const many = (n: number) => JSON.stringify({ version: 1, presets: Array.from({ length: n }, (_, i) => ({ id: `p${i}`, name: `p${i}`, printer: "bambu-p1s", settings: DEFAULTS, updatedAt: i })) });
   assert.equal(PRESETS_MAX, 50);
   kept.set(PRESETS_KEY, many(50));
-  t.$("slice-print-close").click();
   t.d.ask();
   t.$("slice-presets-save-as").click();
   assert.equal(t.status(), "There are 50 presets already: delete one to save another.");
   assert.deepEqual(t.visible(), ["pick"]);
   kept.set(PRESETS_KEY, many(49));
-  t.$("slice-print-close").click();
   t.d.ask();
   t.$("slice-presets-save-as").click();
   assert.deepEqual(t.visible(), ["naming"]);
@@ -394,7 +313,7 @@ test("a dialog left open while another tab changes the presets: each edit here c
   assert.deepEqual(names(), ["home"]);
   // The other tab adds "work P2S" again; Update here keeps it, changing only "home"'s settings.
   storage.setItem(PRESETS_KEY, JSON.stringify({ version: 1, presets: [...stored().presets, other] }));
-  t.set("slice-print-infill", "40");
+  t.set("slice-page-infill", "40");
   t.$("slice-presets-edit").click();
   t.$("slice-presets-update").click();
   assert.equal(t.status(), "Updated the preset home with these settings.");
@@ -403,7 +322,7 @@ test("a dialog left open while another tab changes the presets: each edit here c
   assert.deepEqual(stored().presets.find((p) => p.id === "other"), other, "the other tab's preset, untouched");
   // The other tab deletes "home"; Update here then neither brings it back nor touches "work P2S", and says why.
   storage.setItem(PRESETS_KEY, JSON.stringify({ version: 1, presets: [other] }));
-  t.set("slice-print-infill", "60");
+  t.set("slice-page-infill", "60");
   t.$("slice-presets-edit").click();
   t.$("slice-presets-update").click();
   assert.equal(t.status(), "That preset was deleted in another tab, so it can't be changed here.");
@@ -443,7 +362,7 @@ test("a store a newer app wrote while this dialog is open is never overwritten, 
   t.$("slice-presets-name-cancel").click();
   // Update, Rename and Delete of the preset this dialog still has picked: each refused in the same words.
   for (const step of [
-    () => (t.set("slice-print-infill", "40"), t.$("slice-presets-edit").click(), t.$("slice-presets-update").click()),
+    () => (t.set("slice-page-infill", "40"), t.$("slice-presets-edit").click(), t.$("slice-presets-update").click()),
     () => (t.$("slice-presets-edit").click(), t.$("slice-presets-rename").click(), (t.$<HTMLInputElement>("slice-presets-name").value = "x"), t.$("slice-presets-name-ok").click()),
     () => (t.$("slice-presets-edit").click(), t.$("slice-presets-delete").click(), t.$("slice-presets-delete-yes").click()),
   ]) {
@@ -466,16 +385,16 @@ test("per-print choices (Ben, 2026-11-16): Supports, Warm-up loop and Better gri
   assert.deepEqual(t.list(), ["No preset", "home P1S"]);
   const before = storage.getItem(PRESETS_KEY);
   // Each of the three changed: still no "(changed)", Update stays off, the store is untouched.
-  t.set("slice-print-supports", "tree");
-  t.tick("slice-print-warm-up", false);
-  t.tick("slice-print-grip", true);
+  t.set("slice-page-supports", "tree");
+  t.tick("slice-page-warm-up", false);
+  t.tick("slice-page-grip", true);
   assert.deepEqual(t.list(), ["No preset", "home P1S"]);
   t.$("slice-presets-edit").click();
   assert.equal(t.$<HTMLButtonElement>("slice-presets-update").disabled, true);
   assert.equal(storage.getItem(PRESETS_KEY), before);
   // A printer setting still marks it (the check can fail): quality changed.
   t.$("slice-presets-back").click();
-  t.set("slice-print-quality", "0.28");
+  t.set("slice-page-quality", "0.28");
   assert.deepEqual(t.list(), ["No preset", "home P1S (changed)"]);
 });
 
@@ -506,19 +425,19 @@ test("the printer settings fold into one section: closed by default with a line 
   window.localStorage.clear();
   let t = dialog(window);
   t.d.ask();
-  const section = () => window.document.querySelector(".slice-print-settings") as unknown as HTMLDetailsElement;
+  const section = () => window.document.querySelector(".slice-page-settings") as unknown as HTMLDetailsElement;
   assert.equal(section().open, false);
   // By hand: file "Bambu Lab P1S (.gcode.3mf)" loses its bracket, plate and nozzle labels as listed, quality's bracket gives "0.2 mm layers".
-  const words = () => window.document.querySelector("#slice-print-settings-words")!.textContent;
+  const words = () => window.document.querySelector(".slice-page-settings-words")!.textContent;
   assert.equal(words(), "Bambu Lab P1S · Textured PEI plate · 0.4 mm Standard · 0.2 mm layers · 2 walls · 15 % infill");
-  t.set("slice-print-walls", "1");
-  t.set("slice-print-infill", "100");
+  t.set("slice-page-walls", "1");
+  t.set("slice-page-infill", "100");
   assert.equal(words(), "Bambu Lab P1S · Textured PEI plate · 0.4 mm Standard · 0.2 mm layers · 1 wall · 100 % infill");
-  t.set("slice-print-format", "gcode");
+  t.set("slice-page-format", "gcode");
   assert.equal(words(), "Plain G-code · 0.2 mm layers · 1 wall · 100 % infill");
   // Supports, warm-up loop and Better grip are outside the section; every printer setting is inside.
-  for (const id of ["slice-print-supports", "slice-print-warm-up", "slice-print-grip"]) assert.equal(section().contains(t.$(id)), false, id);
-  for (const id of ["slice-print-format", "slice-print-plate", "slice-print-nozzle", "slice-print-quality", "slice-print-walls", "slice-print-infill", "slice-print-fits-open"]) assert.equal(section().contains(t.$(id)), true, id);
+  for (const id of ["slice-page-supports", "slice-page-warm-up", "slice-page-grip"]) assert.equal(section().contains(t.$(id)), false, id);
+  for (const id of ["slice-page-format", "slice-page-plate", "slice-page-nozzle", "slice-page-quality", "slice-page-walls", "slice-page-infill", "slice-page-fits-open"]) assert.equal(section().contains(t.$(id)), true, id);
   // Opened: remembered, and the next dialog on the same storage opens open.
   section().open = true;
   section().dispatchEvent(new window.Event("toggle") as unknown as Event);

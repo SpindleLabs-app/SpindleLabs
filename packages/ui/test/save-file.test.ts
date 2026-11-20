@@ -253,3 +253,20 @@ test("Save again to a file that can no longer be written, then the picker closed
   // A first save cancelled at the picker is still just cancelled: nothing went wrong.
   assert.deepEqual(await saveFile(doc, { suggestedName: "x", kind: PROJECT_KIND, bytes: "DATA" }), { status: "cancelled" });
 });
+
+test("bytes given as a function are made once the file's name is known: the picked file's, the kept file's, or the name typed (SL #644 item 3)", async () => {
+  const written: string[] = [];
+  const asked: string[] = [];
+  const bytes = (name: string) => (asked.push(name), `holds ${name}`);
+  const picked = handle("Bracket.spindle", written);
+  const withPicker = page({ picker: async () => picked });
+  assert.deepEqual(await saveFile(withPicker.doc, { suggestedName: "Untitled", kind: PROJECT_KIND, bytes }), { status: "saved", name: "Bracket.spindle", handle: picked });
+  const kept = handle("Kept.spindle", written);
+  await saveFile(withPicker.doc, { suggestedName: "Untitled", kind: PROJECT_KIND, bytes, handle: kept });
+  assert.deepEqual(written, ["holds Bracket.spindle", "holds Kept.spindle"]);
+  // Driven by a test, the suggested name is downloaded without asking: the bytes are made for that name.
+  const driven = page({ webdriver: true });
+  await saveFile(driven.doc, { suggestedName: "Plate", kind: PROJECT_KIND, bytes });
+  assert.deepEqual(driven.downloads, ["Plate.spindle"]);
+  assert.deepEqual(asked, ["Bracket.spindle", "Kept.spindle", "Plate.spindle"], "asked once per save, after the name");
+});

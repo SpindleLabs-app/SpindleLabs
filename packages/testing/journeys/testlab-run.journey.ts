@@ -126,6 +126,46 @@ test("hand-worked: a steel bar pulled and bent, the kernel's answers against bea
   assert.equal(await kernel.call("body_count"), before, "every body the runs built is freed");
 });
 
+test("hand-worked: a 1 mm steel strip, thinner than the old default mesh size, bent against beam and plate theory", async () => {
+  // 50 × 5 × 1 mm: its box diagonal √(2500 + 25 + 1) = 50.26 mm over 60 is 0.838 mm, more than the thickness over
+  // 1.5 (0.667 mm), so the kernel meshes it at 0.667 mm, 1.5 sizes through the thickness (kernel 0.33.81; before it,
+  // plates like this were meshed coarser than they were thick and came back slowly or refused).
+  const before = await kernel.call("body_count");
+  const t = setUp(partDocument("box", 50, 5, 1));
+  const page = mountTestLabPage(t.ctx);
+  await page.ready;
+  const m = t.mesh();
+  t.choose("material", "steel-a36");
+  t.click("[data-testlab=pick-held]");
+  await t.tap(faceAt(m, 0, 0));
+  t.click("[data-testlab=add-load]");
+  await t.tap(faceAt(m, 0, 50));
+  t.click("[data-testlab=pick-load]");
+  const s = t.data().studies[0];
+  const r = setLoad(t.data(), s.id, s.loads[0].id, { amount: 1, direction: "down" });
+  assert.ok("data" in r);
+  t.project.workspaces.simulate = r.data;
+  await t.run();
+  assert.equal(t.status(), "");
+  const E = weakerWay(materialLibrary().get("steel-a36")!.mechanical!).stiffness / 1e6; // 199,948 MPa
+  const facts = [...t.ctx.properties.querySelectorAll(".testlab-results-facts dd")].slice(-2).map((d) => d.textContent!);
+  // 1 N down on the free end. Beam: I = b t³/12 = 5 · 1³ / 12 = 0.41667 mm⁴, tip δ = F L³/(3 E I)
+  // = 1 · 50³ / (3 · 199,948 · 0.41667) = 0.50013 mm. A strip 5 thicknesses wide is part way to a plate, which
+  // can't curl sideways and is stiffer by 1/(1 − ν²) (ν = 0.26 for A36: δ × 0.9324 = 0.46632 mm); shear adds
+  // (t/L)² of it, 0.04%. So the tip lies between 0.4663 and 0.5003 mm, give or take 1% for the mesh.
+  const beam = (1 * 50 ** 3) / (3 * E * ((5 * 1 ** 3) / 12));
+  const nu = materialLibrary().get("steel-a36")!.mechanical!.poissonsRatio;
+  const plate = beam * (1 - nu ** 2);
+  const tip = Number(facts[0].replace(" mm", ""));
+  assert.ok(tip >= plate * 0.99 && tip <= beam * 1.0004 * 1.01, `tip ${tip} mm between ${plate} and ${beam} mm`);
+  // Root stress M c / I = (1 · 50) · 0.5 / 0.41667 = 60 MPa (6 F L / (b t²), the same in a plate), a little higher at
+  // the clamp's corners.
+  const root = Number(facts[1].split(" ")[0]);
+  assert.ok(root >= 60 * 0.99 && root <= 60 * 1.25, `root stress ${root} MPa against 60 MPa`);
+  page.unmount();
+  assert.equal(await kernel.call("body_count"), before, "every body the run built is freed");
+});
+
 test("a cylinder is refused in the kernel's words, nothing shown", async () => {
   const before = await kernel.call("body_count");
   const t = setUp(changePreset(partDocument("box", 10, 10, 10), "feature-1", "cylinder", 10, 10, 20));

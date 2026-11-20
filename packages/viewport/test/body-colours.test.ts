@@ -2,7 +2,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import * as THREE from "three";
 import { NO_HIGHLIGHT, triangleColours, type AnalysisOverlay, type OverlaySeverity, type ViewportHighlight } from "@fission/core";
-import { copyChanged, edgeColourArray, faceColourArray, linearOf } from "../src/body-colours.ts";
+import { copyChanged, edgeColourArray, faceColourArray, linearOf, mapColourArray, MAP_SELECTED_MIX } from "../src/body-colours.ts";
 import { BASE_COLOUR, faceMixes, segmentColours, SELECTION_COLOUR, tint, type Rgb } from "../src/highlight.ts";
 
 function seeded(seed: number) {
@@ -93,4 +93,19 @@ test("paint's colours are exactly as before on seeded bodies, overlays, selectio
       assert.deepEqual(edgeColourArray(mesh.edge_line_edges, highlight, hoverEdge, edgeOut), want.lineColours, `edges, seed ${seed} step ${step}`);
     }
   }
+});
+
+test("over a colour map a selected face shows as a pale patch: each of its vertices MAP_SELECTED_MIX of the way to white (by hand)", () => {
+  // Two triangles, faces 0 and 1, three vertices each; the map gives every vertex (0.2, 0.4, 0.6) linear.
+  const mesh = { positions: new Array(18).fill(0), indices: [0, 1, 2, 3, 4, 5], triangle_faces: [0, 1] };
+  const map = new Float32Array(18).fill(0).map((_, i) => [0.2, 0.4, 0.6][i % 3]);
+  const out = mapColourArray(mesh, map, { body: false, faces: [1], edges: [] }, new Float32Array(18));
+  // Face 0 keeps the map; face 1: 0.2 + (1 − 0.2) × m, 0.4 + 0.6m, 0.6 + 0.4m.
+  const m = MAP_SELECTED_MIX;
+  const want = [0.2 + 0.8 * m, 0.4 + 0.6 * m, 0.6 + 0.4 * m];
+  for (let v = 0; v < 6; v++)
+    for (let k = 0; k < 3; k++) assert.ok(Math.abs(out[3 * v + k] - (v < 3 ? [0.2, 0.4, 0.6][k] : want[k])) < 1e-6, `vertex ${v}`);
+  // Nothing selected: the map as it is; the map itself never changed.
+  assert.deepEqual([...mapColourArray(mesh, map, { body: false, faces: [], edges: [] }, new Float32Array(18))], [...map]);
+  assert.equal(map[9], Math.fround(0.2));
 });

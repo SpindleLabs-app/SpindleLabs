@@ -185,7 +185,7 @@ for (const [width, tap] of [[1280, false], [375, true]]) {
       assert.equal(layersIn(gcode), 100, "20 mm / 0.2 mm");
       assert.match(gcode, /^G28/m, "it homes the printer first");
       await page.waitForFunction(() => document.getElementById("slice-page-status")?.textContent.startsWith("Saved spindlelabs-0.2mm-2w-15pc.gcode"));
-      assert.match(await page.textContent("#slice-page-status"), /^Saved spindlelabs-0\.2mm-2w-15pc\.gcode: 100 layers, \d+(\.\d)? g of PLA \(\d+\.\d\d m of filament\), about (\d+ min|\d+ h( \d+ min)?|under a minute) of printing \(plus heating and levelling\)\. Added to your print log\.$/);
+      assert.match(await page.textContent("#slice-page-status"), /^Saved spindlelabs-0\.2mm-2w-15pc\.gcode: 100 layers, \d+(\.\d)? g of PLA \(\d+\.\d\d m of filament\), about (\d+ min|\d+ h( \d+ min)?|under a minute) of printing with Generic PLA \(plus heating and levelling\)\. Added to your print log\.$/);
       if (shots) await page.screenshot({ path: `${shots}/slice-page-${width}-sliced.png` });
 
       await pick(page, "quality", "0.16");
@@ -291,12 +291,12 @@ for (const [width, height, tap] of [[1280, 650, false], [1366, 600, false], [128
     const page = await fresh(width, tap, height, true);
     try {
       await openSlice(page, tap);
-      const ids = ["slice-presets-list", "slice-presets-save-as", "slice-presets-edit", "slice-page-format", "slice-page-plate", "slice-page-nozzle", "slice-page-quality", "slice-page-walls", "slice-page-infill", "slice-page-supports", "slice-page-warm-up", "slice-page-grip", "slice-page-preview", "slice-page-download"];
+      const ids = ["slice-presets-list", "slice-presets-save-as", "slice-presets-edit", "slice-page-format", "slice-page-plate", "slice-page-nozzle", "slice-page-quality", "slice-page-walls", "slice-page-infill", "slice-page-supports", "slice-page-filament", "slice-page-warm-up", "slice-page-grip", "slice-page-preview", "slice-page-download"];
       if (shots) await page.screenshot({ path: `${shots}/slice-print-fit-${width}x${height}.png` });
       assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), "the page doesn't scroll sideways");
       // No list squashed to fit (the old dialog shrank Supports' list until its words were cut): all the same height.
       const heights = await page.$$eval(".slice-page-print select:not(#slice-presets-list)", (ss) => ss.map((s) => Math.round(s.getBoundingClientRect().height)));
-      assert.equal(heights.length, 7);
+      assert.equal(heights.length, 8);
       assert.ok(heights.every((h) => Math.abs(h - heights[0]) <= 1), `list heights ${heights}`);
       for (const id of ids) {
         const where = await page.$eval(`#${id}`, (e) => {

@@ -36,6 +36,11 @@ export interface KeptStepsOptions {
   /** True while this tab's saves are refused (another tab stored the project since): then no steps are written. */
   refused?(): boolean;
   /**
+   * The save times of this tab's own states of the project (`Autosave.ownTimes`): steps are written only over a store
+   * holding one of them, so a stale tab that has not heard of its refusal yet never replaces another tab's (#642 item 4).
+   */
+  ownTimes?(): readonly Date[] | undefined;
+  /**
    * A kept snapshot as today's readers write it (the project read and written again): steps kept by an older
    * SpindleLabs carry its data versions, and compared as text never fitted the project as it opens. Throws for a
    * snapshot that can't be read; then the steps are not put back.
@@ -62,7 +67,7 @@ export function keptSteps(history: History, steps: StepsStore, capture: () => st
   const write = () => {
     if (id === null || !ready || !dirty || refused()) return;
     dirty = false;
-    void steps.write(id, history.save(), now());
+    void steps.write(id, history.save(), now(), options.ownTimes?.());
   };
   history.onChange(() => {
     if (id !== null && ready) dirty = true;

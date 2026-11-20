@@ -1,0 +1,31 @@
+{
+  "$comment": "Mutation testing of the kernel bridge (kernel-client.ts and its time limits) and the print preview's G-code replayer and playback (H2), test audit D-5. Run through run.sh, from packages/core. Runs in place (inPlace): the replayer's tests in packages/testing, the preview's in print and viewport and Design's bridge and slicing tests reach core through the @fission/core package link, which a sandbox copy of packages/core would not change. The tests run in one process and stop at the first failure (tests.mjs), slice-engine.test.ts (14 s, the real slicer) last. The killing tests are test/kernel-survivors.test.ts and test/preview-survivors.test.ts (kept out of kernel-client.test.ts, which other pull requests edit).",
+  "testRunner": "command",
+  "commandRunner": {
+    "command": "node --experimental-strip-types --no-warnings -e \"import(require('path').join(require.resolve('@fission/testing'), '../../stryker/tests.mjs')).then((m) => m.default(process.argv.slice(1)))\" test/time-limit.test.ts test/print-playback.test.ts test/preview-survivors.test.ts test/kernel-client.test.ts test/kernel-survivors.test.ts ../testing/test/gcode.test.ts ../testing/test/gcode-checks.test.ts ../viewport/test/print-view.test.ts ../print/test/print-preview.test.ts ../../workspaces/design/test/restart-handles.test.ts ../../workspaces/design/test/timed-out.test.ts ../../workspaces/design/test/print-preview-cube.test.ts ../../workspaces/design/test/slice-engine.test.ts"
+  },
+  "mutate": [
+    "src/kernel/kernel-client.ts",
+    "src/kernel/time-limit.ts",
+    "src/print/gcode.ts",
+    "src/print/playback.ts"
+  ],
+  "inPlace": true,
+  "reporters": [
+    "clear-text",
+    "json"
+  ],
+  "jsonReporter": {
+    "fileName": "../../node_modules/.cache/stryker/kernel.json"
+  },
+  "clearTextReporter": {
+    "allowColor": false,
+    "logTests": false,
+    "reportMutants": false
+  },
+  "tempDirName": ".stryker-tmp",
+  "ignorePatterns": [
+    "node_modules"
+  ],
+  "timeoutMS": 30000
+}

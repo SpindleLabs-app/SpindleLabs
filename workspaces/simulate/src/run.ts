@@ -80,12 +80,19 @@ export function faceFacts(mesh: Pick<DisplayMesh, "positions" | "indices" | "tri
   return { area: twice / 2, normal, flat };
 }
 
-/** The faces of a hold or load found on the body now, by index, each once. */
-function indices(faces: readonly HeldFace[], now: StudyNow): number[] {
+/**
+ * The faces of a hold or load found on the body now, by index, each once. On bodies joined for the test (join.ts)
+ * a picked face the join cut into pieces is every piece (`pieces`).
+ */
+function indices(faces: readonly HeldFace[], now: StudyNow & { pieces?: ReadonlyMap<string, readonly number[]> }): number[] {
   const out = new Set<number>();
   for (const f of faces) {
-    const at = now.found.get(f.ref.id);
-    if (at?.status === "found") out.add(at.face);
+    const pieces = now.pieces?.get(f.ref.id);
+    if (pieces !== undefined) for (const p of pieces) out.add(p);
+    else {
+      const at = now.found.get(f.ref.id);
+      if (at?.status === "found") out.add(at.face);
+    }
   }
   return [...out];
 }
@@ -121,7 +128,7 @@ export function kernelLoads(load: Load, faces: readonly number[], mesh: Pick<Dis
  * stiffness and strength (study.ts T2), the mesh size left to the kernel.
  * Refused in words when something can't be sent.
  */
-export function stressTestOf(study: Study, now: StudyNow, material: Mechanical): StressTest | { refused: string } {
+export function stressTestOf(study: Study, now: StudyNow & { pieces?: ReadonlyMap<string, readonly number[]> }, material: Mechanical): StressTest | { refused: string } {
   const weak = weakerWay(material);
   const loads: StressLoad[] = [];
   for (const [i, l] of study.loads.entries()) {
@@ -173,18 +180,32 @@ export function answerProblem(r: StressTestResult, strength: number): string | n
 }
 
 /**
- * How many times bigger than real the bend is drawn: the bend's largest
- * scaled to about a twentieth of the body's size (its box's diagonal),
- * rounded down to 1, 2 or 5 times a power of ten, never below 1 (a bend
- * already that big is drawn as it is), and 1 when nothing moves.
+ * The most a bend may be drawn, as a share of the body's size (its box's diagonal): past a tenth, the small-bend maths
+ * (each point moved in a straight line) visibly stretches the part, and drawn at true size a part far past breaking
+ * grew ten times its length and threw the view off (Ben's 1000 mm bar, 19 Nov).
+ */
+export const MOST_DRAWN_BEND = 0.1;
+
+/** `wanted` rounded down to 1, 2 or 5 times a power of ten. */
+function roundDown125(wanted: number): number {
+  const power = 10 ** Math.floor(Math.log10(wanted));
+  const step = [5, 2, 1].find((k) => k * power <= wanted * (1 + 1e-12)) ?? 1;
+  return step * power;
+}
+
+/**
+ * How many times bigger than real the bend is drawn: a small bend scaled up
+ * to about a twentieth of the body's size (its box's diagonal), rounded down
+ * to 1, 2 or 5 times a power of ten; one up to MOST_DRAWN_BEND of the size
+ * drawn as it is; a bigger one scaled down to at most that, rounded down the
+ * same way (below 1: drawn smaller than worked out); 1 when nothing moves.
  */
 export function drawnScale(maxBend: number, diagonal: number): number {
   if (!(maxBend > 0) || !(diagonal > 0)) return 1;
   const wanted = diagonal / 20 / maxBend;
-  if (wanted <= 1) return 1;
-  const power = 10 ** Math.floor(Math.log10(wanted));
-  const step = [5, 2, 1].find((k) => k * power <= wanted)!;
-  return step * power;
+  if (wanted > 1) return roundDown125(wanted);
+  const most = (MOST_DRAWN_BEND * diagonal) / maxBend;
+  return most >= 1 ? 1 : roundDown125(most);
 }
 
 /** The diagonal of the box round a list of x, y, z points (mm). */

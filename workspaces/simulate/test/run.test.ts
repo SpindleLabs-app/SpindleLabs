@@ -162,6 +162,26 @@ test("how much bigger the bend is drawn, by hand", () => {
   assert.equal(scaleWords(1), "The bend is drawn as big as it really is.");
 });
 
+test("a bend too big for the small-bend maths is drawn smaller, by hand (Ben's bar, 19 Nov)", () => {
+  // The 100 × 10 × 10 bar again: diagonal 100.995 mm, so a bend over a tenth of it, 10.0995 mm, is too big to draw as it is
+  // (the maths moves each point in a straight line, so a big bend stretches the part, Ben's "10 times bigger").
+  const d = Math.sqrt(10200);
+  // 0.9 × and 1.1 × the limit: 9.0896 mm is drawn as it is; 11.109 mm is drawn at a tenth of the diagonal over the bend,
+  // 10.0995 / 11.109 = 0.909, rounded down to 5 × 10⁻¹: half size, 5.55 mm drawn.
+  assert.equal(drawnScale(0.9 * (d / 10), d), 1);
+  assert.equal(drawnScale(1.1 * (d / 10), d), 0.5);
+  // Ben's bar: 1000 × 5 × 5, diagonal √(1000² + 5² + 5²) = 1000.025 mm, bend 6,947 mm: 100.0025 / 6947 = 0.0144,
+  // rounded down to 1 × 10⁻²: drawn a hundred times smaller, 69.5 mm, under a tenth of the bar's length.
+  const bar = Math.sqrt(1000 ** 2 + 50);
+  assert.equal(drawnScale(6947, bar), 0.01);
+  assert.ok(6947 * drawnScale(6947, bar) <= bar / 10);
+  // 3 × 10⁻³ from 0.003 is 2 × 10⁻³; 0.004 rounds down to 2 × 10⁻³ too; 0.006 to 5 × 10⁻³.
+  assert.equal(drawnScale(d / 10 / 0.003, d), 0.002);
+  assert.equal(drawnScale(d / 10 / 0.006, d), 0.005);
+  assert.equal(scaleWords(0.01), "This estimate is for small bends and this one is too big to draw truly, so it is drawn 100 times smaller than worked out, just to show which way the part goes.");
+  assert.equal(scaleWords(0.005), "This estimate is for small bends and this one is too big to draw truly, so it is drawn 200 times smaller than worked out, just to show which way the part goes.");
+});
+
 test("the safety factor's bands at their edges, and its words", () => {
   assert.deepEqual([0.99, 1, 1.99, 2, null].map(safetyBand), ["fails", "close", "close", "safe", "safe"]);
   assert.match(safetyWords(0.5, "tensile"), /would break under these loads/);

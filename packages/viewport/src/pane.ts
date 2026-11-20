@@ -3,7 +3,7 @@
 // overlays) go to the viewer, so every view draws the same thing; camera
 // methods (fit, setView, fitSelection, lookAt), an image (showImage, clearImage)
 // and a picture of the view (picture) go to that pane's view only.
-import type { AnalysisOverlay, DisplayMesh, ExtrudePointer, ExtrudeShow, Framing, ImageRep, MoveHandlesShow, MovePointer, OriginPlane, OriginShown, Plane, SharedViewport, SketchDrawing, SketchPointer, SketchXY, ViewName, ViewportHighlight, ViewportPick } from "@fission/core";
+import type { AnalysisOverlay, DisplayMesh, ExtrudePointer, ExtrudeShow, Framing, PickWants, ImageRep, MoveHandlesShow, MovePointer, OriginPlane, OriginShown, Plane, SharedViewport, SketchDrawing, SketchPointer, SketchXY, ViewName, ViewportHighlight, ViewportPick } from "@fission/core";
 
 /** What a pane needs of its view: the element it fills and its camera. */
 export interface PaneCamera {
@@ -14,6 +14,8 @@ export interface PaneCamera {
   setView(name: ViewName): Framing | null;
   fitSelection(): Framing | null;
   lookAt(plane: Plane, side?: 1 | -1): Framing | null;
+  /** Turns this view's camera to a face of the body shown (TestLab's results card, face-look.ts). */
+  lookAtFace?(face: number): Framing | null;
   showImage(image: ImageRep | null): void;
   clearImage(): void;
   leaveNavTool(): boolean;
@@ -40,8 +42,11 @@ export function paneViewports(scene: SharedViewport): (view: PaneCamera) => Shar
   const extruders = new Map<object, ExtrudeHandler>(); // and for Extrude's (UX1b)
   const movers = new Map<object, MoveHandler>(); // and for Move's handles (35e2c)
   const menus = new Map<object, MenuHandler>(); // and for the view's menu on a body
+  const wants = new Map<object, () => PickWants>(); // what each pane's clicks can pick: the one whose pick handler is used says
   const sync = () => {
     scene.onPick = [...pickers.values()].at(-1) ?? null;
+    const picking = [...pickers.keys()].at(-1);
+    scene.pickWants = picking === undefined ? null : (wants.get(picking) ?? null);
     scene.onSketchPointer = [...sketchers.values()].at(-1) ?? null;
     scene.onExtrudePointer = [...extruders.values()].at(-1) ?? null;
     scene.onMovePointer = [...movers.values()].at(-1) ?? null;
@@ -61,6 +66,7 @@ export function paneViewports(scene: SharedViewport): (view: PaneCamera) => Shar
       setView: (name: ViewName) => view.setView(name),
       fitSelection: () => view.fitSelection(),
       lookAt: (plane: Plane, side?: 1 | -1) => view.lookAt(plane, side),
+      ...(view.lookAtFace ? { lookAtFace: (face: number) => view.lookAtFace!(face) } : {}),
       leaveNavTool: () => view.leaveNavTool(),
       editedScreenPoints: () => scene.editedScreenPoints(),
       sketchScreenPoint: (at: SketchXY) => scene.sketchScreenPoint(at),
@@ -109,6 +115,14 @@ export function paneViewports(scene: SharedViewport): (view: PaneCamera) => Shar
       },
       get onPick() {
         return pickers.get(key) ?? null;
+      },
+      get pickWants() {
+        return wants.get(key) ?? null;
+      },
+      set pickWants(said: (() => PickWants) | null | undefined) {
+        wants.delete(key);
+        if (said) wants.set(key, said);
+        sync();
       },
       set onPick(handler: PickHandler | null) {
         pickers.delete(key); // a new handler moves to the end

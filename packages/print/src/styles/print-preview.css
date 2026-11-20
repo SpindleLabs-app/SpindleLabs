@@ -147,7 +147,7 @@
   /* The Show card as one row of pills that scrolls sideways. */
   .print-preview #print-preview-show {
     top: 66px; left: 8px; right: 8px; width: auto; height: 54px; padding: 4px; flex-direction: row; align-items: center; gap: 4px; border-radius: 999px;
-    overflow-x: auto; scrollbar-width: none; overscroll-behavior-x: contain;
+    overflow-x: auto; scrollbar-width: none; /* no overscroll-behavior-x: a swipe past its end reaches the page root, which stops Back (ui theme.css) */
   }
   .print-preview #print-preview-show::-webkit-scrollbar { display: none; }
   .print-preview #print-preview-presets { flex: none; border-radius: 999px; }

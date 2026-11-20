@@ -1,0 +1,7 @@
+/* TestLab's Join (page.ts `drawJoin`, Ben 2026-11-19): several bodies tested as one part, joined only for the test. Tokens only. */
+.testlab-join { margin-top: var(--look-space-2); }
+.testlab-join .testlab-join-pick { margin: 0; padding: var(--look-space-2); border: 1px solid var(--look-edge); border-radius: var(--look-radius-s); display: grid; gap: 2px; min-width: 0; }
+.testlab-join .testlab-join-pick legend { font-size: 13px; font-weight: 600; padding: 0 4px; }
+.testlab-join .testlab-join-pick label { display: flex; gap: 6px; align-items: center; min-height: 32px; font-size: 13px; }
+.testlab-join .testlab-join-pick input { width: 18px; height: 18px; margin: 0; flex: none; }
+.testlab-join .testlab-page-words { margin: var(--look-space-1) 0; font-size: 13px; }

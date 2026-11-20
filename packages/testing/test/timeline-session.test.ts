@@ -125,6 +125,8 @@ const CAUGHT_BY: Record<ModelFault, string> = {
   "move-not-held": "the rebuild differs from the model",
   "move-all-or-none": "the rebuild differs from the model",
   "sketch-not-carried": "the rebuild differs from the model",
+  // SL #759 item 4: an extrude of a carried face sketch started unmoved, so a sketch on its end cap stayed behind.
+  "extrude-base-dropped": "the rebuild differs from the model",
   "move-bodies-kept": "the rebuild differs from the model",
   // SL #506 item 1: a Combine or Move dragged past the Move or Combine that placed or changed its bodies.
   "reorder-past-shaper": "outcome differs from the model",

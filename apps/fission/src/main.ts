@@ -23,7 +23,7 @@ import { ProjectGone, shellTabs, type ShellTabs } from "./design-tabs.ts";
 import { historyPanel, baseNameOf, startDesignDefaults, readGridSize, readGridSnap, bugReportDialog, bugReportEndpoint, changeNote, fileMenu, fileSections, shellCommands, type FileMenuParts, holdSkeleton, keepTypingVisible, PROJECT_KIND, repeatGuard, saveFile, type FileHandle, iconSvg, openElsewhere, shortcutList, parseWhatsNew, whatsNewList, whatsNewNote, defaultSplit, showPlaceholder, workspaceEta, SPLIT_MIN_WIDTH_PX, splitChoices, WarmPool, fillSettings, SETTINGS_KEY, SettingsStore, startTheme, startUnits, readUnitChoice, startMouse, readMouseChoice, startTooltips, readThemeChoice, applyCustom, readCustom, withIcon, workspaceSwitcher, homeScreen, projectNameBox, HOME_MOTION_KEY, motionChoiceOf, type MotionChoice } from "@fission/ui";
 import { paneViewports, Viewer, type ViewportView } from "@fission/viewport";
 import { communityPage } from "@fission/community";
-import { bringForward, forget, MAX_PROJECT_NAME, rename as renameKept, keepStorage, keptEntry, localStore, OPENING_KEY, recoverUnsaved, reopenGuard, startAutosave, STORAGE_ANSWER_MS, storedCopy, type Autosave, type AutosaveStatus, type OpeningChannel } from "@fission/storage";
+import { bringForward, forget, listWithHeld, openAsStored, MAX_PROJECT_NAME, rename as renameKept, keepStorage, keptEntry, localStore, OPENING_KEY, recoverUnsaved, reopenGuard, startAutosave, STORAGE_ANSWER_MS, storedCopyOf, type Autosave, type ProjectSummary, type AutosaveStatus, type OpeningChannel } from "@fission/storage";
 import { listedProjects } from "./projects.ts";
 import { startPrintLog } from "./print-log.ts";
 import { versionList, versionTime, type VersionPlace } from "@fission/ui";
@@ -41,11 +41,7 @@ import { renderWorkspace } from "@fission/render";
 import { simulateWorkspace, testlabShown } from "@fission/simulate";
 import { manufactureWorkspace } from "@fission/manufacture";
 import { laserShown, laserWorkspace } from "@fission/laser";
-import { sliceWorkspace, slicePageWorkspace } from "@fission/slice";
-/** The Slice page (slice-page.config.mjs): off in the shipped build until it does everything Slice for printing does. */
-declare const __SLICE_PAGE__: boolean;
-// The build-time switches, also on for a tab opened with `?all` (@fission/core preview.ts): the shipped build carries their code.
-const SLICE_PAGE = __SLICE_PAGE__ || previews().all;
+import { slicePageWorkspace } from "@fission/slice";
 import { circuitWorkspace } from "@fission/circuit";
 import { vectorWorkspace } from "@fission/vector";
 import { imageWorkspace } from "@fission/image";
@@ -67,7 +63,7 @@ const workspaces: WorkspacePlugin[] = [
   simulateWorkspace,
   manufactureWorkspace,
   laserWorkspace,
-  SLICE_PAGE ? slicePageWorkspace : sliceWorkspace,
+  slicePageWorkspace,
   circuitWorkspace,
   vectorWorkspace,
   imageWorkspace,
@@ -311,6 +307,9 @@ if (__TEST_HOOKS__ && new URLSearchParams(location.search).has("test-hooks"))
         return ctx.changeNotes;
       },
       camera: () => viewer.main.cameraPose(),
+      // The main view's clipping range, and putting a pose back as a design tab does (e2e/long-part.mjs).
+      clip: () => viewer.main.clipRange(),
+      restoreCamera: (pose: Parameters<typeof viewer.main.restorePose>[0]) => viewer.main.restorePose(pose),
       splitView: () => split?.view ?? null,
       bodyCount: () => kernel.call("body_count"),
       wasmBytes: () => kernel.call("wasm_bytes"),
@@ -319,6 +318,7 @@ if (__TEST_HOOKS__ && new URLSearchParams(location.search).has("test-hooks"))
       // Whether the undo history holds work still to be recorded (a delete the kernel still plans, an OK it still checks):
       // the page shows the step before until it lands, so the monkey waits on it before reading the bar (issue #650).
       historyBusy: () => ctx.history.working(), // held work running by itself, not a question waiting on the person (SL #397)
+      waitingToRecord: () => ctx.history.waitingToRecord(), // an OK asked for and not recorded yet: leaving asks first (#749)
       // The home screen's turning picture shows these edges instead of the open project's (e2e/home-backdrop.mjs, STL=).
       homeStandIn: (lines: number[] | null, surface?: { positions: number[]; indices: number[] } | null) => home?.showStandIn(lines, surface),
       // The home picture reports its angle and frames, each frame counted `ms` slower (e2e/home-backdrop.mjs, run under a paused clock).
@@ -395,18 +395,9 @@ const SLICE_SUMMARY = "Slice for printing: slice the design and save the printer
 const markTab = workspaceSwitcher(
   $("workspaces"),
   listed.map((w) => (w.id === "slice" ? { id: w.id, title: w.title, summary: SLICE_SUMMARY, placeholder: false } : { id: w.id, title: w.title, summary: w.summary, placeholder: greyedInMenu(w, pageOn) })),
-  (id) => (id === "slice" && !SLICE_PAGE ? sliceForPrinting() : show(id as WorkspaceId)),
+  (id) => show(id as WorkspaceId),
   { community: "Community", ...Object.fromEntries(workspaces.map((w) => [w.id, w.title])) },
 );
-/** DESIGN ▾'s Slice: Design on screen, then its File ▾ > Slice for printing, or the reason there is nothing to slice. */
-function sliceForPrinting() {
-  if (current !== "design") show("design");
-  const entry = pool.awake("main")?.view.fileEntries?.()?.exports?.find((e) => e.id === "file-slice-print");
-  if (!entry) return;
-  if (entry.off) return passingStatus(entry.off);
-  entry.run();
-}
-
 // The assistant (AI2): changes Design's part through Design's own run, as one undo step.
 const assistant = createAssistant(
   $("assistant"),
@@ -687,6 +678,7 @@ const store = localStore(workspaces, () => autosave?.lost());
 // Written as each save lands, never by a tab whose saves are refused (another tab stored the project since).
 const steps = keptSteps(ctx.history, store.steps, () => projectToJson(ctx.project), {
   refused: () => autosave?.refused() ?? false,
+  ownTimes: () => autosave?.ownTimes(), // only over this tab's own state (#642 item 4)
   upgrade: (snapshot) => projectToJson(projectFromJson(snapshot, workspaces)), // as the project itself is read when it opens
 });
 /** Projects whose last change came back from the unsaved-changes journal at this start: their kept steps end before it (#627 item 7). */
@@ -699,6 +691,19 @@ const local = (() => {
     return null;
   }
 })();
+/** This tab's own storage (sessionStorage), or null when storage is turned off. */
+const session = (() => {
+  try {
+    return window.sessionStorage;
+  } catch {
+    return null;
+  }
+})();
+/**
+ * The project this tab has open, kept for the tab across a reload: a reload opens it again rather than whichever
+ * project another tab saved last (issue #627 item 10).
+ */
+const TAB_PROJECT_KEY = "spindlelabs.tab-project";
 // Marks the project being opened, so one that froze or crashed the tab isn't
 // reopened on the next visit (audit S2, reopen.ts in @fission/storage). The
 // tabs ask each other over a channel, so a tab started while another is still
@@ -810,6 +815,11 @@ function keep(id: string, stored = false, storedAt: Date | null = null, fromKept
   steps.follow(id, leftWithChange.delete(id)); // its kept steps put back once read, if they end at the project as it is (after the reset that follows)
   autosave = startAutosave(store, id, () => ctx.project, (s) => (s.state === "saved" && (steps.saved(), openedFile || ctx.history.canUndo()) && askToKeepStorage(), saveStatus(s)), { journal: local, follows: ctx.history, stored, storedAt, fromKept });
   document.body.dataset.projectId = id; // read by the e2e test
+  try {
+    session?.setItem(TAB_PROJECT_KEY, id); // a reload of this tab opens it again (#627 item 10)
+  } catch {
+    // storage full or off: a reload opens the newest project, as before
+  }
   tabs?.sync();
 }
 /** A new project in place of the last one, kept once it is changed (`keepOnChange`). */
@@ -853,13 +863,28 @@ function fileOf(text: string, file: { handle: FileHandle | null; name: string | 
 let fileOwner = 0;
 /** A Save is asking where or under what name: Save and Save As pressed again meanwhile (Ctrl+S held or mashed, the menu, the key behind the name box) do nothing, so there is one question and one file (export hunt 2026-11-12, SL #644 item 4; the Save icon's repeat guard only covered the icon). */
 let saveAsking = false;
+/** A project's name that is no name of its own: it takes its file's name (export hunt 2026-11-12, #644 item 3). */
+const neverNamed = (name: string) => name === "" || name === "Untitled";
+/** The project name a file's name gives: its ending off, trimmed, at most MAX_PROJECT_NAME characters. */
+const nameFromFile = (fileName: string) => fileName.replace(/(\.spindlelabs|\.panosolid|\.fission)?\.json$|\.spindle$/i, "").trim().slice(0, MAX_PROJECT_NAME);
 async function save(asNew = false) {
   if (saveAsking) return;
   saveAsking = true;
   try {
     await started; // the project shown, not the empty one the app starts with
     const owner = fileOwner;
-    const result = await saveFile(document, { suggestedName: projectFile || ctx.project.name || "Untitled", kind: PROJECT_KIND, bytes: projectToJson(ctx.project), handle: asNew ? null : savedTo });
+    // A project never named is saved under its file's name, inside the file too: it kept "Untitled" there, so the
+    // file opened in another browser was "Untitled" again (#644 item 3). Made once the picker or the box gave the name.
+    const before = ctx.project;
+    let naming = null as string | null;
+    const bytes = (fileName: string) => {
+      const name = nameFromFile(fileName);
+      // The default name again ("Untitled.spindle" for an Untitled project) is no new name: nothing changes, so nothing is
+      // left to store (a change here made leaving journal it over a stale tab's kept change: projects.mjs A3).
+      naming = neverNamed(before.name) && name !== "" && name !== (before.name || "Untitled") ? name : null;
+      return projectToJson(naming === null ? before : { ...before, name: naming });
+    };
+    const result = await saveFile(document, { suggestedName: projectFile || ctx.project.name || "Untitled", kind: PROJECT_KIND, bytes, handle: asNew ? null : savedTo });
     if (result.status === "failed") return fileStatus(result.message);
     // Another project opened while this save was asking: the file holds the last project, so it is not kept as
     // this one's, or the next Save would write this project over it without asking (SL #644 item 5).
@@ -870,6 +895,16 @@ async function save(asNew = false) {
       if (savedTo !== null || projectFile !== null) for (const [text, file] of filesOf) if (file.handle === savedTo && file.name === projectFile) filesOf.set(text, { handle: result.handle, name: result.name });
       savedTo = result.handle;
       projectFile = result.name;
+      // The open project takes the name its file now holds, kept like any change but no undo step of its own (no
+      // edit of the person's): only while it is still the project saved and still has no name of its own.
+      if (naming !== null && neverNamed(ctx.project.name)) {
+        ctx.project.name = naming;
+        if (keepOnChange !== null) keep(keepOnChange);
+        autosave?.changed();
+        ctx.history.amend();
+        tabs?.sync();
+        nameBox.refresh();
+      }
       fileOf(projectToJson(ctx.project), { handle: savedTo, name: projectFile }); // an Undo back to here finds this file
     }
     fileStatus("");
@@ -979,8 +1014,8 @@ function openProject(file: string | Uint8Array, fileName = "") {
   const read = projectFromJson(file, workspaces);
   // A project never named takes its file's name, so two opened files can be told apart in Projects in this browser
   // (every one said "Untitled", export hunt 2026-11-12, #644 item 3); a name of its own it keeps.
-  const fromFile = fileName.replace(/(\.spindlelabs|\.panosolid|\.fission)?\.json$|\.spindle$/i, "").trim().slice(0, MAX_PROJECT_NAME);
-  const project = (read.name === "" || read.name === "Untitled") && fromFile !== "" ? { ...read, name: fromFile } : read;
+  const fromFile = nameFromFile(fileName);
+  const project = neverNamed(read.name) && fromFile !== "" ? { ...read, name: fromFile } : read;
   // The old project is kept as it was, its last change too (finish, not stop: one made within the quiet moment
   // before Open was dropped, timeline hunt follow-up); nothing of the new one is stored yet. Changes this tab couldn't
   // store (another tab saved since) are kept as a separate project, and said (round 2 hunt A5: Open dropped them).
@@ -993,11 +1028,12 @@ function openProject(file: string | Uint8Array, fileName = "") {
   // the opened file's first save was refused as another tab's); a store that can't answer means a new copy.
   // A file whose project took the file's name is also looked up under the name inside it: the project it was saved
   // from, still "Untitled" here, goes on under its id with the new name, not as a second copy beside it.
-  const nothing = { found: undefined, exact: false } as { found: Awaited<ReturnType<typeof storedCopy>>; exact: boolean };
+  const nothing = { found: undefined, exact: false } as { found: ProjectSummary | undefined; exact: boolean };
+  // Both in one look through the store, each kept project read once (nightly issue #749: two looks, one project at a
+  // time, kept an Open "Saving…" for 20-35 s among 60 kept projects).
   const lookUp = async () => {
-    const exact = await storedCopy(store, project);
-    if (exact !== undefined || project === read) return { found: exact, exact: exact !== undefined };
-    return { found: await storedCopy(store, read), exact: false };
+    const copy = await storedCopyOf(store, project === read ? [project] : [project, read]);
+    return { found: copy?.summary, exact: copy?.index === 0 };
   };
   const copy = canKeep ? lastWrites.then(lookUp).catch(() => nothing) : Promise.resolve(nothing);
   guard.finished(); // the last project, if it was still opening, didn't freeze the tab
@@ -1060,13 +1096,18 @@ const inTime = <T>(asked: Promise<T>) =>
  * (bringForward), so a reload opens it; one that freezes the tab building it is never brought forward, so a reload
  * opens the last project as before (security audit S2).
  */
-async function openStored(id: string, modified: Date | null) {
+async function openStored(id: string) {
   await started;
   await okLanded();
+  // The last project's own last saves first (the tab just left): read before they land, the project's save time would
+  // be older than the state the store then holds, and every save of it refused as "changed in another tab" (#627 item 9).
+  await lastWrites;
   // Its newest state when the store had no room for it (storage full), as start() opens it (real-use hunt B1).
   const kept = keptEntry(local, id);
   // Read before anything is replaced, so a store that never answers leaves the open project as it was (tabs hunt B4).
-  const project = kept === null ? await inTime(store.open(id)) : projectFromJson(kept, workspaces);
+  // With the save time of exactly the state read, never the time a list showed earlier (#627 item 9).
+  const read = kept === null ? await inTime(openAsStored(store, id)) : { project: projectFromJson(kept, workspaces), modified: null };
+  const { project, modified } = read;
   // Changes this tab couldn't store (another tab saved since) are kept as a separate project, and said, as Open does (round 2 hunt A5).
   tabs?.expect(id);
   const apart = finishAutosave();
@@ -1177,7 +1218,7 @@ const tabs: ShellTabs | null = !DESIGN_TABS
         const listed = (await inTime(store.list())).find((s) => s.id === id);
         // Deleted here or in another window (tabs hunt B3, C2): said as such, and its tab closed, not a raw store error.
         if (listed === undefined && keptEntry(local, id) === null) throw new ProjectGone(id);
-        return openStored(id, listed !== undefined && !listed.problem ? listed.modified : null);
+        return openStored(id);
       },
       start: () => startNewProject(true),
       idle: () => ctx.history.whenIdle(),
@@ -1212,7 +1253,7 @@ const tabs: ShellTabs | null = !DESIGN_TABS
 markTabs = () => tabs?.strip.mark(shownStatus.state !== "saved" && !storingAgain.has(shownStatus));
 /** The home screen (U6b, only when the build has it): over the open project, which stays open under it. */
 const home = !HOME_SCREEN ? null : homeScreen(document, {
-  list: () => store.list(),
+  list: () => listWithHeld(store, local), // with a project only the journal holds (storage full, #643 item 3)
   openId: keptId,
   open: openStored,
   remove: async (id) => {
@@ -1726,9 +1767,10 @@ showUndoRedo();
 // the history (an undo, another project opened). Phones leave it out (@fission/ui styles/project-name.css).
 const nameBox = projectNameBox(document, {
   name: () => ctx.project.name,
-  rename: (name) => {
+  // Keys typed in the box rename at once (SL #764 item 4), folded into one undo step like a size box's.
+  rename: (name, typing) => {
     ctx.project.name = name;
-    projectChanged("Rename project");
+    projectChanged("Rename project", typing ? "project-name" : undefined);
   },
   maxLength: MAX_PROJECT_NAME,
 });
@@ -1931,9 +1973,18 @@ async function start() {
     // Changes the last visit left with before they were stored go back first, so the project reopens with them.
     const unsaved = await answered(recoverUnsaved(store, local, workspaces, undefined, (id) => leftWithChange.add(id)));
     if (unsaved.length > 0) fileStatus(`${unsaved.join(". ")}.`.replace(/^./, (c) => c.toUpperCase()));
-    const top = (await answered(store.list()))[0];
+    // A project only the journal holds (storage full when it was opened) is listed too, by when it was written, so it is
+    // what opens when it is the newest work (#627 item 5); this tab's own project first, when it is still kept (item 10).
+    const listed = await answered(listWithHeld(store, local));
+    let mine: string | null = null;
+    try {
+      mine = session?.getItem(TAB_PROJECT_KEY) ?? null;
+    } catch {
+      // storage off: the newest
+    }
+    const top = listed.find((s) => s.id === mine) ?? listed[0];
     newest = top?.id;
-    newestAt = top && !top.problem ? top.modified : null; // a summary that can't be read gives no save time to expect
+    newestAt = top && !top.problem && !top.held ? top.modified : null; // a summary that can't be read, or none (held only in the journal), gives no save time to expect
   } catch (e) {
     canKeep = false;
     // Said for as long as it is so: the words below go with the next message (#627 item 4).

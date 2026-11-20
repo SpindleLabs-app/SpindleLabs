@@ -3,20 +3,22 @@ import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
 import { LineMaterial } from "three/examples/jsm/lines/LineMaterial.js";
 import { LineSegments2 } from "three/examples/jsm/lines/LineSegments2.js";
 import { LineSegmentsGeometry } from "three/examples/jsm/lines/LineSegmentsGeometry.js";
-import { NO_HIGHLIGHT, worstSeverity, type AnalysisOverlay, type DisplayMesh, type ExtrudePointer, type ExtrudeShow, type Framing, type MoveHandle, type MoveHandlesShow, type MovePointer, type ImageRep, type OriginPlane, type OriginShown, type Plane, type SharedViewport, type SketchDrawing, type SketchPointer, type SketchXY, type ViewportHighlight, type ViewportPick } from "@fission/core";
-import { clientToNdc, CORNER_PICK_PX, edgeOfSegment, faceOfTriangle, HOLD_MS, isClick, ndcToClient, nearestWithin, planeOrFace, pointsNear, segmentsNear, SKETCH_GRAB_PX, unhidden } from "./picking.ts";
+import { NO_HIGHLIGHT, worstSeverity, type AnalysisOverlay, type DisplayMesh, type ExtrudePointer, type ExtrudeShow, type Framing, type MoveHandle, type MoveHandlesShow, type MovePointer, type ImageRep, type OriginPlane, type OriginShown, type PickWants, type Plane, type SharedViewport, type SketchDrawing, type SketchPointer, type SketchXY, type ViewportHighlight, type ViewportPick } from "@fission/core";
+import { beyondNeeded, clientToNdc, CORNER_PICK_PX, EDGE_PICK_PX, edgeOfSegment, edgeTakesPick, faceForTap, fanRays, faceOfTriangle, HOLD_MS, isClick, ndcToClient, nearestWithin, planeOrFace, pointsNear, segmentsNear, SKETCH_GRAB_PX, unhidden } from "./picking.ts";
 import { fitDistance, keepAngleBasis, orbitSafeOffset, planeViewBasis, refitScale, viewBasis, type ViewName } from "./views.ts";
 import { ViewCube } from "./viewcube.ts";
 import { releaseShared } from "./release.ts";
 import { firstHit } from "./ray-pick.ts";
-import { copyChanged, edgeColourArray, faceColourArray, linearOf } from "./body-colours.ts";
+import { copyChanged, edgeColourArray, faceColourArray, linearOf, mapColourArray } from "./body-colours.ts";
 import { isDoublePick, type ViewClick } from "./double-pick.ts";
 import { faceFraming, lookAtFraming, partFraming, pieceCount, pointsInPlane, selectionFraming } from "./framing.ts";
 import { checkTextureSize, imageSheet, imageZoomRange, topDownDistance } from "./image-sheet.ts";
 import { gridSheet, pixelSize, rayOnPlane, sketchGrid, toWorld } from "./sketch-view.ts";
 import { MOUSE_ATTRIBUTE, MOUSE_EVENT, leftDragOf, readMousePreset } from "@fission/core";
-import { clampZoom, cubeDragAngles, FARTHEST_VIEW, NEAREST_VIEW, dragAction, orbitBy, dragZoomFactor, panBy, wheelFactor, zoomAt, type CameraPose, type NavMode } from "./navigation.ts";
+import { clampZoom, clipRange, cubeDragAngles, FARTHEST_VIEW, NEAREST_VIEW, dragAction, orbitBy, dragZoomFactor, panBy, wheelFactor, zoomAt, type CameraPose, type NavMode, type Vec3 } from "./navigation.ts";
 import { navBar } from "./nav-bar.ts";
+import { faceLook, faceLookPose } from "./face-look.ts";
+import { GLIDE_MS, glidePose, reducedMotion, type GlidePose } from "./glide.ts";
 import { ARROW_GRAB_PX, ARROW_PX, arrowDistance, arrowLength } from "./extrude-pick.ts";
 import { ExtrudeLayer } from "./extrude-layer.ts";
 import { gripPoint, handleAxis, handleNear, isRing, MOVE_GRAB_PX, placedLine, placeHandles, ringAngle, turnBetween, type Placed } from "./move-handles.ts";
@@ -41,6 +43,8 @@ interface ViewHost {
   faceMesh(): THREE.Mesh | null;
   highlight(): ViewportHighlight;
   picking(): boolean;
+  /** What a click can pick now (SharedViewport.pickWants; "any" when unset). */
+  pickWants(): PickWants;
   pick(pick: ViewportPick): void;
   /** The view's menu on what is under the pointer (SharedViewport.onMenu); whether one opened. */
   menu(pick: ViewportPick, at: { x: number; y: number }): boolean;
@@ -132,6 +136,8 @@ export class ViewportView {
   private moveDrag: { id: number; handle: MoveHandle; centre: [number, number, number]; start: number; last: number; turned: number; amount: number } | null = null;
   /** A sketch point pressed on (47d3): which (editing.grab), where the press was, whether it has moved past a click yet. */
   private pointDrag: { id: number; grab: number; start: { x: number; y: number }; moved: boolean; touch: boolean } | null = null;
+  /** The camera gliding to a face (lookAtFace): from, to, and when it started (ms); any press, wheel or other framing stops it. */
+  private glide: { from: GlidePose; to: GlidePose; start: number } | null = null;
 
   constructor(host: ViewHost, container: HTMLElement) {
     this.host = host;
@@ -186,10 +192,15 @@ export class ViewportView {
     // Never so far out or close in that the camera's numbers break: the wheel, a drag in Zoom mode and a pinch all stop here.
     this.controls.minDistance = NEAREST_VIEW;
     this.controls.maxDistance = FARTHEST_VIEW;
+    // OrbitControls' own moves (an orbit, a finger's pinch) set the clipping range too: a pinch in kept the near plane
+    // of the distance before and cut the part away close up.
+    this.controls.addEventListener("change", () => this.clip());
     this.dragArrow(); // first, so a press on Extrude's arrow is a drag whatever the navigation mode
     this.dragMoveHandle(); // and a press on a Move handle (35e2c)
     this.dragSketchPoint(); // and a press on a sketch point the Select tool can drag (47d3)
     this.navigate();
+    // A press or the wheel on the view stops a glide where it is (glide.ts): the person has taken the camera.
+    for (const type of ["pointerdown", "wheel"] as const) this.element.addEventListener(type, () => void (this.glide = null), { capture: true, passive: true, signal: this.listening.signal });
     this.followMouse();
     this.setMode(this.home);
 
@@ -207,8 +218,8 @@ export class ViewportView {
     };
     const menuAt = (x: number, y: number): boolean => {
       if (!this.host.picking() || this.extrudePicks() || this.host.sketchPlane() || this.host.offeredFaces()) return false;
-      const edge = this.edgeAt(x, y);
-      return this.host.menu({ face: edge === null ? this.faceAt(x, y) : null, edge, shift: false }, { x, y });
+      const { face, edge } = this.bodyTarget(x, y, this.pointerKind === "touch");
+      return this.host.menu({ face, edge, shift: false }, { x, y });
     };
     // A press anywhere else (a browser row, a button, the view cube) comes between two clicks: they are no double-click.
     document.addEventListener("pointerdown", (e) => {
@@ -307,10 +318,10 @@ export class ViewportView {
           this.host.setPlaneHover(target.plane);
           return this.host.setHover(target.face !== null && offered.has(target.face) ? target.face : null, null);
         }
-        const corner = this.cornerAt(pointer.x, pointer.y, this.pointerKind === "touch");
+        // What a click there would pick (a hover is a mouse's: a finger's fan is only for its tap).
+        const { face, edge, corner } = this.bodyTarget(pointer.x, pointer.y, false, this.pointerKind === "touch");
         if (corner !== null) return this.host.setHover(null, null, corner);
-        const edge = this.edgeAt(pointer.x, pointer.y);
-        this.host.setHover(edge === null ? this.faceAt(pointer.x, pointer.y) : null, edge);
+        this.host.setHover(face, edge);
       });
     });
     canvas.addEventListener("pointerleave", () => {
@@ -343,6 +354,7 @@ export class ViewportView {
   }
 
   private draw = () => {
+    this.stepGlide();
     this.controls.update();
     this.bar.canLookAt(!this.image && this.host.sketchPlane() !== null);
     this.host.frame(this);
@@ -464,26 +476,47 @@ export class ViewportView {
 
   /**
    * Puts the camera back at `pose` from `cameraPose()` earlier (a design tab returned to, tabs step 2), the near and far
-   * planes scaled with the change in distance as zooming does. A pose with a number that is not finite is ignored.
+   * planes set for its distance (`clip`). A pose with a number that is not finite is ignored. The pose's up is the
+   * screen's up, so it only picks the roll straight down or up (`orbitSafeOffset`, as the standard views do): the camera's
+   * own up stays Z, the orbit's axis. It once became the screen's up, tilted, and from then on that view's camera rolled
+   * and flipped wherever it looked along that tilt, the view cube with it (Ben's tabs, 2026-11-19).
    */
   restorePose(pose: CameraPose) {
     if (![...pose.position, ...pose.target, ...pose.up].every(Number.isFinite)) return;
-    const before = this.camera.position.distanceTo(this.controls.target);
-    const after = new THREE.Vector3(...pose.position).distanceTo(new THREE.Vector3(...pose.target));
-    this.camera.up.set(...pose.up);
-    this.setPose(pose, before > 0 && after > 0 ? after / before : 1);
+    const offset = orbitSafeOffset(pose.position.map((x, i) => x - pose.target[i]) as Vec3, pose.up);
+    this.camera.up.set(0, 0, 1);
+    this.setPose({ position: offset.map((x, i) => x + pose.target[i]) as Vec3, target: pose.target, up: [0, 0, 1] });
   }
 
-  /** Moves the camera to `pose` (same direction, so OrbitControls only re-aims); `zoom` scales the near and far planes with the distance in 3D, so nothing is clipped close up. */
-  private setPose(pose: CameraPose, zoom = 1) {
+  /** The camera's near and far clipping distances now, mm (read by the e2e test). */
+  clipRange(): { near: number; far: number } {
+    return { near: this.camera.near, far: this.camera.far };
+  }
+
+  /** Moves the camera to `pose` (same direction, so OrbitControls only re-aims), with the near and far planes set for where it is now (`clip`), so nothing is clipped close up or far off. */
+  private setPose(pose: CameraPose) {
     this.camera.position.set(...pose.position);
     this.controls.target.set(...pose.target);
-    if (zoom !== 1 && !this.image) {
-      this.camera.near *= zoom;
-      this.camera.far *= zoom;
-      this.camera.updateProjectionMatrix();
-    }
     this.controls.update();
+    this.clip();
+  }
+
+  /**
+   * The near and far planes for the camera where it is (navigation.ts `clipRange`): from its distance to the target and
+   * its reach past everything Fit frames. Called after every move of ours, and on OrbitControls' own (orbit, a pinch).
+   * A flat image view keeps the range it was given.
+   */
+  private clip() {
+    if (this.image) return;
+    const distance = this.camera.position.distanceTo(this.controls.target);
+    if (!(distance > 0)) return;
+    const framing = this.host.fitFraming();
+    const reach = framing.radius > 0 ? this.camera.position.distanceTo(new THREE.Vector3(...framing.centre)) + framing.radius : Number.NaN;
+    const { near, far } = clipRange(distance, reach);
+    if (near === this.camera.near && far === this.camera.far) return;
+    this.camera.near = near;
+    this.camera.far = far;
+    this.camera.updateProjectionMatrix();
   }
 
   /** Zooms by `factor` toward the point under (clientX, clientY), within the view's allowed distances. */
@@ -493,7 +526,13 @@ export class ViewportView {
     const distance = this.camera.position.distanceTo(this.controls.target);
     const f = clampZoom(distance, factor, this.controls.minDistance, this.controls.maxDistance);
     if (f === 1 || !(f > 0)) return;
-    this.setPose(zoomAt(this.cameraPose(), [ndc.x, ndc.y], { fov: this.camera.fov, aspect: this.camera.aspect }, f), f);
+    // Toward the part's own point under the cursor when there is one (navigation.ts zoomAt). While a sketch is edited,
+    // toward the sketch plane's point instead: the body is see-through then and the sketch is what is drawn on, and
+    // closing in on a body face above the plane stopped the zoom tens of mm short of the sketch (free-placement.mjs).
+    const plane = this.host.sketchPlane();
+    const onPlane = plane ? this.onPlane(clientX, clientY, plane) : null;
+    const onBody = plane && onPlane ? toWorld(plane, onPlane) : (this.faceHitAt(clientX, clientY)?.point ?? null);
+    this.setPose(zoomAt(this.cameraPose(), [ndc.x, ndc.y], { fov: this.camera.fov, aspect: this.camera.aspect }, f, onBody));
   }
 
   /**
@@ -540,13 +579,12 @@ export class ViewportView {
   /** A click on the bodies (not in Extrude, a sketch or a plane prompt): the corner, edge or face under it, a double-click said. */
   private pickBody(e: PointerEvent) {
     const touch = e.pointerType === "touch";
-    const corner = this.cornerAt(e.clientX, e.clientY, touch);
-    const edge = corner === null ? this.edgeAt(e.clientX, e.clientY) : null;
+    const { face, edge, corner } = this.bodyTarget(e.clientX, e.clientY, touch);
     // The second of a double-click or double-tap (double-pick.ts) says so; the next click starts afresh.
     const click = { x: e.clientX, y: e.clientY, at: e.timeStamp, touch, shift: e.shiftKey, view: [...this.camera.position.toArray(), ...this.camera.quaternion.toArray()] };
     const double = isDoublePick(this.lastClick, click);
     this.lastClick = double ? null : click;
-    this.host.pick({ face: edge === null && corner === null ? this.faceAt(e.clientX, e.clientY) : null, edge, ...(corner !== null ? { vertex: corner } : {}), shift: e.shiftKey, ...(double ? { double: true as const } : {}) });
+    this.host.pick({ face, edge, ...(corner !== null ? { vertex: corner } : {}), shift: e.shiftKey, ...(double ? { double: true as const } : {}) });
   }
 
   /**
@@ -932,6 +970,41 @@ export class ViewportView {
     return hit ? (hit.object.userData.plane as string) : null;
   }
 
+  /**
+   * What a click (or tap) at a point on screen picks among the body's corners, edges and faces: at most one set. What
+   * the shown workspace can pick (SharedViewport.pickWants) comes first: only faces, and no corner or edge is asked,
+   * and a finger's tap fans out round itself (picking.ts faceForTap) so a face too thin to hit is still tapped. Else an offered corner, then an edge, then the face under the pointer, where a
+   * corner or edge takes the pick only in the outer quarter of that face across the pointer (edgeTakesPick), so a face
+   * a few pixels wide keeps its middle. `cornerTouch`: the corner's reach is a finger's (a hover after a tap).
+   */
+  private bodyTarget(clientX: number, clientY: number, touch: boolean, cornerTouch = touch): { face: number | null; edge: number | null; corner: number | null } {
+    const wants = this.host.pickWants();
+    if (wants === "faces") return { face: touch ? this.faceTapped(clientX, clientY) : this.faceAt(clientX, clientY), edge: null, corner: null };
+    const under = this.faceAt(clientX, clientY);
+    const corner = this.cornerAt(clientX, clientY, cornerTouch, under);
+    if (corner !== null) return { face: null, edge: null, corner };
+    const edge = this.edgeAt(clientX, clientY, under);
+    return { face: edge === null ? under : null, edge, corner: null };
+  }
+
+  /** The face a finger's tap at a point on screen picks while only faces can be: the fan of faceForTap round it. */
+  private faceTapped(clientX: number, clientY: number): number | null {
+    return faceForTap(fanRays((dx, dy) => this.faceAt(clientX + dx, clientY + dy)));
+  }
+
+  /**
+   * How far (px) face `face` runs on past a point on screen, going on away from `from` (where an edge or corner near it
+   * is on screen), sampled a pixel at a time out to `upTo` px: the first pixel off the face less a half; Infinity past
+   * `upTo` or with no face. Right on `from`, it goes along `along` (a unit direction) instead.
+   */
+  private faceBeyond(face: number | null, at: { x: number; y: number }, from: { x: number; y: number }, along: { x: number; y: number }, upTo: number): number {
+    if (face === null) return Infinity;
+    const d = Math.hypot(at.x - from.x, at.y - from.y);
+    const u = d > 0 ? { x: (at.x - from.x) / d, y: (at.y - from.y) / d } : along;
+    for (let k = 1; k <= upTo; k++) if (this.faceAt(at.x + k * u.x, at.y + k * u.y) !== face) return k - 0.5;
+    return Infinity;
+  }
+
   /** The kernel face index under a point on screen (client pixels), or null for empty space. */
   private faceAt(clientX: number, clientY: number): number | null {
     return this.faceHitAt(clientX, clientY)?.face ?? null;
@@ -966,19 +1039,25 @@ export class ViewportView {
    * screen (client pixels) within CORNER_PICK_PX and not hidden by a face,
    * by its place in the list; null when none is offered or near.
    */
-  private cornerAt(clientX: number, clientY: number, touch: boolean): number | null {
+  private cornerAt(clientX: number, clientY: number, touch: boolean, under: number | null = null): number | null {
     const corners = this.host.corners();
     const faceMesh = this.host.faceMesh();
     if (!corners || corners.length === 0 || !faceMesh || this.image) return null;
     const rect = this.renderer.domElement.getBoundingClientRect();
     const at = { x: clientX - rect.left, y: clientY - rect.top };
-    for (const i of pointsNear(this.screenPoints(corners), at, CORNER_PICK_PX[touch ? "touch" : "mouse"])) {
+    const reach = CORNER_PICK_PX[touch ? "touch" : "mouse"];
+    const screen = this.screenPoints(corners);
+    for (const i of pointsNear(screen, at, reach)) {
       const c = corners[i];
       const towards = new THREE.Vector3(c[0], c[1], c[2]).sub(this.camera.position);
       const distance = towards.length();
       this.raycaster.set(this.camera.position, towards.normalize());
       const hit = firstHit(faceMesh, this.raycaster);
-      if (unhidden(distance, hit ? hit.distance : null)) return i;
+      if (!unhidden(distance, hit ? hit.distance : null)) continue;
+      // Seen: it takes the pick unless the pointer is in the middle of a thin face under it (edgeTakesPick).
+      const p = screen[i]!;
+      const away = this.faceBeyond(under, { x: clientX, y: clientY }, { x: p.x + rect.left, y: p.y + rect.top }, { x: 1, y: 0 }, beyondNeeded(reach));
+      if (edgeTakesPick(Math.hypot(p.x - at.x, p.y - at.y), away, reach)) return i;
     }
     return null;
   }
@@ -987,7 +1066,7 @@ export class ViewportView {
    * The kernel edge index whose line passes within a few pixels of a point
    * on screen (client pixels) and is not hidden by a face there, or null.
    */
-  private edgeAt(clientX: number, clientY: number): number | null {
+  private edgeAt(clientX: number, clientY: number, under: number | null = null): number | null {
     const mesh = this.host.mesh();
     const faceMesh = this.host.faceMesh();
     if (!mesh || !faceMesh || this.image) return null;
@@ -1003,7 +1082,15 @@ export class ViewportView {
       const distance = towards.length();
       this.raycaster.set(this.camera.position, towards.normalize());
       const hit = firstHit(faceMesh, this.raycaster);
-      if (unhidden(distance, hit ? hit.distance : null)) return edgeOfSegment(mesh.edge_line_edges, segment);
+      if (!unhidden(distance, hit ? hit.distance : null)) continue;
+      // Seen: it takes the pick unless the pointer is in the middle of a thin face under it (edgeTakesPick); right on
+      // its line, the face's run is looked for across the line.
+      const [ax, ay, bx, by] = [screen[4 * segment], screen[4 * segment + 1], screen[4 * segment + 2], screen[4 * segment + 3]];
+      const length = Math.hypot(bx - ax, by - ay);
+      const across = length > 0 ? { x: -(by - ay) / length, y: (bx - ax) / length } : { x: 1, y: 0 };
+      const nearest = { x: ax + t * (bx - ax), y: ay + t * (by - ay) };
+      const away = this.faceBeyond(under, { x: clientX, y: clientY }, nearest, across, beyondNeeded(EDGE_PICK_PX));
+      if (edgeTakesPick(Math.hypot(nearest.x - clientX, nearest.y - clientY), away, EDGE_PICK_PX)) return edgeOfSegment(mesh.edge_line_edges, segment);
     }
     return null;
   }
@@ -1098,7 +1185,35 @@ export class ViewportView {
     return framing;
   }
 
+  /**
+   * Turns the camera to face `face` of the body shown (TestLab's results card): square onto its outward side (a face round
+   * on itself, from where the camera looks now), framed round the face, gliding there in about half a second, or at once
+   * under reduced motion (face-look.ts, glide.ts). Null, camera untouched, with no such face or while this view shows an image.
+   */
+  lookAtFace(face: number): Framing | null {
+    const mesh = this.host.mesh();
+    if (!mesh || this.image) return null;
+    const look = faceLook(mesh, face);
+    if (look === null) return null;
+    const towardNow = this.camera.position.clone().sub(this.controls.target).toArray();
+    const to = faceLookPose(look, towardNow, this.camera.fov, this.camera.aspect);
+    if (reducedMotion(window)) this.place(to.position, to.target, to.up);
+    else this.glide = { from: this.cameraPose(), to, start: performance.now() };
+    return look.framing;
+  }
+
+  /** One frame of a glide: the camera where it is by now, the glide over once it arrives. */
+  private stepGlide() {
+    const glide = this.glide;
+    if (glide === null) return;
+    const t = (performance.now() - glide.start) / GLIDE_MS;
+    const at = glidePose(glide.from, glide.to, t);
+    this.place(at.position, at.target, at.up); // place stops a glide: put it back until it arrives
+    this.glide = t < 1 ? glide : null;
+  }
+
   private place(position: readonly number[], target: readonly number[], up: readonly number[]) {
+    this.glide = null;
     // The orbit stays about Z (camera.up); straight down or up, the view's
     // own up picks the camera's roll (orbitSafeOffset).
     const raw = new THREE.Vector3(...position).sub(new THREE.Vector3(...target));
@@ -1106,10 +1221,13 @@ export class ViewportView {
     const offset = new THREE.Vector3(...orbitSafeOffset(raw.toArray(), [up[0], up[1], up[2]]));
     this.controls.target.set(target[0], target[1], target[2]);
     this.camera.position.copy(this.controls.target).add(offset);
-    this.camera.near = dist / 1000;
-    this.camera.far = dist * 100;
-    this.camera.updateProjectionMatrix();
+    if (dist > 0) {
+      this.camera.near = dist / 1000;
+      this.camera.far = dist * 100;
+      this.camera.updateProjectionMatrix();
+    }
     this.controls.update();
+    this.clip();
   }
 
   /**
@@ -1243,7 +1361,7 @@ export class ViewportView {
       const { position, target, up } = this.cameraPose();
       const away = this.camera.position.distanceTo(this.controls.target);
       const k = away > 0 ? Math.min(Math.max(away * scale, this.controls.minDistance), this.controls.maxDistance) / away : 1;
-      if (Number.isFinite(k) && k > 0 && k !== 1) this.setPose({ position: position.map((p, i) => target[i] + (p - target[i]) * k) as CameraPose["position"], target, up }, k);
+      if (Number.isFinite(k) && k > 0 && k !== 1) this.setPose({ position: position.map((p, i) => target[i] + (p - target[i]) * k) as CameraPose["position"], target, up });
     }
   }
 
@@ -1356,6 +1474,7 @@ export class Viewer implements SharedViewport {
   /** TestLab's colour map on the body on show (linear, three a vertex), drawn in place of the face colours; null when none. */
   private colourMap: Float32Array | null = null;
   private picker: ((pick: ViewportPick) => void) | null = null;
+  private wanted: (() => PickWants) | null = null;
   private menuHandler: ((pick: ViewportPick, at: { x: number; y: number }) => boolean) | null = null;
   private highlight: ViewportHighlight = NO_HIGHLIGHT;
   /** The offered corner, edge or face under the pointer while picking is on (at most one is set). */
@@ -1450,6 +1569,7 @@ export class Viewer implements SharedViewport {
       highlight: () => this.highlight,
       picking: () => this.picker !== null,
       pick: (pick) => this.picker?.(pick),
+      pickWants: () => this.wanted?.() ?? "any",
       menu: (pick, at) => (this.picker ? (this.menuHandler?.(pick, at) ?? false) : false),
       setHover: (face, edge, corner) => this.setHover(face, edge, corner ?? null),
       corners: () => (this.picker ? this.cornerPoints : null),
@@ -1631,6 +1751,14 @@ export class Viewer implements SharedViewport {
 
   get onMenu() {
     return this.menuHandler;
+  }
+
+  get pickWants() {
+    return this.wanted;
+  }
+
+  set pickWants(wants: (() => PickWants) | null | undefined) {
+    this.wanted = wants ?? null;
   }
 
   set onMenu(handler: ((pick: ViewportPick, at: { x: number; y: number }) => boolean) | null | undefined) {
@@ -1898,6 +2026,10 @@ export class Viewer implements SharedViewport {
     return this.main.lookAt(plane, side);
   }
 
+  lookAtFace(face: number): Framing | null {
+    return this.main.lookAtFace(face);
+  }
+
   /** The edited sketch's points (line ends, placed points) on screen, in the main view's pixels, for keeping a box clear of them. */
   editedScreenPoints(): { x: number; y: number }[] {
     return this.main.screenPoints(this.editedWorld).filter((p): p is { x: number; y: number } => p !== null);
@@ -2104,7 +2236,7 @@ export class Viewer implements SharedViewport {
     // A run alone only with one renderer: each view's renderer uploads by itself and three.js forgets the runs after
     // the first upload, so with two views (split) a second renderer could miss a run; it gets the whole array then.
     const ranged = this.views.length === 1;
-    const nextFaces = this.colourMap && this.colourMap.length === this.mesh.positions.length ? this.colourMap : faceColourArray(this.mesh, overlays, this.highlight, this.hover.face, scratchOf(this.paintScratch, "faces", this.mesh.positions.length));
+    const nextFaces = this.colourMap && this.colourMap.length === this.mesh.positions.length ? mapColourArray(this.mesh, this.colourMap, this.highlight, scratchOf(this.paintScratch, "faces", this.mesh.positions.length)) : faceColourArray(this.mesh, overlays, this.highlight, this.hover.face, scratchOf(this.paintScratch, "faces", this.mesh.positions.length));
     const colour = faces.getAttribute("color") as THREE.BufferAttribute | undefined;
     if (colour && colour.array.length === nextFaces.length && colour.array instanceof Float32Array) {
       const changed = copyChanged(colour.array, nextFaces);

@@ -2,8 +2,8 @@
 // Until the sketcher (steps 21–33) it builds primitives and ready-made
 // outlines; every other workspace will refer to its bodies, faces and edges.
 
-import { KernelError, chordLabel, parseChord, summaryInUnit, wordsInUnit, latestOnly, NO_HIGHLIGHT, playback, ORIGIN_AT_FIRST, type AnalysisOverlay, type OriginPlane, type BodyHandle, type BodySpec, type ChamferSize, type MoveKind, type BodyView, type ExtrudeArrow, type OfferedProfile, type SketchPointer, type SketchXY, type Command, type Feature, type Framing, type Plane, type GeometryReference, type MountedWorkspace, type Selected, type SharedViewport, type WorkspaceContext, type WorkspaceId, type WorkspacePlugin, type HistoryStep, withWorkspaceDocument, type DisplayMesh } from "@fission/core";
-import { needsRefit, printView, snapDistance } from "@fission/viewport";
+import { KernelError, chordLabel, parseChord, summaryInUnit, wordsInUnit, latestOnly, NO_HIGHLIGHT, ORIGIN_AT_FIRST, type AnalysisOverlay, type OriginPlane, type BodyHandle, type BodySpec, type ChamferSize, type MoveKind, type BodyView, type ExtrudeArrow, type OfferedProfile, type PickWants, type SketchPointer, type SketchXY, type Command, type Feature, type Framing, type Plane, type GeometryReference, type MountedWorkspace, type Selected, type SharedViewport, type WorkspaceContext, type WorkspaceId, type WorkspacePlugin, type HistoryStep, withWorkspaceDocument, type DisplayMesh } from "@fission/core";
+import { needsRefit, snapDistance } from "@fission/viewport";
 import type { ShapeKind } from "./profiles.ts";
 import { bodyHidden, constructOf, isConstructItem, bodyIdOf, bodyItem, bodyNumbers, combineBodies, EYE_FOLDERS, CHAMFER_MAX, isChamferItem, isShellItem, shellOf, isCombineItem, extrudeOperation, insertAt, isHidden, isMoveItem, isOperationExtrude, isPiece, isSketchExtrude, numberPieces, isSketchItem, ORIGIN_AXES, ORIGIN_PLANES as EYE_PLANES, builds, ownShape, originDrawn, partFeature, partOf, readDesignDocument, shapeOf, withPartAt, SKETCH_PLANES, type ChamferSizing, type DesignDocument, type MoveParam, type PartKind, isPatternItem } from "./document.ts";
 import { alreadyPicked, arrowOf, DEFAULT_DISTANCE, distanceRefused, DISTANCE_STEP, extrudeSketch, NO_SKETCH, NO_USABLE_SKETCH, PICK_PROFILE_STATUS, extrudeStep, featureBuild, featureSpec, previewSpec, setExtrudeDistance, setExtrudeOperation, setExtrudeSymmetric, setExtrudeThrough, signedDistance, symmetricDrag, ZERO_OK } from "./extrude.ts";
@@ -51,7 +51,7 @@ import { noteRebuild, registerDesign } from "./representations.ts";
 import { DESIGN_COMMANDS, documentFor, DRAW_OPS, DRAW_STEPS, drawingFor, drawRefused, EXTRUDE_OP, commandDistance, extrudeTarget, RENAME_OP, renameTarget } from "./commands.ts";
 import { buildSpec } from "./spec.ts";
 import { SHAPE_LABELS, toolbarGroups, type ToolButton } from "./toolbar.ts";
-import { currentDesignDefaults, currentUnit, UNIT_EVENT, commandSearch, GCODE_KIND, iconSvg, PNG_KIND, saveFile, toolGroup, type Command as SearchCommand, type SaveKind, type IconName, type MenuButton, type MenuSection } from "@fission/ui";
+import { currentDesignDefaults, currentUnit, UNIT_EVENT, commandSearch, iconSvg, PNG_KIND, saveFile, toolGroup, type Command as SearchCommand, type IconName, type MenuButton, type MenuSection } from "@fission/ui";
 import { comingItems, type ComingGroup } from "./coming-soon.ts";
 import { INSERT_SIZES, INSERT_TITLE, inserted, insertSections, insertStep } from "./insert.ts";
 import { startHint } from "./start-hint.ts";
@@ -62,10 +62,7 @@ import { DEFAULT_SIZES, followUnit, panelSizeRefused, parameterRows, propertiesP
 import { FOLDED_AT_START, panelShown, propertiesFold, readPinned, type FoldState, type PropertiesFold } from "./properties-fold.ts";
 import { partFailure } from "./part-failure.ts";
 import { freshDesign, START_FRESH_STEP, startFresh } from "./start-fresh.ts";
-import { BUILD_AREA_ROW, BUILD_AREA_TITLE, buildArea, buildAreaShownIn, keepBuildAreaShown, P1S_AREA, type BuildArea, type FirstLayerExtras } from "@fission/print";
-import { printFileOf, SLICE_PRINT_TITLE, sliceBodies, slicePrint } from "./slice-print.ts";
-import { gcodeName, gcodeOfPackage, P1S_KIND, PREVIEW_EARLIER, openPrintPreview, printFileName, printLead, printMovesOf, printWords, settingsWords, SliceDropped, testPieceFile } from "@fission/print";
-
+import { BUILD_AREA_ROW, BUILD_AREA_TITLE, buildArea, buildAreaShownIn, keepBuildAreaShown, P1S_AREA, type BuildArea, } from "@fission/print";
 import { openTool, openToolRefusal, stillRebuilding, type OpenTool } from "./open-tool.ts";
 import { DOWNLOAD_3MF, DOWNLOAD_OBJ } from "./mesh-export.ts";
 import { deleteAsk } from "./delete-ask.ts";
@@ -107,13 +104,13 @@ import { changeDimensionTool, clickConstraint, constraintPickAt, constraintStep,
 import { addConstraint, changeDimension, type NewConstraint } from "./constraints.ts";
 import { toggleConstruction } from "./construction.ts";
 import type { Sketch, SketchPlane } from "./document.ts";
-import { logPrint, rememberedBetterGrip, rememberedWarmUp, type Fit, type PrintFacts } from "@fission/print";
+import { rememberedBetterGrip, rememberedWarmUp, type Fit, } from "@fission/print";
 import { aiFaces, designAIView } from "./ai-view.ts";
 import { refusalOverlay, REFUSAL_OVERLAY } from "./refusal-overlay.ts";
 import { ALL_PRINT_CHECK_IDS, checkShown, keepPrintCheckShown, printCheckShownIn, printCheckSummary, printRulesIn } from "./print-check-view.ts";
 import { EXPORT_CHOICE_ID, EXPORT_CHOICE_LABEL, exportChoice } from "./export-choice.ts";
 import { registerMeshActions } from "./mesh-export.ts";
-import { COPY_SVG, DOWNLOAD_STL, hiddenStlNote, NO_BODY_STL, noBodyWords, printMissingNote, registerDesignActions, shownBodyFeature, shownBodyRefs, STL_OVERLAY, targetsOf, type DesignOutcome, type DesignRun } from "./actions.ts";
+import { COPY_SVG, DOWNLOAD_STL, hiddenStlNote, NO_BODY_STL, noBodyWords, registerDesignActions, shownBodyRefs, STL_OVERLAY, targetsOf, type DesignOutcome, type DesignRun } from "./actions.ts";
 
 /**
  * What the user last entered (as typed), kept while other workspaces are
@@ -691,78 +688,12 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
   // A Cut or Join whose tools change nothing asks before OK records it (Ben, 11 Nov).
   const missAsk = cutAsk(ctx.toolbar);
   const fresh = startFresh(ctx.toolbar, { current: () => designDoc(), confirm: () => (ctx.startedFresh?.(), void clearDesign()) });
-  /** Slice for printing's warm-up loop and Better grip as last ticked (null: as remembered); the build area counts them. */
-  let printExtras: FirstLayerExtras | null = null;
-  /** Draws the build area again (set once the build area's own state exists below; the dialog may tick before then). */
+  /** Draws the build area again (set once the build area's own state exists below; wake() calls it, after the Slice page may have ticked the warm-up loop or Better grip). */
   let refreshArea = () => {};
-  /** File ▾ > Slice for printing (and DESIGN ▾'s Slice): the dialog, unless a tool is still open (#639), which it says. */
+  /** File ▾ > Slice for printing (and DESIGN ▾'s Slice with the page off): the Slice page, unless a tool is still open (#639), which it says (SP5b2c). */
   async function sliceAsked() {
-    if (await exportReady("Slice for printing")) printing.ask();
+    if (await exportReady("Slice for printing")) ctx.openWorkspace("slice");
   }
-  // File ▾ > Slice for printing (H2a, W6c): every body shown, as Export STL takes them, sliced and saved as the P1S's print file (.gcode.3mf) or plain G-code.
-  const printing = slicePrint(ctx.toolbar, {
-    async slice(choices, file, alive) {
-      const waits = openToolRefusal(toolOpen(), "Slice for printing"); // the dialog is modal, but a key may still have opened one (#639)
-      if (waits !== null) throw new Error(waits);
-      if (!(await builtNow())) throw new Error(stillRebuilding("Slice for printing"));
-      const doc = designDoc();
-      // By body (35f1: a Combine's pieces have no item of their own).
-      const features = doc ? shownBodyRefs(doc, failedNow).flatMap((r) => { const f = shownBodyFeature(r, doc, failedNow); return f ? [{ body: r.id as string, feature: f }] : []; }) : [];
-      const save = async (print: PrintFacts, suggestedName: string, kind: SaveKind, bytes: Uint8Array<ArrayBuffer>) => {
-        if (!alive()) throw new SliceDropped();
-        const r = await saveFile(ctx.toolbar.ownerDocument, { suggestedName, kind, bytes });
-        if (r.status === "failed") throw new Error(r.message);
-        // The print log (account features 5): each print file saved is a line to say later how it printed.
-        const logged = r.status === "saved" && logPrint(ctx.toolbar.ownerDocument, { name: printLead(ctx.project.name, ctx.fileName?.()) ?? "", settings: settingsWords(choices, file.nozzle), grams: print.filamentG, seconds: print.printTimeS });
-        return { print, saved: r.status === "saved", name: r.status === "saved" ? r.name : suggestedName, logged };
-      };
-      if (file.format === "p1s") {
-        const print = await printFileOf(kernel, doc!, features, choices, file.plate, file.nozzle);
-        return save(print, printFileName(choices, file.plate, file.nozzle, printLead(ctx.project.name, ctx.fileName?.())), P1S_KIND, print.package);
-      }
-      const print = await sliceBodies(kernel, doc!, features, choices);
-      return save(print, gcodeName(choices, printLead(ctx.project.name, ctx.fileName?.())), GCODE_KIND, new TextEncoder().encode(print.gcode) as Uint8Array<ArrayBuffer>);
-    },
-    // Preview (H2b, H2c): the same slice, played through the replayer and shown in 3D with its time-lapse.
-    async preview(choices, file, alive, changed) {
-      const waits = openToolRefusal(toolOpen(), "Preview");
-      if (waits !== null) throw new Error(waits);
-      if (!(await builtNow())) throw new Error(stillRebuilding("Preview"));
-      const doc = designDoc();
-      // By body (35f1: a Combine's pieces have no item of their own).
-      const features = doc ? shownBodyRefs(doc, failedNow).flatMap((r) => { const f = shownBodyFeature(r, doc, failedNow); return f ? [{ body: r.id as string, feature: f }] : []; }) : [];
-      // The file Slice and download would save: the P1S's own G-code (its time, filament and start routine), else the plain slice.
-      const p1s = file.format === "p1s" ? await printFileOf(kernel, doc!, features, choices, file.plate, file.nozzle) : null;
-      const gcode = p1s ? printMovesOf(gcodeOfPackage(p1s.package) ?? "") : null;
-      const print = p1s && gcode !== null ? { ...p1s, gcode } : await sliceBodies(kernel, doc!, features, choices);
-      if (!alive()) throw new SliceDropped();
-      // A choice changed while it sliced: the preview says it shows the earlier ones, as Slice and download's result does.
-      // Failed timeline items and hidden bodies are not in it, said over the time-lapse (export hunt 2026-11-12 D, SL #675 item 3).
-      const warning = [doc ? printMissingNote(doc, failedNow) : "", changed() ? PREVIEW_EARLIER : ""].filter(Boolean).join(" ");
-      openPrintPreview(ctx.toolbar, playback(print.gcode), printWords(print), (host, p) => printView(host, p), warning || undefined);
-    },
-    // What the print leaves out: the timeline items that failed (export hunt 2026-11-12 D) and the bodies hidden by their eyes (SL #675 item 3).
-    missing: () => {
-      const doc = designDoc();
-      return doc ? printMissingNote(doc, failedNow) : "";
-    },
-    // The bar follows the engine's own reports (Ben, 2026-11-01).
-    onProgress: (listener) => kernel.onProgress?.(listener) ?? (() => {}),
-    // The build area counts the warm-up loop and Better grip's brim as Slice for printing will print them.
-    extrasChanged(extras) {
-      printExtras = extras;
-      refreshArea();
-    },
-    // Printer fits (P13): the fit test piece's P1S print file, saved like a slice's.
-    async testPiece(choices, file, alive) {
-      const print = await testPieceFile(kernel, choices, file.plate, file.nozzle);
-      if (!alive()) throw new SliceDropped();
-      const suggestedName = printFileName({ ...choices, supports: "off" }, file.plate, file.nozzle, "fit-test-piece");
-      const r = await saveFile(ctx.toolbar.ownerDocument, { suggestedName, kind: P1S_KIND, bytes: print.package });
-      if (r.status === "failed") throw new Error(r.message);
-      return { saved: r.status === "saved", name: r.status === "saved" ? r.name : suggestedName };
-    },
-  });
   const deleting = deleteAsk(ctx.toolbar);
   const renaming = renameBox(ctx.toolbar);
   /** Where the last item menu opened: Rename's box opens there (U0e2). */
@@ -821,7 +752,7 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
 
   /** The origin's axes and planes as their eyes say (Ben, 2026-10-29): every axis and no plane until an eye is pressed. */
   function showOrigin(doc: DesignDocument) {
-    area = buildAreaOn && !isHidden(doc, EYE_FOLDERS.origin) && lastScene !== null ? buildArea([lastScene.mesh], P1S_AREA, printExtras ?? { warmUp: rememberedWarmUp(storage), betterGrip: rememberedBetterGrip(storage) }) : null;
+    area = buildAreaOn && !isHidden(doc, EYE_FOLDERS.origin) && lastScene !== null ? buildArea([lastScene.mesh], P1S_AREA, { warmUp: rememberedWarmUp(storage), betterGrip: rememberedBetterGrip(storage) }) : null;
     viewport.showOrigin({
       axes: [originDrawn(doc, ORIGIN_AXES[0]), originDrawn(doc, ORIGIN_AXES[1]), originDrawn(doc, ORIGIN_AXES[2])],
       planes: [...EYE_PLANES.filter((id) => originDrawn(doc, id)).map((id) => ({ id, plane: planeOf(id.slice("origin-".length).toUpperCase() as SketchPlane) })), ...constructPlanes(drawnConstructs(doc, constructPreview))],
@@ -978,7 +909,8 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
     else panel.showNoBody(); // a body that did not build, or a design with no body (24f4)
     // Verbs, not apps: whatever the registry offers for this selection, from any workspace.
     const verbs = ctx.actions.actionsFor(targetsOf(items, doc, failedNow));
-    panel.showActions(verbs, (id) => runAction(id, ctx.selection.items));
+    // A verb pressed while an OK is checked runs on the selection as the OK leaves it, as when pressed slowly (SL #764 item 6).
+    panel.showActions(verbs, (id) => afterOk(() => void runAction(id, ctx.selection.items)));
   }
 
   /** The tool open now that changes the bodies (#639), or null: an export waits for it, as the file would not be what the view shows. */
@@ -1032,6 +964,9 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
    * now, waited for when a rebuild is under way; otherwise it says why and saves nothing.
    */
   async function exportReady(verb: string): Promise<boolean> {
+    // An OK the kernel still checks first lands (SL #764 item 6): refused at once, the words went into the tool's own
+    // error line, which shut with the panel as the OK landed, so the export saved nothing and nothing said why.
+    while (okChecks.size > 0) await Promise.allSettled([...okChecks]);
     if (exportWaits(verb)) return false;
     if (await builtNow()) return !exportWaits(verb); // a tool opened while it waited
     if (shown) panel.showActionNote(stillRebuilding(verb), true, true);
@@ -1051,6 +986,12 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
     if (outcome.solid && shown) {
       solidCard.show(outcome.solid, (outcome as DesignOutcome).notes);
       solidFor = ctx.project.workspaces.design as DesignDocument | undefined;
+    } else if (verb !== undefined && shown && solidFor !== undefined) {
+      // An export whose check could not run (or that saved nothing): the last export's card is not about this file, so
+      // it must not go on saying "Checked solid" under the note that the check could not run (SL #764 item 3).
+      solidCard.hide();
+      ctx.viewport.clearOverlay(SOLID_OVERLAY);
+      solidFor = undefined;
     }
     if (shown) panel.showActionNote([outcome.message, note].filter(Boolean).join(" "), outcome.bad, !outcome.bad);
   }
@@ -5928,6 +5869,8 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
     }
     applyChange(ctx.selection, pickChange(pick, lastScene)); // a double-click picks the whole body (picking.ts)
   };
+  // Shell opens faces: no edge or corner takes a click on a thin one (Ben, 2026-11-19); every other click can pick anything.
+  const pickWants = (): PickWants => (shellBox.shown ? "faces" : "any");
   let stopWatching = () => {};
   // The phone turned or the window resized (a keyboard, a panel): the line's point moved on screen, so the typed
   // boxes and the hint go beside it again rather than staying where they were, maybe past the view's edge (hunt D2).
@@ -5941,6 +5884,7 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
   /** Listens to picks and the selection: from mount, and again on each wake. Keys come from the shell (X7b), only while shown. */
   function listen() {
     viewport.onPick = onPick;
+    viewport.pickWants = pickWants;
     viewport.onMenu = openViewMenu;
     viewport.onSketchPointer = onSketchPointer;
     viewport.onExtrudePointer = onExtrudePointer;
@@ -5984,6 +5928,7 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
     ctx.properties.ownerDocument.removeEventListener(UNIT_EVENT, onUnitChange);
     showBuildAreaWords();
     viewport.onPick = null;
+    viewport.pickWants = null;
     viewport.onMenu = null;
     viewport.onSketchPointer = null;
     viewport.onExtrudePointer = null;
@@ -6118,7 +6063,7 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
           { id: "file-export-stl", label: "Export STL", title: `Export STL: ${stl.summary}`, off: bodies.length === 0 ? noBodyWords(doc, failedNow) : undefined, run: () => run({ op: "export_stl" }) },
           { id: EXPORT_CHOICE_ID, label: EXPORT_CHOICE_LABEL, title: `Export 3MF or OBJ: every body shown, as one 3MF file for a slicer (sizes in millimetres, each body its own object) or one OBJ file for another 3D program`, off: bodies.length === 0 ? noBodyWords(doc, failedNow) : undefined, run: () => meshChoice.ask() },
           { id: "file-save-picture", label: "Save picture (PNG)", title: "Save picture: the view as it is on screen, as a PNG file", off: viewport.picture ? undefined : "This browser can't make a picture of the view", run: () => void savePicture() },
-          { id: "file-slice-print", label: "Slice for printing", title: SLICE_PRINT_TITLE, off: bodies.length === 0 ? noBodyWords(doc, failedNow) : undefined, run: () => sliceAsked() },
+          { id: "file-slice-print", label: "Slice for printing", title: "Slice for printing: turn the bodies shown into a print file for a Bambu Lab P1S (0.4 mm nozzle, PLA).", off: bodies.length === 0 ? noBodyWords(doc, failedNow) : undefined, run: () => sliceAsked() },
         ],
       };
     },
@@ -6270,7 +6215,6 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
       listen();
       showStart();
       // The Slice page may have ticked or unticked the warm-up loop or Better grip meanwhile: what is remembered counts again.
-      printExtras = null;
       refreshArea();
       showBuildAreaWords();
       showRefusals();
@@ -6285,6 +6229,10 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
     },
     unmount() {
       putAway = true;
+      // A Cut or Join question still up goes as a Cancel with the design it was about: taken off the page unanswered,
+      // its OK stayed held for good, so the page asked "Leave site?" on every reload though it said Saved, and Undo
+      // waited for it (nightly monkey #749: a file opened as the question came up).
+      missAsk.close();
       unitWatch = null;
       for (const d of [pointDrag, liveDrag]) if (d) cancelDrag(d);
       putAwayByRestore = ctx.history.restoring() ? ctx.project : null;

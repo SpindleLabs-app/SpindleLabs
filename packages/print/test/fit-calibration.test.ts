@@ -1,5 +1,4 @@
 // Printer fits' dialog (fit-calibration.ts) and its line in Slice for
-// printing (slice-print.ts): typing the numbers, what it says, saving and
 // forgetting per nozzle, and the test piece's download.
 
 import { test } from "node:test";
@@ -7,7 +6,6 @@ import assert from "node:assert/strict";
 import { FIT_BOXES, fitCalibration, fitsLine, typedMm } from "@fission/print";
 import { fitKey, keptMeasures, profileFor, TYPICAL_PROFILE } from "@fission/print";
 import type { FileChoices, PrintChoices } from "@fission/print";
-import { slicePrint } from "../src/slice-print.ts";
 
 const { Window } = await import("happy-dom");
 
@@ -162,49 +160,4 @@ test("keys typed in the dialog never reach the app's shortcuts", () => {
   assert.deepEqual(keys, []);
 });
 
-test("Slice for printing: the fits line follows the nozzle, and Printer fits gets the dialog's choices", async () => {
-  const window = new Window();
-  const doc = window.document as unknown as Document;
-  const slot = doc.createElement("div");
-  doc.body.append(slot);
-  const asked: [PrintChoices, FileChoices][] = [];
-  const d = slicePrint(slot, {
-    slice: async () => ({ print: { layers: 1, filamentMm: 1, filamentG: 1, printTimeS: 1, unprintedVolume: 0 }, saved: true, name: "x" }),
-    preview: async () => {},
-    testPiece: async (c, f) => (asked.push([c, f]), { saved: true, name: "piece" }),
-  });
-  const $ = <T extends HTMLElement>(id: string) => doc.getElementById(id) as T;
-  d.ask();
-  assert.equal($("slice-print-fits").hidden, false);
-  assert.match($("slice-print-fits-words").textContent!, /^Fits: typical sizes for the (Standard|High Flow) nozzle/);
-  const nozzle = $<HTMLSelectElement>("slice-print-nozzle");
-  nozzle.value = "high-flow";
-  nozzle.dispatchEvent(new window.Event("change") as unknown as Event);
-  assert.equal($("slice-print-fits-words").textContent, "Fits: typical sizes for the High Flow nozzle (not measured yet).");
-  $<HTMLSelectElement>("slice-print-walls").value = "4";
-  $("slice-print-fits-open").click();
-  assert.equal($<HTMLDialogElement>("fit-cal-dialog").open, true);
-  $("fit-cal-download").click();
-  await new Promise((r) => setTimeout(r, 0));
-  assert.equal(asked.length, 1);
-  assert.equal(asked[0]![0].walls, 4);
-  assert.equal(asked[0]![1].nozzle, "high-flow");
-  // Saving fits updates the line at once.
-  FIT_BOXES.forEach((b, i) => {
-    const input = $<HTMLInputElement>(b.id);
-    input.value = WORKED[i]!;
-    input.dispatchEvent(new window.Event("input") as unknown as Event);
-  });
-  $("fit-cal-save").click();
-  assert.match($("slice-print-fits-words").textContent!, /^Fits: measured on your printer on .* \(High Flow nozzle\)\.$/);
-});
 
-test("Slice for printing without a test piece maker offers no Printer fits", () => {
-  const window = new Window();
-  const doc = window.document as unknown as Document;
-  const slot = doc.createElement("div");
-  doc.body.append(slot);
-  slicePrint(slot, { slice: async () => ({ print: { layers: 1, filamentMm: 1, filamentG: 1, printTimeS: 1, unprintedVolume: 0 }, saved: true, name: "x" }), preview: async () => {} });
-  assert.equal(doc.getElementById("slice-print-fits")!.hidden, true);
-  assert.equal(doc.getElementById("fit-cal-dialog"), null);
-});

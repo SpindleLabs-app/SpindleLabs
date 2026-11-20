@@ -3,7 +3,7 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { test } from "node:test";
-import { documentRules, editFile, expectedView, settledText, kernelVerdict, modelVolume, nextAction, outlineArea, reusedIds, editLeaks, rng, shrink, shrinkFailure, signature, SKIP_TARGETS, weighted } from "./monkey-core.mjs";
+import { documentRules, editFile, expectedView, pressed, settledText, kernelVerdict, modelVolume, nextAction, outlineArea, reusedIds, editLeaks, rng, shrink, shrinkFailure, signature, SKIP_TARGETS, weighted } from "./monkey-core.mjs";
 import { MONKEY_PLANTS } from "./monkey-plants.mjs";
 
 /** A box, Sketch 2 on XY, and an extrude of Sketch 2: the smallest file with both kinds of body. */
@@ -73,7 +73,7 @@ test("what a file should show, worked by hand", () => {
   const added = { workspaces: { design: { ...numbered, version: 16, bodies: [{ id: "body:feature-9", number: 4 }, ...numbered.bodies], nextBody: 5 } } };
   assert.deepEqual(JSON.parse(settledText(JSON.stringify(added))).workspaces.design.bodies, [{ id: "body:feature-1", number: 1 }, { id: "body:feature-3", number: 2 }]);
   assert.equal(JSON.parse(settledText(JSON.stringify(added))).workspaces.design.nextBody, 5);
-  const fresh = { workspaces: { design: { ...design(), version: 29, bodies: [], nextBody: 1 } } };
+  const fresh = { workspaces: { design: { ...design(), version: 30, bodies: [], nextBody: 1 } } };
   assert.deepEqual(JSON.parse(settledText(JSON.stringify(fresh))).workspaces.design.bodies, [{ id: "body:feature-1", number: 1 }, { id: "body:feature-3", number: 2 }]);
   assert.equal(settledText("not json"), "not json");
   // A failed mark on an item that builds nothing anyway (a sketch) changes no row.
@@ -617,4 +617,26 @@ test("a Duplicate builds only when the body it copies does, worked by hand (issu
   assert.deepEqual(expectedView(chain).rows.map((r) => r.row), ["body-8"]);
   chain.timeline.features[0].suppressed = false;
   assert.equal(expectedView(chain).rows.length, 4);
+});
+
+// Issue #398: the nightly unstick's Finish Sketch press failed as "the tester itself" (locator.click: Timeout 2000ms
+// exceeded, stuck in "performing click action"). A trace of the replay showed the press reached the page and Finish
+// Sketch ran (pointerdown to click handled in 87 ms); Playwright then waited on its own input acknowledgement, which
+// in headless Chromium waits for a frame, while software rendering of that long session made none for over 1.3 s.
+// pressed() lets a press whose wait ran out count when the page shows it landed; whether it did stays the caller's
+// check, and anything other than the time running out is still thrown.
+test("a press whose wait ran out counts only when the page shows it landed (#398)", async () => {
+  const timeout = Object.assign(new Error("locator.click: Timeout 2000ms exceeded."), { name: "TimeoutError" });
+  const loc = (fails) => ({ click: async () => { if (fails) throw fails; } });
+  // Clicked normally: landed is never asked.
+  let asked = 0;
+  assert.equal(await pressed(loc(null), async () => (asked++, false)), true);
+  assert.equal(asked, 0);
+  // Timed out, but the page shows it landed: fine.
+  assert.equal(await pressed(loc(timeout), async () => true), true);
+  // Timed out and it never landed: the time-out is thrown, as before.
+  await assert.rejects(pressed(loc(timeout), async () => false), /Timeout 2000ms exceeded/);
+  // Any other failure (the element went away) is thrown whatever the page shows.
+  const gone = new Error("Element is not attached to the DOM");
+  await assert.rejects(pressed(loc(gone), async () => true), /not attached/);
 });

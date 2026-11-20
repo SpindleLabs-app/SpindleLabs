@@ -11,7 +11,7 @@ import type { Plane, StableId, ViewportPick } from "@fission/core";
 import { faceHolds, type FaceNames } from "./boolean-names.ts";
 import { SKETCH_PLANES, type SketchPlane } from "./document.ts";
 import { constructPlaneItem } from "./construct-data.ts";
-import { drawnOnFace, faceFeature, worldFrame, type SketchPlacement } from "./face-sketch.ts";
+import { bareFrame, bodyMap, drawnOnFace, faceFeature, worldFrame, type SketchPlacement } from "./face-sketch.ts";
 import { originFrameNow, shownFrame } from "./built-body.ts";
 import { findInScene, sceneHit, shownReference, type Scene } from "./scene.ts";
 
@@ -58,7 +58,7 @@ export function sketchSpot(pick: ViewportPick, scene: Scene | null): SketchSpot 
   const again = scene.design === undefined ? null : findInScene(ref, scene);
   if (again === null ? feature !== body.feature : again.status !== "found" || again.index !== pick.face) return { kind: "refused", message: UNNAMED_FACE };
   // SL #583 item 3: whether the face is its name's face turned round (a Cut's wall), recorded with the sketch.
-  return { kind: "face", face: { plane: ref.id, feature, reversed: body.reversed?.[hit.index] ?? false }, drawn: { ...drawn, body: namedFrameShown(scene, hit.body, hit.index, ref.id) ?? worldFrame() } };
+  return { kind: "face", face: { plane: ref.id, feature, reversed: body.reversed?.[hit.index] ?? false }, drawn: { ...drawn, body: bareFrame(namedFrameShown(scene, hit.body, hit.index, ref.id) ?? worldFrame()) } };
 }
 
 /**
@@ -86,24 +86,6 @@ export function sketchableFaces(scene: Scene | null): number[] {
   return faces;
 }
 
-/** A point's coordinates in a frame: along its x axis, its y axis (normal × x) and its normal, from its origin. */
-function toLocal(f: Plane, p: readonly number[]): [number, number, number] {
-  const [x, n] = [f.xAxis, f.normal];
-  const y = [n[1] * x[2] - n[2] * x[1], n[2] * x[0] - n[0] * x[2], n[0] * x[1] - n[1] * x[0]];
-  const d = [p[0] - f.origin[0], p[1] - f.origin[1], p[2] - f.origin[2]];
-  const dot = (a: readonly number[]) => a[0] * d[0] + a[1] * d[1] + a[2] * d[2];
-  return [dot(x), dot(y), dot(n)];
-}
-
-/** The world point with coordinates `l` in frame `f` (`toLocal`'s inverse). */
-function fromLocal(f: Plane, l: readonly number[]): [number, number, number] {
-  const [x, n] = [f.xAxis, f.normal];
-  const y = [n[1] * x[2] - n[2] * x[1], n[2] * x[0] - n[0] * x[2], n[0] * x[1] - n[1] * x[0]];
-  return [0, 1, 2].map((i) => f.origin[i] + l[0] * x[i] + l[1] * y[i] + l[2] * n[i]) as [number, number, number];
-}
-
-const WORLD: Plane = { origin: [0, 0, 0], xAxis: [1, 0, 0], normal: [0, 0, 1] };
-
 /**
  * The name a click at `point` on a face merged from several level input
  * faces should take (SL #502): the first name of the first input face
@@ -113,8 +95,11 @@ const WORLD: Plane = { origin: [0, 0, 0], xAxis: [1, 0, 0], normal: [0, 0, 1] };
  */
 export function clickedName(face: FaceNames, now: Plane | undefined, point: readonly number[]): string | null {
   if (face.origins === undefined) return null;
-  const then = fromLocal(face.frame ?? WORLD, toLocal(now ?? WORLD, point));
-  const holding = face.origins.find((o) => o.names.length > 0 && faceHolds(o.view, o.face, then));
+  // SL #759 item 3: as a point of the body, sizes too (`bodyMap`), so a Scale since is taken off the click as well.
+  const then = bodyMap(now, face.frame)(point);
+  // An origin handed on from an earlier boolean (SL #759 item 1) saw its face where it was then (`seen`): carried back there.
+  const seenBy = (o: NonNullable<FaceNames["origins"]>[number]) => (o.seen === undefined ? then : bodyMap(o.frame, o.seen)(then));
+  const holding = face.origins.find((o) => o.names.length > 0 && faceHolds(o.view, o.face, seenBy(o)));
   return holding?.names[0] ?? null;
 }
 

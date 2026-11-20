@@ -185,7 +185,7 @@ test("Edit feature changes what it turns round, and what it depends on with it; 
 });
 
 test("the data: version 29 holds a Pattern round an axis and reads back the same; version 28 holding one is refused; every break is refused", async () => {
-  assert.equal(DESIGN_VERSION, 29);
+  assert.equal(DESIGN_VERSION, 30);
   const { doc: d0, plane, axis } = await cubeAndAxis();
   const { doc, id } = insertPattern(d0, ["body:feature-1"], round(`construct:${axis}`));
   const json = JSON.parse(JSON.stringify(doc));
@@ -193,7 +193,7 @@ test("the data: version 29 holds a Pattern round an axis and reads back the same
   assert.throws(() => readDesignDocument({ ...json, version: 28 }), { message: "Design data says version 28 but has a Pattern round a construction axis, which version 29 brought" });
   // Round an origin axis it is version 25's: version 28 data with one opens as the current version.
   const plain = insertPattern(d0, ["body:feature-1"], { kind: "circular", axis: "Z", centre: [0, 0, 0], count: 4, angle: 360, join: false }).doc;
-  assert.equal(readDesignDocument({ ...JSON.parse(JSON.stringify(plain)), version: 28 }).version, 29);
+  assert.equal(readDesignDocument({ ...JSON.parse(JSON.stringify(plain)), version: 28 }).version, 30);
   const at = doc.timeline.features.findIndex((f) => f.id === id);
   const broken = (change: (p: Record<string, unknown>, f: Record<string, unknown>, d: Record<string, any>) => void) => () => {
     const d = JSON.parse(JSON.stringify(doc));

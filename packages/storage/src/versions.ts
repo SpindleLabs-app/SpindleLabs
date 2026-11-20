@@ -6,7 +6,8 @@
 //   version/<id>/<ms>  the exact .spindlelabs.json text the project had, <ms> its save time (the summary's `modified`)
 // Versions are an extra and never cost a save: one that can't be written is passed over, and a save refused for want
 // of room is tried once more after this project's versions, and every project's kept undo steps (undo-steps.ts), are
-// given up. Deleting the project deletes its versions and its undo steps.
+// given up; versions given up for a retry that is still refused are put back (or held by the tab and written back
+// after the next save that goes through: issue #510 item 5). Deleting the project deletes its versions and its undo steps.
 
 import { projectFromJson, projectToJson, type DataReader, type Project } from "@fission/core";
 import type { KeyValue } from "./key-value.ts";
@@ -87,6 +88,33 @@ export function versionedStore(store: ProjectStore, kv: KeyValue, readers: reado
   async function forgetVersions(id: string) {
     for (const t of await times(kv, id)) await kv.delete(prefix(id) + t);
   }
+  /**
+   * Versions given up for a retry that was still refused, which the store could not take back either (issue #510 item
+   * 5: in Chromium a delete gives its room back only later, so the store stays full): this tab holds them, lists and
+   * opens them, and writes them back after the next save that goes through. Gone with the tab, or when the project is
+   * deleted.
+   */
+  const held = new Map<string, Map<number, string>>();
+  /** Writes `versions` of `id` back where the store has none at that time; true when that went through. Never throws. */
+  async function putBack(id: string, versions: ReadonlyMap<number, string>) {
+    const keys = [...versions.keys()].map((t) => prefix(id) + t);
+    try {
+      await kv.update(keys, (values) => {
+        const writes: Record<string, string> = {};
+        keys.forEach((k, i) => {
+          if (values[i] === undefined) writes[k] = versions.get(Number(k.slice(prefix(id).length))) as string;
+        });
+        return writes;
+      });
+      return true;
+    } catch {
+      return false;
+    }
+  }
+  /** Each project's held versions written back now that a save went through; those still refused stay held. */
+  async function writeBackHeld() {
+    for (const [id, versions] of [...held]) if (await putBack(id, versions)) held.delete(id);
+  }
 
   return {
     list: () => store.list(),
@@ -120,26 +148,52 @@ export function versionedStore(store: ProjectStore, kv: KeyValue, readers: reado
         // Refused for want of room, perhaps: this project's versions and kept undo steps give way to its work first, and
         // the save is tried once more; only if that still fails do the other projects' undo steps go too, for one last
         // try (save/load hunt C7: every project's steps went at the first refusal).
-        const versionsKept = (await times(kv, id).catch(() => [])).length > 0;
+        // The versions given up are read first: if the retry is still refused, giving them up bought nothing (in
+        // Chromium a delete gives its room back only later), so they are put back, or held by this tab until a save
+        // goes through (issue #510 item 5). Only a retry that goes through costs them.
+        const given = new Map<number, string>();
+        for (const t of await times(kv, id).catch(() => [])) {
+          const text = await kv.get(prefix(id) + t).catch(() => undefined);
+          if (text !== undefined) given.set(t, text);
+        }
+        for (const [t, text] of held.get(id) ?? []) if (!given.has(t)) given.set(t, text);
+        const giveBack = async () => {
+          if (given.size === 0 || (await putBack(id, given))) held.delete(id);
+          else held.set(id, given);
+        };
         let refusal: unknown = e;
         let saved = false;
-        if (versionsKept || (await steps.has(id))) {
+        if (given.size > 0 || (await steps.has(id))) {
           await forgetVersions(id).catch(() => {});
           await steps.forget(id);
           try {
             await store.save(id, project, read, unchangedSince, behind, writer);
             saved = true;
+            held.delete(id); // the retry went through: the versions gave way for it
           } catch (again) {
-            if (again instanceof ProjectChangedError || !storageFull(again)) throw again;
+            if (again instanceof ProjectChangedError || !storageFull(again)) {
+              await giveBack();
+              throw again;
+            }
             refusal = again;
           }
         }
         if (!saved) {
-          if (!(await steps.any())) throw refusal;
+          if (!(await steps.any())) {
+            await giveBack();
+            throw refusal;
+          }
           await steps.forgetAll();
-          await store.save(id, project, read, unchangedSince, behind, writer);
+          try {
+            await store.save(id, project, read, unchangedSince, behind, writer);
+            held.delete(id);
+          } catch (last) {
+            await giveBack();
+            throw last;
+          }
         }
       }
+      await writeBackHeld();
       if (before === undefined || at === null) return;
       let now: string;
       try {
@@ -152,15 +206,17 @@ export function versionedStore(store: ProjectStore, kv: KeyValue, readers: reado
     },
     async remove(id) {
       await store.remove(id);
+      held.delete(id);
       await forgetVersions(id).catch(() => {}); // left behind, they are only unreachable: the project is gone either way
       await steps.forget(id);
     },
     steps,
     async versions(id) {
-      return (await times(kv, id)).map((t) => new Date(t));
+      const all = new Set([...(await times(kv, id)), ...(held.get(id)?.keys() ?? [])]);
+      return [...all].sort((a, b) => b - a).map((t) => new Date(t));
     },
     async openVersion(id, at) {
-      const text = await kv.get(prefix(id) + at.getTime());
+      const text = (await kv.get(prefix(id) + at.getTime())) ?? held.get(id)?.get(at.getTime());
       if (text === undefined) throw new Error(`there is no version of this project saved at ${at.toISOString()} in this browser`);
       try {
         return projectFromJson(text, readers);

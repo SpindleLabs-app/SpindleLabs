@@ -319,8 +319,8 @@ export function settledText(text) {
   try {
     const file = JSON.parse(text);
     const design = file?.workspaces?.design;
-    // Design data as the app saves it (version 29 since a Pattern can turn round a construction axis; 28 since a sketch or Mirror can use a construction plane; 27 since an item can be a Shell; 26 since an item can be a construction plane, axis or point; 25 since an item can be a Pattern; 24 since an item can be a Chamfer; 23 since an extrude can go through all; 22 since a face sketch can be marked as drawn before, carried by the merged face's first input; 21 since an extrude can be symmetric; 20 since each profile keeps its own shape; 19 since a face sketch can record that it was drawn on a cut's pocket wall; 18 since an extrude can hold several profiles; 17 since a constraint can name a point that follows a body; 16 since an Extrude Join's own piece is named by the extrude; 15 since a pin or projection can hold a Combine result's edge; 14 since a circle can hold its fit; 13 since pieces remember their faces; 12 since Scale and Mirror body; 11 since Duplicate; 10 since Extrude's operations; 9 since step 48; this read 7 until 48d3, so files of 8 and 9 went unsettled), and the versions before it the app still reads the same way.
-    if (!design || ![7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29].includes(design.version) || !Array.isArray(design.timeline?.features)) return text;
+    // Design data as the app saves it (version 30 since a body extruded from a face sketch starts its frame from it; 29 since a Pattern can turn round a construction axis; 28 since a sketch or Mirror can use a construction plane; 27 since an item can be a Shell; 26 since an item can be a construction plane, axis or point; 25 since an item can be a Pattern; 24 since an item can be a Chamfer; 23 since an extrude can go through all; 22 since a face sketch can be marked as drawn before, carried by the merged face's first input; 21 since an extrude can be symmetric; 20 since each profile keeps its own shape; 19 since a face sketch can record that it was drawn on a cut's pocket wall; 18 since an extrude can hold several profiles; 17 since a constraint can name a point that follows a body; 16 since an Extrude Join's own piece is named by the extrude; 15 since a pin or projection can hold a Combine result's edge; 14 since a circle can hold its fit; 13 since pieces remember their faces; 12 since Scale and Mirror body; 11 since Duplicate; 10 since Extrude's operations; 9 since step 48; this read 7 until 48d3, so files of 8 and 9 went unsettled), and the versions before it the app still reads the same way.
+    if (!design || ![7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30].includes(design.version) || !Array.isArray(design.timeline?.features)) return text;
     Object.assign(design, expectedView(design).numbered);
     return JSON.stringify(file);
   } catch {
@@ -580,3 +580,20 @@ export async function shrinkFailure(list, fails, { budget = 200, deadline = Infi
 
 /** A failure's kind, for the shrinker: the check's name and its message with numbers and ids blurred. */
 export const signature = (failure) => `${failure.check}: ${String(failure.message).split("\n")[0].replace(/\d+(\.\d+)?/g, "#")}`;
+
+/**
+ * Presses `locator` (Playwright's click, at most `timeout` ms); true once pressed. A press whose wait ran out
+ * (TimeoutError) still counts when `landed()` says the page shows it took effect: Playwright waits for its own input
+ * acknowledgement after dispatching, which in headless Chromium waits for a frame, and a long software-rendered session
+ * can make none for over a second after the press has already landed (issue #398, traced: Finish Sketch handled in
+ * 87 ms, the click still waiting 2 s later). Any other failure, or a press that never landed, is thrown.
+ */
+export async function pressed(locator, landed, timeout = 2000) {
+  try {
+    await locator.click({ timeout });
+    return true;
+  } catch (e) {
+    if (e?.name === "TimeoutError" && (await landed())) return true;
+    throw e;
+  }
+}

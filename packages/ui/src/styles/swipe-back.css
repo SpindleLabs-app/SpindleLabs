@@ -1,0 +1,6 @@
+/* A sideways finger swipe is never the browser's Back or Forward, nor a pull down its reload (SL #764 item 2): Chromium's
+   touch screens took a swipe the app's bars didn't scroll as Back and left the app, losing what was half drawn or typed.
+   Chromium judges this by the scroller where a swipe's chain ends, so no scroller inside may end it sideways (contain or
+   none in x): each says overscroll-behavior-y only, and the chain reaches this root. Checked by apps/fission/e2e/swipe-back.mjs. */
+/* On the page root (index.html gives <html> the class) and its body. */
+.swipe-back, .swipe-back body { overscroll-behavior: none; }

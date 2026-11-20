@@ -11,7 +11,7 @@
 .guide .guide-leaders g { transition: opacity 0.25s; }
 .guide .guide-labels { position: absolute; inset: 0; pointer-events: none; }
 .guide .guide-labels span { position: absolute; left: 0; top: 0; padding: 0 2px 4px; white-space: nowrap; font: 500 15px/1.2 ui-monospace, "SF Mono", Menlo, monospace; letter-spacing: 0.08em; text-shadow: 0 1px 6px var(--shade-black-035); transition: opacity 0.25s; }
-.guide .guide-scroll { position: absolute; inset: 0; overflow-y: auto; overflow-x: hidden; outline: none; overscroll-behavior: contain; }
+.guide .guide-scroll { position: absolute; inset: 0; overflow-y: auto; overflow-x: hidden; outline: none; overscroll-behavior-y: contain; }
 .guide[data-dragging] .guide-scroll { cursor: grabbing; }
 .guide .guide-chapter { min-height: 240vh; padding: 0 5vw; }
 .guide .guide-chapter:first-child { padding-top: 13vh; }
