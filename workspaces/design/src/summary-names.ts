@@ -32,7 +32,7 @@ const text = (v: unknown) => (typeof v === "string" ? v : "");
  * no other item (a preset, a construction) or that this does not know. The caller compares it with the description
  * as saved before trusting it (`renamedSummary`).
  */
-export function summaryNamed(f: Feature): string | null {
+export function summaryNamed(f: Feature, plainPieces = false): string | null {
   const p = f.intent.parameters;
   if (isCombineItem(f)) {
     const tools = Array.isArray(p.tools) ? (p.tools as string[]) : [];
@@ -41,7 +41,8 @@ export function summaryNamed(f: Feature): string | null {
   if (isMoveItem(f)) {
     const bodies = Array.isArray(p.bodies) ? (p.bodies as string[]) : [];
     const verb = f.intent.summary.startsWith("Rotate ") ? "Rotate" : f.intent.summary.startsWith("Scale ") ? "Scale" : "Move";
-    return moveSummary(bodies.map((b) => labelIn(f, bodyItem(b) ?? b)), moveValues(f), verb);
+    // A piece as "a piece of Combine 1" (SL #507); a Move saved before that said the item's name alone (`plainPieces`).
+    return moveSummary(bodies.map((b) => (plainPieces ? labelIn(f, bodyItem(b) ?? b) : bodyIn(f, b))), moveValues(f), verb);
   }
   if (isDuplicateItem(f)) {
     // Across an origin plane by its letters, or (59a3) across a construction plane by that item's name.
@@ -77,6 +78,8 @@ export function summaryNamed(f: Feature): string | null {
  * said again from the parameters can't be rewritten safely (an old file's, or a kind made by hand).
  */
 export function renamedSummary(before: Feature, after: Feature): string {
-  if (summaryNamed(before) !== before.intent.summary) return before.intent.summary;
-  return summaryNamed(after) ?? before.intent.summary;
+  if (summaryNamed(before) === before.intent.summary) return summaryNamed(after) ?? before.intent.summary;
+  // A Move of a piece saved before SL #507 named the piece by its item alone ("Move Combine 1 by …"): renamed in those same words, never changed to the new ones.
+  if (isMoveItem(before) && summaryNamed(before, true) === before.intent.summary) return summaryNamed(after, true) ?? before.intent.summary;
+  return before.intent.summary;
 }

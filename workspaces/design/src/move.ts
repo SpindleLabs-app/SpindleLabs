@@ -14,7 +14,7 @@
 
 import { notABody } from "./body-uses.ts";
 import type { BodySpec, Feature, Motion, MoveKind } from "@fission/core";
-import { bodyItem, counted, freshName, insertItem, numberedWhenBuilt, insertAt, isMoveItem, makesBody, MOVE_PARAMS, MOVE_SCALE, shown, takenNames, type DesignDocument, type MoveParam } from "./document.ts";
+import { bodyItem, counted, freshName, insertItem, numberedWhenBuilt, insertAt, isMoveItem, isPiece, makesBody, MOVE_PARAMS, MOVE_SCALE, shown, takenNames, type DesignDocument, type MoveParam } from "./document.ts";
 
 /** A Move's numbers: the shift (mm), turns (degrees) and pivot (mm), and (Scale, step 35e2) the scale factor about the pivot, 1 when left out. */
 export type MoveValues = Record<MoveParam, number> & { scale?: number };
@@ -36,6 +36,9 @@ export const ROTATE_STEP = "Rotate bodies";
 
 /** The undo step a new Scale is recorded as. */
 export const SCALE_STEP = "Scale bodies";
+
+/** A moved body's words in a summary (SL #507): its item's name `label`, or "a piece of" it for a piece, as Copy, Combine and Extrude say it. */
+export const movedWords = (body: string, label: string): string => (isPiece(body) ? `a piece of ${label}` : label);
 
 /** The word a Move item of each tool's summary and name start with. */
 export const MOVE_VERBS = { move: "Move", rotate: "Rotate", scale: "Scale" } as const satisfies Record<MoveKind, string>;
@@ -163,7 +166,7 @@ export function insertMove(doc: DesignDocument, bodies: readonly string[], value
   const verb = MOVE_VERBS[kind];
   // Counted as before for a Move (every Move item but the Rotates and Scales); a Rotate counts the Rotates, a Scale the Scales.
   const label = freshName(verb, doc.timeline.features.filter((f) => isMoveItem(f) && verbIn(f.provenance.self.label) === verb).length, takenNames(doc));
-  const labels = items.map((f) => f.provenance.self.label);
+  const labels = items.map((f, i) => movedWords(bodies[i], f.provenance.self.label));
   const feature: Feature = {
     id,
     intent: { type: "move", parameters: { ...v, bodies: [...bodies] }, summary: moveSummary(labels, v, verb) },
@@ -213,7 +216,8 @@ export function changedMove(doc: DesignDocument, id: string, values: MoveValues,
   const sameBodies = items === null || (bodies!.length === held.length && bodies!.every((b) => held.includes(b)));
   if (sameBodies && MOVE_PARAMS.every((k) => old.intent.parameters[k] === v[k]) && old.intent.parameters[MOVE_SCALE] === v.scale) return doc;
   const kept = sameBodies ? null : items!;
-  const labels = kept ? kept.map((b) => b.label) : held.map((b) => bodyItem(b)!).map((b) => doc.timeline.features.find((f) => f.id === b)?.provenance.self.label ?? old.provenance.from.find((r) => r.id === b)?.label ?? b);
+  const labelOf = (b: string) => doc.timeline.features.find((f) => f.id === b)?.provenance.self.label ?? old.provenance.from.find((r) => r.id === b)?.label ?? b;
+  const labels = kept ? kept.map((b, i) => movedWords(bodies![i], b.label)) : held.map((b) => movedWords(b, labelOf(bodyItem(b)!)));
   const verb = verbIn(old.intent.summary);
   const intent = { ...old.intent, parameters: { ...v, bodies: kept ? [...bodies!] : held }, summary: moveSummary(labels, v, verb) };
   const feature: Feature = kept
