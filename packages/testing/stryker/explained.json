@@ -5411,6 +5411,48 @@
     "why": "The kept shapes' extrude lookup (issue #220, 11-14): with slash === 0 the extrude looked up is byId.get(\"\"), and no item has an empty id, so !f refuses the key before the profile-key test is read, with the same words."
   },
   {
+    "file": "workspaces/design/src/document.ts",
+    "mutator": "ConditionalExpression",
+    "original": "across !== null",
+    "replacement": "true",
+    "why": "Without a construction plane `across` is null, so byId.get(null) is undefined and the check asks !ID_SHAPE.test(null): String(null) is \"null\", which ID_SHAPE matches, so it refuses nothing, as the skipped check does."
+  },
+  {
+    "file": "workspaces/design/src/document.ts",
+    "mutator": "EqualityOperator",
+    "original": "there.at >= byId.get(f.id)!.at",
+    "replacement": "there.at > byId.get(f.id)!.at",
+    "why": "A Mirror across itself (construct:<its own id>) is the only case at equal places, and a Duplicate is not a construction, so !isConstructItem refuses it either way."
+  },
+  {
+    "file": "workspaces/design/src/document.ts",
+    "mutator": "OptionalChaining",
+    "original": "CONSTRUCT_KINDS[there.item.intent.parameters.make as ConstructKind]?.makes",
+    "replacement": "CONSTRUCT_KINDS[there.item.intent.parameters.make as ConstructKind].makes",
+    "why": "The reader checks Duplicates and constructions in one pass in timeline order, so a construction before the Mirror has had its make checked as a known kind before this line reads CONSTRUCT_KINDS for it; the ?. never meets undefined."
+  },
+  {
+    "file": "workspaces/design/src/document.ts",
+    "mutator": "EqualityOperator",
+    "original": "there.at >= byId.get(f.id)!.at",
+    "replacement": "there.at > byId.get(f.id)!.at",
+    "why": "A Chamfer naming its own body (body:<its own id>) is the only case at equal places, and a Chamfer makes no body, so isBodyOf refuses it either way."
+  },
+  {
+    "file": "workspaces/design/src/document.ts",
+    "mutator": "ConditionalExpression",
+    "original": "ref.kind !== \"construct\"",
+    "replacement": "false",
+    "why": "Only a construct ref has an item: for an origin, face, edge or corner ref ref.item is undefined, byId.get(undefined) is undefined and !ID_SHAPE.test(undefined) is false (String(undefined) is \"undefined\", which ID_SHAPE matches), so going on refuses nothing, as continue does."
+  },
+  {
+    "file": "workspaces/design/src/document.ts",
+    "mutator": "ArrayDeclaration",
+    "original": "[]",
+    "replacement": "[\"Stryker was here\"]",
+    "why": "The fallback list when the data has no timeline: a list holding a string has no record in it, so some() finds nothing either way."
+  },
+  {
     "file": "packages/account/src/data.ts",
     "mutator": "OptionalChaining",
     "original": "store?.setItem",
