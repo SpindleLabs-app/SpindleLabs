@@ -81,10 +81,10 @@ export function k3tq7e(p0, p1) {
     return takeFromExternrefTable0(ret[0]);
 }
 
-export function k7vbqz(p0, p1, p2, p3, p4, p5, p6, p7, p8, p9) {
+export function k7vbqz(p0, p1, p2, p3, p4, p5, p6, p7, p8, p9, p10) {
     const ptr0 = passArray8ToWasm0(p0, wasm.__wbindgen_malloc);
     const len0 = WASM_VECTOR_LEN;
-    const ret = wasm.k7vbqz(ptr0, len0, p1, p2, p3, p4, p5, p6, p7, p8, isLikeNone(p9) ? 0 : addToExternrefTable0(p9));
+    const ret = wasm.k7vbqz(ptr0, len0, p1, p2, p3, p4, p5, p6, p7, p8, isLikeNone(p9) ? 0 : addToExternrefTable0(p9), p10);
     if (ret[2]) {
         throw takeFromExternrefTable0(ret[1]);
     }
@@ -213,10 +213,10 @@ export function u3qr1f(p0, p1, p2) {
     return takeFromExternrefTable0(ret[0]);
 }
 
-export function uq4cun(p0, p1, p2, p3, p4, p5, p6, p7) {
+export function uq4cun(p0, p1, p2, p3, p4, p5, p6, p7, p8) {
     const ptr0 = passArray8ToWasm0(p0, wasm.__wbindgen_malloc);
     const len0 = WASM_VECTOR_LEN;
-    const ret = wasm.uq4cun(ptr0, len0, p1, p2, p3, p4, p5, p6, isLikeNone(p7) ? 0 : addToExternrefTable0(p7));
+    const ret = wasm.uq4cun(ptr0, len0, p1, p2, p3, p4, p5, p6, isLikeNone(p7) ? 0 : addToExternrefTable0(p7), p8);
     if (ret[2]) {
         throw takeFromExternrefTable0(ret[1]);
     }
