@@ -812,6 +812,13 @@
     "why": "Only reached on equal distances, where segment numbers are 0 or more, so the mutant gives 0 or a positive number; V8's sort treats any comparator result that is not below 0 as 'keep the order', and segments were pushed in increasing order."
   },
   {
+    "file": "packages/viewport/src/picking.ts",
+    "mutator": "ConditionalExpression",
+    "original": "rays[0][0]?.at === 0",
+    "replacement": "false",
+    "why": "With no face under the tap the nearest face is the one met first at 0 px: rays[0][0], which is never skipped (i = 0, at 0 is within reach) and which no later start can beat (at < 0 never holds). So under ?? nearest gives the same face."
+  },
+  {
     "file": "packages/viewport/src/sketch-view.ts",
     "mutator": "ConditionalExpression",
     "original": "along === 0",
@@ -3703,6 +3710,27 @@
     "why": "remove's mark for a clock that reads NaN: any text in \"deleted\" makes it a mark, and nothing reads the time it holds."
   },
   {
+    "file": "packages/storage/src/store.ts",
+    "mutator": "EqualityOperator",
+    "original": "start < candidates.length",
+    "replacement": "start <= candidates.length",
+    "why": "The extra pass reads an empty batch: Promise.all([]) is [], nothing is compared and found is unchanged."
+  },
+  {
+    "file": "packages/storage/src/store.ts",
+    "mutator": "BlockStatement",
+    "original": "{ return null; // can't be read: not a copy of anything }",
+    "replacement": "{}",
+    "why": "undefined never equals a wanted project's text, just as null doesn't."
+  },
+  {
+    "file": "packages/storage/src/store.ts",
+    "mutator": "ConditionalExpression",
+    "original": "summary.name === p.name",
+    "replacement": "true",
+    "why": "read[k] === texts[i] already holds only for the same name: the text is projectToJson of the stored project, which carries its name, and a save writes that name into the summary too."
+  },
+  {
     "file": "packages/storage/src/unsaved.ts",
     "mutator": "ConditionalExpression",
     "original": "!s.problem",
@@ -5754,6 +5782,41 @@
     "why": "asideKeysOf's sort (issue #277): with x never aside the comparator gives 0 or -1, and an engine's stable insertion sort only asks with x as the later key, so an aside key still moves after every own key; the y.endsWith twin is killed by test/mutation-survivors-11-05.test.ts."
   },
   {
+    "file": "packages/storage/src/unsaved.ts",
+    "mutator": "ConditionalExpression",
+    "original": "!journal",
+    "replacement": "false",
+    "why": "With no journal the loop's first journal.length throws inside the try, whose catch returns the same empty list."
+  },
+  {
+    "file": "packages/storage/src/unsaved.ts",
+    "mutator": "EqualityOperator",
+    "original": "i < journal.length",
+    "replacement": "i <= journal.length",
+    "why": "Storage.key past the last index is null (the spec, and every fake here), which heldProjects skips."
+  },
+  {
+    "file": "packages/storage/src/unsaved.ts",
+    "mutator": "EqualityOperator",
+    "original": "i < journal.length",
+    "replacement": "i <= journal.length",
+    "why": "Storage.key past the last index is null, which unreadableKeysOf skips (k !== null)."
+  },
+  {
+    "file": "packages/storage/src/unsaved.ts",
+    "mutator": "ConditionalExpression",
+    "original": "raw === null",
+    "replacement": "false",
+    "why": "readJournalEntry(null) finds no head (the regex reads null as the text 'null'), so the entry is not kept and is skipped as before."
+  },
+  {
+    "file": "packages/storage/src/unsaved.ts",
+    "mutator": "BlockStatement",
+    "original": "{ return false; }",
+    "replacement": "{}",
+    "why": "looksLikeProject's one caller only tests it for truth, and undefined is as false as false."
+  },
+  {
     "file": "packages/storage/src/autosave.ts",
     "mutator": "StringLiteral",
     "original": "\"\"",
@@ -6039,5 +6102,19 @@
     "original": "r.kind === \"failed\"",
     "replacement": "true",
     "why": "Only a failed reply has a reason: an ok or signed-out reply has none, so r.reason === \"rejected\" alone already means a refused request."
+  },
+  {
+    "file": "packages/viewport/src/pane.ts",
+    "mutator": "ConditionalExpression",
+    "original": "picking === undefined",
+    "replacement": "false",
+    "why": "wants is keyed by pane objects, so wants.get(undefined) is undefined and the ?? null gives null as before."
+  },
+  {
+    "file": "packages/viewport/src/pane.ts",
+    "mutator": "ConditionalExpression",
+    "original": "said",
+    "replacement": "true",
+    "why": "Storing a null or undefined says nothing new: pickWants and sync both read wants.get(key) ?? null, null either way, and nothing asks wants.has."
   }
 ]

@@ -26,5 +26,6 @@
   "ignorePatterns": [
     "node_modules"
   ],
-  "timeoutMS": 10000
+  "timeoutMS": 10000,
+  "timeoutFactor": 4
 }
