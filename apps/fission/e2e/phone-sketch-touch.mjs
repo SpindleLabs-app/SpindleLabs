@@ -6,7 +6,8 @@
 //    typed-size boxes take no taps until typed in, so the next tap of a line,
 //    rectangle or circle, landing where the boxes stand, places the point and
 //    opens no keyboard; the sketch toolbar's Type button shows there.
-//    (A tablet, 1024 × 768 touch, keeps boxes that take taps and no Type.)
+//    A touch tablet (1024 × 768, 768 × 1024) does the same (SL #764 item 8:
+//    its boxes took the next tap), with Type to type.
 // 2. A short phone held sideways, also 640 px wide or less (568 × 320,
 //    600 × 340, 640 × 300) and the usual sizes: in a sketch and at the plane
 //    prompt no button's centre lies under another element.
@@ -100,17 +101,58 @@ try {
     if (!(await page.isVisible(".sketchbar-type"))) fail(`${w}x${h}: no Type button in the sketch toolbar`);
     await page.context().close();
   }
-  {
-    // A tablet is unchanged: its boxes take taps (no hover), no Type button.
-    const page = await phone(1024, 768);
+  // 1b. A touch tablet, upright and sideways (SL #764 item 8, app-wide hunt 2026-11-14 L2): its boxes took taps, so a tap
+  // where they stood put the keys in a box instead of placing the next point. Now as on a phone: the boxes take no tap
+  // until typed in, and Type in the sketch toolbar opens them.
+  for (const [w, h] of [[1024, 768], [768, 1024]]) {
+    const page = await phone(w, h);
     await enterSketch(page);
-    await page.tap("#sketch-tool-line");
     const free = await freePoints(page);
-    await page.touchscreen.tap(...free[Math.floor(free.length / 2)]); await page.waitForTimeout(300);
-    const pe = await page.$eval("#typed-entry", (e) => getComputedStyle(e).pointerEvents);
-    if (pe !== "auto") fail(`1024x768: tablet boxes take taps (pointer-events ${pe})`);
-    if (await page.isVisible(".sketchbar-type")) fail("1024x768: a tablet shows the Type button");
+    const c = await page.locator("#viewport canvas").boundingBox();
+    free.sort((p, q) => Math.hypot(p[0] - c.x - c.width / 2, p[1] - c.y - c.height / 2) - Math.hypot(q[0] - c.x - c.width / 2, q[1] - c.y - c.height / 2));
+    const A = free[0];
+    await page.tap("#sketch-tool-line");
+    await page.touchscreen.tap(...A); await page.waitForTimeout(400);
+    const box = await page.locator("#typed-entry").boundingBox();
+    assert.ok(box, `${w}x${h}: the size boxes show after the first tap`);
+    const width = await page.locator("#typed-entry input").first().boundingBox();
+    const hit = await page.evaluate(([x, y]) => document.elementFromPoint(x, y)?.closest("#typed-entry") != null, [width.x + width.width / 2, width.y + width.height / 2]);
+    if (hit) fail(`${w}x${h}: the size boxes take the next tap`);
+    const before = await page.getAttribute("#viewport", "data-sketch-points");
+    await page.touchscreen.tap(width.x + width.width / 2, width.y + width.height / 2); await page.waitForTimeout(400);
+    const focus = await page.evaluate(() => document.activeElement?.id || "");
+    if (focus.startsWith("typed-")) fail(`${w}x${h}: the next tap opened a size box (focus ${focus})`);
+    if ((await page.getAttribute("#viewport", "data-sketch-points")) === before) fail(`${w}x${h}: the next tap placed no point`);
+    // Type is there to type sizes, and opens the boxes.
+    if (!(await page.isVisible(".sketchbar-type"))) fail(`${w}x${h}: no Type button in the sketch toolbar`);
+    else {
+      await page.tap(".sketchbar-type"); await page.waitForTimeout(300);
+      const typing = await page.evaluate(() => document.activeElement?.id || "");
+      if (!typing.startsWith("typed-")) fail(`${w}x${h}: Type opened no size box (focus ${typing})`);
+      // 16 px text, so a phone or tablet browser never zooms the page onto the box.
+      const size = await page.locator("#typed-entry input").first().evaluate((e) => getComputedStyle(e).fontSize);
+      if (size !== "16px") fail(`${w}x${h}: the size box's text is ${size}, not 16px`);
+    }
     await page.context().close();
+  }
+  {
+    // The control: a computer with a mouse keeps boxes that a click types in, and no Type button.
+    const context = await browser.newContext({ viewport: { width: 1280, height: 800 } });
+    const page = await context.newPage();
+    await page.addInitScript(() => indexedDB.deleteDatabase("fission"));
+    watchErrors(page);
+    await page.goto("http://localhost:4414/?test-hooks#design");
+    await page.locator("#start-hint").waitFor();
+    await page.click("#create-sketch");
+    await page.waitForTimeout(300);
+    await page.click("#sketch-plane-XY");
+    await page.waitForTimeout(800);
+    await page.click("#sketch-tool-line");
+    const free = await freePoints(page);
+    await page.mouse.click(...free[Math.floor(free.length / 2)]); await page.waitForTimeout(300);
+    if (await page.isVisible(".sketchbar-type")) fail("1280x800 with a mouse: the Type button shows");
+    if (!(await page.isVisible("#typed-entry"))) fail("1280x800 with a mouse: no size boxes");
+    await context.close();
   }
 
   // 2. Nothing always-on lies on something else, in a sketch and at the plane prompt.
