@@ -673,3 +673,13 @@ test("fileCrawl: creeps toward 0.99 with a time constant of twice the time befor
   assert.equal(fileCrawl(0.5, 1000, 0), 0.5);
   assert.equal(fileCrawl(0.5, 1000, -5), 0.5);
 });
+
+test("holdsUp: a body whose lowest point is not known (a NaN corner) holds nothing up", () => {
+  // Three bodies: a floor triangle at z 0 far off, the wide outline with one more triangle whose corners are NaN (so its
+  // lowest point is NaN and it is left out of the floor), and the underside at z 10.1 over the outline. The outline's
+  // body is not known to be lower, so it is not asked whether it holds the underside: body 3 hangs 10.1 mm up.
+  const floor = stl([[[300, 300, 0], [301, 300, 0], [300, 301, 0]]]);
+  const unknown = stl([...loop([[-50, -50], [50, -50], [50, 50], [-50, 50]]), [[NaN, NaN, NaN], [NaN, NaN, NaN], [NaN, NaN, NaN]]]);
+  assert.ok(Number.isNaN(stlLowestZ(unknown)));
+  assert.equal(levelNoteOf([floor, unknown, CCW]), hangs(3, 10.1));
+});
