@@ -95,14 +95,16 @@ export async function startAccounts(service: { url: string; anonKey: string }, h
     now: () => Date.now(),
     random: (bytes) => void crypto.getRandomValues(bytes as Uint8Array<ArrayBuffer>),
     // Whichever request found it (designs, settings, sharing): the button stops showing the name, and the page says so.
-    sessionLost: () => {
+    sessionLost: (user) => {
       lost = true;
+      void designs?.away(user); // projects made from now on are asked about at the next sign-in (#628 item 5)
       say?.();
     },
   });
   const store = browserStore();
   const data = accountData(client, store);
-  const designs = host ? startDesigns(client, host, store) : null;
+  // Read by sessionLost above, which is only called from a request, and the first one is made after this line.
+  const designs: Designs | null = host ? startDesigns(client, host, store) : null;
   const settings = settingsHost ? startSettings(client, store, settingsHost) : null;
   // The print log kept in the account (account features 5): the log itself works without an account (src/print-log.ts).
   const printLog = startPrintLogSync(client, store, localStorageOrNull());
@@ -277,6 +279,8 @@ function accountUi(client: AuthClient, data: AccountData, store: SmallStore, des
         data.forgetEmailChoice();
         settings?.forget(state.user.id);
         printLogForget?.(state.user.id, false);
+        // The projects here now are noted, so one made before this person signs in here again is asked about first.
+        void designs?.away(state.user.id);
         const result = await client.signOut();
         // Signed out on this device either way: nothing here can use the old session any more.
         const why = { offline: "couldn't be reached", unavailable: "is having trouble right now", rejected: "didn't accept the request" };

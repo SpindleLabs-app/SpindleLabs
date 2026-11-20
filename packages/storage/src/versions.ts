@@ -56,6 +56,17 @@ async function times(kv: KeyValue, id: string): Promise<number[]> {
 }
 
 /**
+ * The newest kept version not saved after `at`, the one a state saved at `at` is measured from; null when there is none.
+ * One saved later is passed over: a design brought from a device whose clock is ahead carries that device's save time,
+ * and measured from it no state here would be kept until real time caught up (issue #628 item 8).
+ */
+export function previousKept(kept: readonly number[], at: number): number | null {
+  let best: number | null = null;
+  for (const t of kept) if (t <= at && (best === null || t > best)) best = t;
+  return best;
+}
+
+/**
  * `store`, written over `kv`, keeping earlier versions (`gapMs` apart at most, the newest `limit`). `readers` open a
  * version as `open` does.
  */
@@ -68,7 +79,8 @@ export function versionedStore(store: ProjectStore, kv: KeyValue, readers: reado
     try {
       const kept = await times(kv, id);
       // A version already kept at that very time stays as it is (two saves in one millisecond).
-      if (!kept.includes(at) && (kept.length === 0 || at - kept[0] >= gapMs || (replaced !== null && replaced - at >= gapMs))) {
+      const prev = previousKept(kept, at);
+      if (!kept.includes(at) && (prev === null || at - prev >= gapMs || (replaced !== null && replaced - at >= gapMs))) {
         await kv.set(prefix(id) + at, text);
         kept.unshift(at);
       }
@@ -83,7 +95,8 @@ export function versionedStore(store: ProjectStore, kv: KeyValue, readers: reado
    */
   async function wouldKeep(id: string, at: number, replaced: number) {
     const kept = await times(kv, id);
-    return kept.length === 0 || at - kept[0] >= gapMs || replaced - at >= gapMs || kept.length > limit;
+    const prev = previousKept(kept, at);
+    return prev === null || at - prev >= gapMs || replaced - at >= gapMs || kept.length > limit;
   }
   async function forgetVersions(id: string) {
     for (const t of await times(kv, id)) await kv.delete(prefix(id) + t);

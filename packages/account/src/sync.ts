@@ -14,6 +14,11 @@
 //   - Each link is written as soon as its save is answered, and a new design is noted ("adding") before it is sent: a
 //     browser that can't keep the links sends nothing new, and a save whose answer was lost is recognised next round
 //     (the account's copy is the very text sent) instead of becoming a duplicate or a "(copy)".
+//   - Signing out notes the projects then in this browser (AWAY_PREFIX + user id): one made while nobody was signed in
+//     (on a shared computer, maybe by someone else) is never sent at this person's next sign-in until they say it is
+//     theirs, as the first time (issue #628 item 5).
+//   - A big design whose save ran out of time doesn't hold up the rest: the round goes on with the others, and stops at
+//     the next request that fails (issue #628 item 7).
 // The links live in this browser's storage, per person (LINKS_PREFIX + user id), never sent anywhere.
 
 import type { SmallStore } from "./auth.ts";
@@ -21,6 +26,14 @@ import type { DataResult } from "./data.ts";
 import type { DesignRow, DesignsApi, SaveAnswer, SaveDesign, Source } from "./designs.ts";
 
 export const LINKS_PREFIX = "spindle.account.designs/";
+/** Where signing out notes, per person, the ids of the projects then in this browser (a JSON list); see `away`. */
+export const AWAY_PREFIX = "spindle.account.designs-away/";
+/**
+ * A design's text this long or longer whose save didn't answer in time ("offline") is passed over for this round and the
+ * others still go: its own request was given longer (auth.ts `requestMs`), and a slow upload, not a lost connection, is
+ * the likely cause. 64 KiB is about a second at 0.5 Mbit/s: a smaller one failing means the connection is the trouble.
+ */
+export const SLOW_SAVE_BYTES = 64 * 1024;
 
 /** A project kept in this browser, as the project list gives it. */
 export interface LocalProject {
@@ -113,6 +126,23 @@ export function readLinks(store: SmallStore, userId: string): Map<string, Link> 
   return links;
 }
 
+/** The ids noted when `userId` last signed out here, or null when there is no note (an empty note stands for a damaged one: everything unlinked is asked about). */
+function readAway(store: SmallStore, userId: string): Set<string> | null {
+  let raw: string | null;
+  try {
+    raw = store.getItem(AWAY_PREFIX + userId);
+  } catch {
+    return null; // storage blocked: nothing can be sent anyway (the links can't be kept)
+  }
+  if (raw === null) return null;
+  try {
+    const v = JSON.parse(raw) as unknown;
+    return new Set(Array.isArray(v) ? v.filter((x): x is string => typeof x === "string") : []);
+  } catch {
+    return new Set();
+  }
+}
+
 function writeLinks(store: SmallStore, userId: string, links: Map<string, Link>): boolean {
   try {
     store.setItem(LINKS_PREFIX + userId, JSON.stringify(Object.fromEntries(links)));
@@ -122,10 +152,11 @@ function writeLinks(store: SmallStore, userId: string, links: Map<string, Link>)
   }
 }
 
-/** Forgets every link of `userId` in this browser (signing out, deleting the account, turning keeping off). */
+/** Forgets every link of `userId` in this browser (deleting the account), and the note made when they signed out. */
 export function forgetLinks(store: SmallStore, userId: string): void {
   try {
     store.removeItem(LINKS_PREFIX + userId);
+    store.removeItem(AWAY_PREFIX + userId);
   } catch {
     // Storage blocked: nothing was kept.
   }
@@ -160,7 +191,19 @@ export function designSync(deps: SyncDeps) {
       // listed but unreadable this round keeps its link (its "left out" or "deleted" mark above all).
       for (const id of [...links.keys()]) if (!listed.some((p) => p.id === id)) links.delete(id);
       const projects = listed.filter((p) => p.problem === undefined);
+      // Made while this person was signed out (no link, not here when they signed out): not sent until they say so.
+      const away = readAway(store, userId);
+      const arrived = away === null ? new Set<string>() : new Set(listed.filter((p) => !links.has(p.id) && !away.has(p.id)).map((p) => p.id));
+      if (away !== null && arrived.size === 0) {
+        try {
+          store.removeItem(AWAY_PREFIX + userId);
+        } catch {
+          return storage;
+        }
+      }
       let sent = 0;
+      /** A big design's save that ran out of time, passed over so the others still go (said at the end of the round). */
+      let slow: DataResult<never> | null = null;
       let full = false;
       const copies: string[] = [];
       const tooBig: string[] = [];
@@ -191,6 +234,7 @@ export function designSync(deps: SyncDeps) {
       }
 
       for (const p of projects) {
+        if (arrived.has(p.id)) continue;
         const text = await deps.local.text(p.id);
         if (text === null) continue;
         const hash = await deps.hash(text);
@@ -271,6 +315,11 @@ export function designSync(deps: SyncDeps) {
             if (!keep()) return storage;
             continue;
           }
+          // A big design that ran out of time: the rest still go, unless one of them fails too (#628 item 7).
+          if (r.kind === "failed" && r.reason === "offline" && text.length >= SLOW_SAVE_BYTES && slow === null) {
+            slow = r;
+            continue;
+          }
           return done(r); // offline, the service down, an answer not understood: an add stays noted, the rest go next round
         }
         const a = r.value;
@@ -294,7 +343,8 @@ export function designSync(deps: SyncDeps) {
           return done({ kind: "off" });
         } else restore(); // "changed" on a brand new design can't happen; left for the next round
       }
-      return done(full ? { kind: "full", sent } : { kind: "done", sent, copies, tooBig, ...(refused.length ? { refused } : {}), ...(gone.length ? { gone } : {}) });
+      if (slow !== null) return done(slow); // said and tried again later, as any request that couldn't reach the account
+      return done(full ? { kind: "full", sent } : { kind: "done", sent, copies, tooBig, ...(arrived.size ? { waiting: true as const } : {}), ...(refused.length ? { refused } : {}), ...(gone.length ? { gone } : {}) });
     });
   }
 
@@ -381,13 +431,98 @@ export function designSync(deps: SyncDeps) {
     });
   }
 
+  /**
+   * Signing out (or the session ending under the app): notes the projects in this browser now, so one made before this
+   * person signs in here again is asked about first (#628 item 5). Their links stay, so nothing is sent twice.
+   */
+  async function away(): Promise<boolean> {
+    // Not inside the lock: a round still running (a slow upload) would hold it, and a project made meanwhile would be
+    // noted as here before. That round stops at its next request (`stillMine`), and never removes a note it didn't read.
+    if (firstTime()) return true; // never answered the first-time question: asked anyway
+    // Noted already (signed out twice with no round between, say): the projects made since are not theirs to keep yet.
+    if (readAway(store, userId) !== null) return true;
+    const ids = (await deps.local.list()).map((p) => p.id);
+    try {
+      store.setItem(AWAY_PREFIX + userId, JSON.stringify(ids));
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
+  /** How many projects were made in this browser while this person was signed out, waiting for them to say they are theirs. */
+  async function arrivedCount(): Promise<number> {
+    const away = readAway(store, userId);
+    if (away === null) return 0;
+    const links = readLinks(store, userId);
+    return (await deps.local.list()).filter((p) => !links.has(p.id) && !away.has(p.id)).length;
+  }
+
+  /** The answer about those projects: `keep` sends them from now on; otherwise they are left out as "left" (`includeLeft` later). */
+  async function arrivedChoice(keep: boolean): Promise<boolean> {
+    return deps.lock(async () => {
+      const away = readAway(store, userId);
+      if (away === null) return true;
+      if (!keep) {
+        // Only those made while signed out: a project of theirs from before signing out that wasn't sent yet still goes.
+        const links = readLinks(store, userId);
+        for (const p of await deps.local.list()) {
+          if (links.has(p.id) || away.has(p.id)) continue;
+          const text = p.problem === undefined ? await deps.local.text(p.id) : null;
+          links.set(p.id, { remote: "", revision: 1, hash: text === null ? "" : await deps.hash(text), skip: "left" });
+        }
+        if (!writeLinks(store, userId, links)) return false;
+      }
+      try {
+        store.removeItem(AWAY_PREFIX + userId);
+        return true;
+      } catch {
+        return false;
+      }
+    });
+  }
+
+  /**
+   * Projects changed here whose designs were deleted from the account (#628 item 2): how many, read from this browser
+   * only. A link is marked "gone" only by a save of a change, so each one is a project changed since; one deleted from
+   * the account and never changed here keeps its plain link and is never sent (deleting it there was the person's choice).
+   */
+  function goneHere(): number {
+    let n = 0;
+    for (const l of readLinks(store, userId).values()) if (l.skip === "gone") n++;
+    return n;
+  }
+
+  /** Keeps those projects in the account again: each is sent as a new design next round (#628 item 2). */
+  async function keepGone(): Promise<boolean> {
+    return deps.lock(async () => {
+      const links = readLinks(store, userId);
+      const again: string[] = [];
+      for (const [id, l] of [...links]) {
+        if (l.skip !== "gone") continue;
+        links.delete(id);
+        again.push(id);
+      }
+      // With no link they would look made while signed out, when that note is waiting: they were here, and theirs.
+      const away = readAway(store, userId);
+      if (away !== null && again.length) {
+        try {
+          store.setItem(AWAY_PREFIX + userId, JSON.stringify([...away, ...again]));
+        } catch {
+          return false;
+        }
+      }
+      return writeLinks(store, userId, links);
+    });
+  }
+
   /** The design in the account a project in this browser is kept as, if any. */
   function remoteOf(localId: string): string | null {
     const l = readLinks(store, userId).get(localId);
     return l && l.skip === undefined && l.remote !== "" ? l.remote : null;
   }
 
-  return { syncAll, bring, remoteOf, firstTime, firstChoice, leftCount, includeLeft };
+  return { syncAll, bring, remoteOf, firstTime, firstChoice, leftCount, includeLeft, away, arrivedCount, arrivedChoice, goneHere, keepGone };
 }
 
 export type DesignSync = ReturnType<typeof designSync>;

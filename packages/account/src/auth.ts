@@ -31,7 +31,9 @@ export interface AuthDeps {
    * account's sessions ended elsewhere): nothing is kept in the account from then on, which the shell must say. It
    * was silent, the top bar still showing the person's name (lost-work hunt 2026-11-12, issue #628 item 4).
    */
-  readonly sessionLost?: () => void;
+  readonly sessionLost?: (userId: string) => void;
+  /** A signal that aborts after `ms` (AbortSignal.timeout when left out): tests give a clock of their own. */
+  readonly timeout?: (ms: number) => AbortSignal;
 }
 
 type LockFn = <T>(name: string, fn: () => Promise<T>) => Promise<T>;
@@ -51,8 +53,21 @@ export const REFRESH_MARGIN_S = 60;
 export const PENDING_MAX_MS = 10 * 60 * 1000;
 /** Most sign-ins kept started at once (two tabs, or Sign in pressed again after going back); the oldest goes first. */
 export const PENDING_LIMIT = 3;
-/** How long one request to the service may take (milliseconds). */
+/** How long one small request to the service may take (milliseconds); a big one gets longer (`requestMs`). */
 export const REQUEST_MS = 15_000;
+/**
+ * The slowest connection a big request is still given time for, in bytes a second (about 0.4 Mbit/s, a weak phone signal):
+ * one 15 s limit for everything meant a design of a few MB could never be sent on a slow upload (issue #628 item 7).
+ */
+export const SLOW_LINK_BYTES_PER_S = 50 * 1024;
+/**
+ * The time limit for a request that sends `sent` bytes and may get up to `answerUpTo` back: REQUEST_MS, plus the time
+ * those bytes take at SLOW_LINK_BYTES_PER_S.
+ */
+export function requestMs(sent: number, answerUpTo = 0): number {
+  const bytes = Math.max(0, sent) + Math.max(0, answerUpTo);
+  return REQUEST_MS + Math.ceil((bytes * 1000) / SLOW_LINK_BYTES_PER_S);
+}
 /** How long sending or fetching a design's file through Storage may take (milliseconds): up to 5 MiB on a slow connection. */
 export const FILE_MS = 120_000;
 
@@ -157,18 +172,20 @@ export function authClient(deps: AuthDeps) {
 
   const post = (path: string, body: unknown, bearer?: string) => request("POST", path, body, bearer);
 
-  async function request(method: "GET" | "POST" | "PATCH", path: string, body: unknown, bearer?: string, extra: Record<string, string> = {}): Promise<Reply> {
+  async function request(method: "GET" | "POST" | "PATCH", path: string, body: unknown, bearer?: string, extra: Record<string, string> = {}, answerUpTo = 0): Promise<Reply> {
     const headers: Record<string, string> = { ...extra, apikey: config.anonKey, "content-type": "application/json" };
     if (bearer) headers.authorization = `Bearer ${bearer}`;
+    const text = method === "GET" ? undefined : JSON.stringify(body);
     let res: Response;
     try {
       res = await deps.fetch(`${config.url}${path}`, {
         method,
         headers,
-        body: method === "GET" ? undefined : JSON.stringify(body),
+        body: text,
         credentials: "omit",
         redirect: "error",
-        signal: AbortSignal.timeout(REQUEST_MS),
+        // UTF-8 is at most 3 bytes per UTF-16 unit; JSON text is nearly all ASCII, so its length is the bytes sent.
+        signal: (deps.timeout ?? ((ms: number) => AbortSignal.timeout(ms)))(requestMs(text?.length ?? 0, answerUpTo)),
       });
     } catch {
       return { ok: false, reason: "offline" };
@@ -184,8 +201,8 @@ export function authClient(deps: AuthDeps) {
      * A request to the service's data API as the signed-in person (`path` under /rest/v1/), with a token refreshed first
      * when needed. The database's row level security decides what it may read or change.
      */
-    async asPerson(method: "GET" | "POST" | "PATCH", path: string, body?: unknown): Promise<PersonReply> {
-      return asPersonTo(method, `/rest/v1/${path}`, body, method === "PATCH" ? { prefer: "return=minimal" } : {});
+    async asPerson(method: "GET" | "POST" | "PATCH", path: string, body?: unknown, answerUpTo = 0): Promise<PersonReply> {
+      return asPersonTo(method, `/rest/v1/${path}`, body, method === "PATCH" ? { prefer: "return=minimal" } : {}, answerUpTo);
     },
 
     /**
@@ -403,7 +420,7 @@ export function authClient(deps: AuthDeps) {
         // Only when the stored session is still the one refreshed: another tab may have refreshed it meanwhile.
         if (stored === renewedText) {
           remove(SESSION_KEY);
-          deps.sessionLost?.();
+          deps.sessionLost?.(s.user.id);
         }
         return samePerson() ? token(false) : { kind: "signed-out" };
       }
@@ -453,14 +470,14 @@ export function authClient(deps: AuthDeps) {
   }
 
   /** A request as the signed-in person; one refused as unauthorised (401) is renewed once and sent again. */
-  async function asPersonTo(method: "GET" | "POST" | "PATCH", path: string, body: unknown, extra: Record<string, string>): Promise<PersonReply> {
+  async function asPersonTo(method: "GET" | "POST" | "PATCH", path: string, body: unknown, extra: Record<string, string>, answerUpTo = 0): Promise<PersonReply> {
     let t = await token(true);
     if (t.kind !== "ok") return t;
-    let reply = await request(method, path, body ?? {}, t.token, extra);
+    let reply = await request(method, path, body ?? {}, t.token, extra, answerUpTo);
     if (!reply.ok && reply.status === 401) {
       t = await token(true, t.token);
       if (t.kind !== "ok") return t;
-      reply = await request(method, path, body ?? {}, t.token, extra);
+      reply = await request(method, path, body ?? {}, t.token, extra, answerUpTo);
     }
     return reply.ok ? { kind: "ok", body: reply.body } : { kind: "failed", reason: reply.reason };
   }

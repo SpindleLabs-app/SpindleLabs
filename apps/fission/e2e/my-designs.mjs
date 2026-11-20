@@ -9,11 +9,13 @@
 //     (the box comes up), and its own change then goes back over that design;
 //   - Delete asks first, then deletes it from the account, not from the browser;
 //   - the account dialog's delete words name My designs;
-//   - at 375 px with touch the dialog fills the screen, every button is 44 px tall, nothing runs off the side.
+//   - at 375 px with touch the dialog fills the screen, every button is 44 px tall, nothing runs off the side;
+//   - signed out on a shared computer, a project made meanwhile is asked about at the next sign-in (#628 item 5), and a
+//     design deleted from the account but changed here is offered back, Keep in my account again (#628 item 2).
 // Run with `npm run e2e` (it builds its own copy with accounts pointed at the fake). SHOTS=dir saves screenshots.
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
-import { mkdtempSync, rmSync } from "node:fs";
+import { mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -313,6 +315,64 @@ try {
     assert.equal(await p.page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true, "no sideways scroll");
     if (shots) await p.page.screenshot({ path: `${shots}/my-designs-375.png` });
     await p.context.close();
+  });
+
+  await check("signed out on a shared computer: a project made meanwhile is asked about at the next sign-in, Not now sends nothing (issue #628 item 5)", async () => {
+    const svc2 = fakeService();
+    const c = await device(svc2);
+    await startWithBox(c.page);
+    await until(c.page, () => document.getElementById("save-status")?.dataset.state === "saved", undefined, "saved");
+    await signIn(c.page);
+    await until(c.page, () => document.getElementById("my-designs")?.open, undefined, "asks the first time");
+    await c.page.click(".my-designs-keep-others");
+    await until(c.page, () => document.querySelectorAll("#my-designs-items .my-design").length === 1, undefined, "kept");
+    await c.page.click("#my-designs-close");
+    await c.page.click("#account-open");
+    await c.page.click('#account button:has-text("Sign out")');
+    await until(c.page, () => document.getElementById("account-open")?.textContent === "Sign in", undefined, "signed out");
+    await c.page.click("#account .account-close");
+    // Someone else's project, opened from a file and changed while nobody is signed in (kept at its first change).
+    await c.page.setInputFiles("#open-file", { name: "bo.spindle", mimeType: "application/json", buffer: readFileSync(new URL("./plate-on-column.spindle", import.meta.url)) });
+    await until(c.page, () => document.getElementById("save-status")?.dataset.state === "saved", undefined, "opened");
+    await insertPreset(c.page, "sphere");
+    await until(c.page, () => document.getElementById("save-status")?.dataset.state === "saved", undefined, "saved");
+    const sent = svc2.saves.length;
+    // Kept in this browser as a second project (not only in the journal) before anyone signs in.
+    await chooseFile(c.page, "file-projects");
+    await until(c.page, () => document.querySelectorAll("#projects-items .project-row").length === 2, undefined, "two projects kept here");
+    await c.page.click("#projects-close");
+    await signIn(c.page);
+    await until(c.page, () => document.getElementById("my-designs")?.open, undefined, "My designs opens to ask again");
+    await until(c.page, () => /1 project was in this browser before you signed in/.test(document.getElementById("my-designs-others")?.textContent ?? ""), undefined, "the question");
+    if (shots) await c.page.screenshot({ path: `${shots}/my-designs-ask-again-1280.png` });
+    await c.page.waitForTimeout(500);
+    assert.equal(svc2.saves.length, sent, "nothing sent before the answer");
+    await c.page.click(".my-designs-leave-others");
+    await until(c.page, () => /Keep them too/.test(document.getElementById("my-designs-others")?.textContent ?? ""), undefined, "left out, offered again");
+    await c.page.waitForTimeout(500);
+    assert.deepEqual(svc2.rows.map((r) => r.name), ["Untitled"], "only Ada's design is in her account");
+    // Keep them too: it goes, and is then the open project, linked.
+    await c.page.click(".my-designs-keep-others");
+    await until(c.page, () => document.querySelectorAll("#my-designs-items .my-design").length === 2, undefined, "both kept");
+    await c.page.click("#my-designs-close");
+
+    // Item 2's way back: that design deleted from the account (another device), then changed here.
+    const sphere = svc2.rows.find((r) => r.body.includes("sphere"));
+    assert.ok(sphere, "the sphere's design");
+    svc2.rows = svc2.rows.filter((r) => r !== sphere);
+    await insertPreset(c.page, "cylinder");
+    await until(c.page, () => document.getElementById("save-status")?.dataset.state === "saved", undefined, "saved");
+    for (let i = 0; i < 100 && !svc2.saves.some((x) => x.p_id === sphere.id && x.p_body.includes("cylinder")); i++) await c.page.waitForTimeout(100);
+    await chooseFile(c.page, "file-my-designs");
+    await until(c.page, () => /1 project changed in this browser was deleted from your account/.test(document.getElementById("my-designs-gone")?.textContent ?? ""), undefined, "the offer");
+    if (shots) await c.page.screenshot({ path: `${shots}/my-designs-keep-again-1280.png` });
+    assert.equal(svc2.rows.length, 1, "not sent back by itself");
+    await c.page.click(".my-designs-keep-gone");
+    await until(c.page, () => document.querySelectorAll("#my-designs-items .my-design").length === 2 && !document.getElementById("my-designs-gone")?.textContent, undefined, "kept again, the offer gone");
+    const back = svc2.rows.find((r) => r.body.includes("cylinder"));
+    assert.ok(back && back.id !== sphere.id, "kept as a new design");
+    await c.page.click("#my-designs-close");
+    await c.context.close();
   });
 
   await check("the service ends the session: the next change says so at the foot of the page, and the button offers Sign in (issue #628 item 4)", async () => {

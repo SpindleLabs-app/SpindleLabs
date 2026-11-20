@@ -13,6 +13,8 @@ export const isSource = (s: unknown): s is Source => typeof s === "string" && (S
 
 /** The limits, as the database keeps them (design_limits()). Checked there; here only to say them in words. */
 export const LIMITS = { maxDesigns: 200, maxBytes: 20 * 1024 * 1024, maxDesignBytes: 5 * 1024 * 1024, maxPictureBytes: 32 * 1024, versionsKept: 20, versionGapMinutes: 10 } as const;
+/** The most one design's answer can hold, for its time limit: its text at the limit with JSON's escaping (allowing 1.2×) and a picture. */
+const ANSWER_UP_TO = Math.ceil(LIMITS.maxDesignBytes * 1.2) + 2 * LIMITS.maxPictureBytes;
 
 /** One design in the account, as My designs lists it (no file text). */
 export interface DesignRow {
@@ -127,7 +129,8 @@ export function designsApi(client: AuthClient) {
     /** One design with its file text; null when the account has no such design (deleted, maybe on another device). */
     async get(id: string): Promise<DataResult<DesignFile | null>> {
       if (!isId(id)) return { kind: "ok", value: null };
-      const r = await client.asPerson("POST", "rpc/get_design", { p_id: id });
+      // Its answer may hold a design up to the limit, JSON-escaped: given the time that takes on a slow link (#628 item 7).
+      const r = await client.asPerson("POST", "rpc/get_design", { p_id: id }, ANSWER_UP_TO);
       if (r.kind !== "ok") return r;
       if (r.body === null) return { kind: "ok", value: null };
       const b = r.body as Record<string, unknown> | undefined;
@@ -168,7 +171,7 @@ export function designsApi(client: AuthClient) {
     /** The file text of design `id`'s version saved `at`; null when the account keeps none then (given up for room, say). */
     async version(id: string, at: Date): Promise<DataResult<string | null>> {
       if (!isId(id) || !Number.isFinite(at.getTime())) return { kind: "ok", value: null };
-      const r = await client.asPerson("POST", "rpc/get_design_version", { p_id: id, p_saved_at: at.toISOString() });
+      const r = await client.asPerson("POST", "rpc/get_design_version", { p_id: id, p_saved_at: at.toISOString() }, ANSWER_UP_TO);
       if (r.kind !== "ok") return r;
       if (r.body === null) return { kind: "ok", value: null };
       const b = r.body as Record<string, unknown> | undefined;
