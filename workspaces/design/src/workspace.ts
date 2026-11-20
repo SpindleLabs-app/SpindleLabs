@@ -15,7 +15,7 @@ import { operationWords } from "./body-uses.ts";
 import { CHANGED_WHILE_CHECKING, editableFeature, editFeature, editStep, readTyped, refusedSizes } from "./feature-edit.ts";
 import { featureEditPanel } from "./feature-edit-panel.ts";
 import { copiedText, copiesOf, DUPLICATE_STEP, insertDuplicates, MIRROR_STEP, mirrorPlaneProblem, pastedBodies, type MirrorPlane } from "./duplicate.ts";
-import { changedMove, factorOf, insertMove, MOVE_STEP, MOVE_VERBS, moveKindOf, movedBodies, moveValues, NO_MOVE, ROTATE_STEP, SCALE_STEP, type MoveBox, type MoveValues } from "./move.ts";
+import { changedMove, factorOf, insertMove, MOVE_STEP, MOVE_VERBS, moveKindOf, movedBodies, movedWords, moveValues, NO_MOVE, ROTATE_STEP, SCALE_STEP, type MoveBox, type MoveValues } from "./move.ts";
 import { EXPLODE_DEFAULT, explodedMesh, readSpread } from "./explode.ts";
 import { draggedValues, editedBodies, editedMoveMesh, handlesCentre, heldBefore, MOVE_BOX_WORDS, movedMesh, pickedBodies, previewable, readMoveBoxes, refusedMove, startPivot, boxCentre } from "./move-tool.ts";
 import { movePanel } from "./move-panel.ts";
@@ -3877,7 +3877,7 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
     viewport.element.dataset.moveSnap = snapping ? (snapping.from === null ? "from" : "to") : ""; // read by the e2e test
   }
   /** The names of bodies `ids` (body ids, 35eb) as their items are named. */
-  const bodyLabels = (ids: readonly string[]) => ids.map((id) => itemName(designDoc().timeline.features.find((f) => f.id === bodyItem(id))!));
+  const bodyLabels = (ids: readonly string[]) => ids.map((id) => movedWords(id, itemName(designDoc().timeline.features.find((f) => f.id === bodyItem(id))!)));
   /** An edited Move's bodies' names: a body deleted since keeps the name the Move knew it by. */
   const heldLabels = (ids: readonly string[]) => {
     const doc = designDoc();
@@ -3885,7 +3885,7 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
     return ids.map((body) => {
       const id = bodyItem(body) ?? body;
       const f = doc.timeline.features.find((x) => x.id === id);
-      return f ? itemName(f) : (move?.provenance.from.find((r) => r.id === id)?.label ?? id);
+      return movedWords(body, f ? itemName(f) : (move?.provenance.from.find((r) => r.id === id)?.label ?? id));
     });
   };
 
