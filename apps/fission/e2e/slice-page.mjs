@@ -216,8 +216,9 @@ async function newPage(width = 1280, touch = false, scheme = "dark") {
     assert.equal((await listed(page)).length, 2);
     await context.close();
   });
-  // Made as Design's own functions make it (version 13, read as today's); the cubes' corners give each body.
-  const feature = (id, type, parameters, label, dependsOn = []) => ({ id, intent: { type, parameters, summary: label }, provenance: { self: { workspace: "design", id, label }, from: [] }, dependsOn, suppressed: false });
+  // Made as Design's own functions make it (version 13, read as today's); the cubes' corners give each body. A Combine's
+  // words start with its operation, as the app writes them (the reader refuses words saying another, SL #507).
+  const feature = (id, type, parameters, label, dependsOn = [], summary = label) => ({ id, intent: { type, parameters, summary }, provenance: { self: { workspace: "design", id, label }, from: [] }, dependsOn, suppressed: false });
   const MOVE = { y: -5, z: -5, turnX: 0, turnY: 0, turnZ: 0, pivotX: 0, pivotY: 0, pivotZ: 0 };
   const combineFile = (features, bodies) => ({
     formatVersion: 2,
@@ -233,7 +234,7 @@ async function newPage(width = 1280, touch = false, scheme = "dark") {
       feature("feature-1", "box", { width: 40, depth: 30, height: 20 }, "Box 1"),
       feature("feature-2", "box", { width: 40, depth: 30, height: 20 }, "Box 2"),
       feature("feature-3", "move", { ...MOVE, x: 20, y: 15, z: 10, bodies: ["body:feature-2"] }, "Move 1", ["feature-2"]),
-      feature("feature-4", "combine", { target: "body:feature-1", tools: ["body:feature-2"], operation: "join", keepTools: false }, "Combine 1", ["feature-1", "feature-2"]),
+      feature("feature-4", "combine", { target: "body:feature-1", tools: ["body:feature-2"], operation: "join", keepTools: false }, "Combine 1", ["feature-1", "feature-2"], "Join Box 2 to Box 1"),
     ],
     ["body:feature-1", "body:feature-2"],
   );
@@ -245,7 +246,7 @@ async function newPage(width = 1280, touch = false, scheme = "dark") {
       feature("feature-3", "box", { width: 10, depth: 20, height: 20 }, "Box 3"),
       feature("feature-4", "move", { ...MOVE, x: 10, bodies: ["body:feature-2"] }, "Move 1", ["feature-2"]),
       feature("feature-5", "move", { ...MOVE, x: 30, bodies: ["body:feature-3"] }, "Move 2", ["feature-3"]),
-      feature("feature-6", "combine", { target: "body:feature-1", tools: ["body:feature-2", "body:feature-3"], operation: "cut", keepTools: false }, "Combine 1", ["feature-1", "feature-2", "feature-3"]),
+      feature("feature-6", "combine", { target: "body:feature-1", tools: ["body:feature-2", "body:feature-3"], operation: "cut", keepTools: false }, "Combine 1", ["feature-1", "feature-2", "feature-3"], "Cut Box 2 and Box 3 from Box 1"),
     ],
     ["body:feature-1", "body:feature-2", "body:feature-3"],
   );

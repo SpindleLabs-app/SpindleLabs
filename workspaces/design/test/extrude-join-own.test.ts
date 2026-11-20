@@ -213,7 +213,8 @@ test("upgrade: a version 15 file whose Join's piece a Move, a Copy, a Combine, a
   assert.deepEqual(params("feature-28").bodies, [own]);
   assert.deepEqual(doc.hidden, [own]);
   assert.equal(JSON.stringify(doc).includes("piece:"), false);
-  assert.equal(JSON.stringify({ ...doc, version: 15 }), JSON.stringify(raw).replaceAll(was, own));
+  // SL #512 item 1: and the words naming that piece say the Join's own body as today's do ("Copy of Extrude 1").
+  assert.equal(JSON.stringify({ ...doc, version: 15 }), JSON.stringify(raw).replaceAll(was, own).replaceAll("a piece of Extrude 1", "Extrude 1"));
   const b = await built(doc);
   for (const id of Object.keys(b.build.results)) assert.equal(b.build.results[id].status, "built", id);
   assert.deepEqual(Object.keys(b.build.bodies).sort(), ["body:feature-1", own, "body:feature-15", "body:feature-17"]);

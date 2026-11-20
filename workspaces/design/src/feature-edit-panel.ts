@@ -38,6 +38,8 @@ export interface FeatureEditPanel {
   showRegion(words: string | null): void;
   /** An extrude of a sketch with Combine shown: its Operation row, set to `operation` (the bodies list shown for Join, Cut, Intersect). */
   showOperation(operation: ExtrudeOperation): void;
+  /** An operation extrude with Combine hidden (#507): no row to change, just a line saying what it does, kept as saved. */
+  showOperationWords(words: string): void;
   /** The bodies the extrude's operation can work on, and the words under them; `ready` says whether OK can use them. */
   showBodies(list: readonly BodyChoice[], note: string, ready: boolean): void;
   /** The operation chosen now; null without an Operation row. */
@@ -246,6 +248,10 @@ export function featureEditPanel(slot: HTMLElement, on: FeatureEditEvents): Feat
       operationSlot.replaceChildren(row);
       throughNow();
       okNow();
+    },
+    showOperationWords(words) {
+      if (!operationSlot) return;
+      operationSlot.replaceChildren(el("p", "edit-operation-words", "feature-edit-note", words));
     },
     showBodies(choices, words, ready) {
       if (!bodies || !note) return;

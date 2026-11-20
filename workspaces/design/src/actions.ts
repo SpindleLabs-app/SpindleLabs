@@ -9,6 +9,7 @@ import { saveFile, STL_KIND } from "@fission/ui";
 import { nameLead, printLead } from "@fission/print";
 import { planeSeenAs } from "@fission/viewport";
 import { designBodies } from "./browser.ts";
+import { bodiesChanged } from "./body-uses.ts";
 import { bodyHidden, bodyIdOf, bodyNumbers, isDuplicateItem, makesPieces, partFeature, shapeOf, type DesignDocument } from "./document.ts";
 import { endStls } from "./move-tool.ts";
 import { badgeFor, SOLID_OVERLAY, solidOverlay, stampChecked, stlHeader, touchingWords, type ExportNotes } from "./solid-badge.ts";
@@ -265,16 +266,11 @@ export function designActions(save: SaveFile = download, copy: CopySvg = copyToC
       const order = designBodies(doc, failed).map((b) => b.body);
       picked.sort((a, b) => order.indexOf(a.body) - order.indexOf(b.body));
       const features = picked.map((p) => p.feature);
-      const kindOf = (f: Feature) => {
-        // A Combine's piece is named for no one shape (35f1).
-        if (makesPieces(f) || isDuplicateItem(f)) return "body";
-        const shape = shapeOf(doc, f).shape;
-        return shape === "sketch-extrude" ? "extrude" : shape;
-      };
+      const kindOf = (p: { body: string; feature: Feature }) => exportShapeName(doc, p.body, p.feature, failed);
       try {
-        const files: StlFile[] = await endStls(ctx.kernel, doc, picked.map((p) => ({ ...p, name: kindOf(p.feature) })));
+        const files: StlFile[] = await endStls(ctx.kernel, doc, picked.map((p) => ({ ...p, name: kindOf(p) })));
         const one = features.length === 1;
-        const name = one ? kindOf(features[0]) : `${features.length} bodies`;
+        const name = one ? kindOf(picked[0]) : `${features.length} bodies`;
         // Named after the design (Ben 2026-11-11): its own name, else the file it was saved to; with neither, the shape's name as before.
         const lead = printLead(ctx.project.name, ctx.fileName?.());
         const file = nameLead(lead) !== "spindlelabs" ? `${nameLead(lead)}.stl` : `spindlelabs-${one ? name : `${features.length}-bodies`}.stl`;
@@ -356,6 +352,24 @@ export function designActions(save: SaveFile = download, copy: CopySvg = copyToC
     },
   };
   return [downloadStl, copySvg];
+}
+
+/**
+ * The shape a body's exported file is named after when the design has no
+ * name ("spindlelabs-box.stl"): its item's shape, or "body" for a Combine's
+ * piece or a copy (35f1), and (SL #507) for a body a built Combine,
+ * operation extrude, Pattern or Shell changed since its item made it,
+ * which is no longer that shape: a box cut by a cylinder is no box (one
+ * that failed, in `failed`, changed nothing).
+ */
+export function exportShapeName(doc: DesignDocument, body: string, f: Feature, failed: ReadonlySet<string> = new Set()): string {
+  if (makesPieces(f) || isDuplicateItem(f)) return "body";
+  const at = doc.timeline.features.indexOf(f);
+  const marker = doc.timeline.marker;
+  const end = marker === undefined ? doc.timeline.features.length : marker === "start" ? 0 : doc.timeline.features.findIndex((x) => x.id === marker) + 1;
+  if (doc.timeline.features.slice(at + 1, end).some((x) => !x.suppressed && !failed.has(x.id) && makesPieces(x) && bodiesChanged(x).includes(body))) return "body";
+  const shape = shapeOf(doc, f).shape;
+  return shape === "sketch-extrude" ? "extrude" : shape;
 }
 
 /** Registers Design's verbs; the shell calls it once at start-up. */

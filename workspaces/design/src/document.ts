@@ -1647,6 +1647,12 @@ function checkCombine(d: Partial<DesignDocument>, f: Feature, byId: ReadonlyMap<
   for (const key of Object.keys(p)) if (!(COMBINE_PARAMS as readonly string[]).includes(key)) throw new Error(`${at} has a parameter ${JSON.stringify(key)} a combine doesn't have`);
   if (!(COMBINE_OPERATIONS as readonly unknown[]).includes(p.operation)) throw new Error(`${at}'s operation ${shown(p.operation)} is not join, cut or intersect`);
   if (typeof p.keepTools !== "boolean") throw new Error(`${at}'s keepTools ${shown(p.keepTools)} is not true or false`);
+  // SL #507: its row's words are read from the file, so they must say what it does: every Combine's description has
+  // started with its operation's verb and ended ", keeping the tools" exactly when it keeps them (combine.ts
+  // combineSummary, since 35f1b; a rename says it again the same way), so a hand-edited "Join" on a Cut is refused.
+  const verb = p.operation === "cut" ? "Cut " : p.operation === "join" ? "Join " : "Intersect ";
+  if (!f.intent.summary.startsWith(verb)) throw new Error(`${at}'s description ${JSON.stringify(f.intent.summary)} doesn't say it is a ${p.operation}: it must start with "${verb.trim()}"`);
+  if (f.intent.summary.endsWith(", keeping the tools") !== p.keepTools) throw new Error(`${at}'s description ${JSON.stringify(f.intent.summary)} ${p.keepTools ? "doesn't say it keeps its tools" : "says it keeps its tools, but it uses them up"}`);
   if (!Array.isArray(p.tools) || p.tools.length === 0) throw new Error(`${at} has no tool bodies`);
   notTooMany(p.tools.length, DESIGN_LIMITS.items, `${at} names`, "tools");
   const bodies = [p.target, ...(p.tools as unknown[])];
@@ -2163,6 +2169,24 @@ export function migrateDesignV15(d: Record<string, unknown>): Record<string, unk
     return k === 1 ? bodyIdOf(item) : `${bodyIdOf(item)}/piece:${k - 1}`;
   };
   const list = (ids: unknown) => (Array.isArray(ids) ? ids.map(renamed) : ids);
+  // SL #512 item 1: a description naming a Join's piece 1, which is now the Join's own body, said as one made today says
+  // it ("Copy of Extrude 1", not "Copy of a piece of Extrude 1"): every description names a body as "a piece of" its
+  // item's name or as the name alone (bodyWords), so the words for that body change, and only when they appear once
+  // among the item's words, so the change can't land on another piece's. Anything else is left as saved.
+  const ownWords = (f: Record<string, unknown>, summary: string): string => {
+    const p = isRecord(f.intent) && isRecord(f.intent.parameters) ? f.intent.parameters : {};
+    const named = [p.target, p.body, ...(Array.isArray(p.tools) ? p.tools : []), ...(Array.isArray(p.bodies) ? p.bodies : [])].filter((b): b is string => typeof b === "string");
+    const from = isRecord(f.provenance) && Array.isArray(f.provenance.from) ? f.provenance.from : [];
+    let out = summary;
+    for (const join of new Set(named.filter((b) => renamed(b) !== b && !isPiece(renamed(b) as string)).map((b) => bodyItem(b)!))) {
+      const label = from.find((x) => isRecord(x) && x.id === join);
+      if (!isRecord(label) || typeof label.label !== "string") continue;
+      const words = `a piece of ${label.label}`;
+      if (named.filter((b) => bodyItem(b) === join).length !== 1 || out.split(words).length !== 2) continue;
+      out = out.replace(words, () => label.label as string);
+    }
+    return out;
+  };
   const timeline = d.timeline;
   const out = features.map((f) => {
     if (!isRecord(f) || !isRecord(f.intent) || !isRecord(f.intent.parameters)) return f;
@@ -2173,7 +2197,7 @@ export function migrateDesignV15(d: Record<string, unknown>): Record<string, unk
       : type === "combine" ? { ...p, ...(Object.hasOwn(p, "target") && { target: renamed(p.target) }), ...(Object.hasOwn(p, "tools") && { tools: list(p.tools) }) }
       : type === "duplicate" && Object.hasOwn(p, "body") ? { ...p, body: renamed(p.body) }
       : p;
-    return { ...f, intent: { ...f.intent, parameters } };
+    return { ...f, intent: { ...f.intent, parameters, ...(typeof f.intent.summary === "string" && { summary: ownWords(f, f.intent.summary) }) } };
   });
   const bodies = Array.isArray(d.bodies) ? { bodies: d.bodies.map((b) => (isRecord(b) && typeof b.id === "string" ? { ...b, id: renamed(b.id) } : b)) } : {};
   const hidden = Array.isArray(d.hidden) ? { hidden: list(d.hidden) } : {};

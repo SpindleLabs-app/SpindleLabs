@@ -12,7 +12,7 @@
 // one before, or the start; a reorder is refused when the item would come
 // before an item it is built from, or after one built from it.
 
-import { bodyWords, readings, shapings } from "./body-uses.ts";
+import { bodiesChanged, bodyWords, readings, shapings, sketchHolds } from "./body-uses.ts";
 import type { Feature } from "@fission/core";
 import { bodyIdOf, bodyItem, combineBodies, isCombineItem, EYE_ROWS, eyeOrder, isExtrudeJoin, isHidden, isOperationExtrude, isPiece, isDuplicateItem, isMoveItem, isSketchItem, isConstructItem, makesBody, NAME_LIMIT, numberBodies, numberedWhenBuilt, operationMakers, ORIGIN_PLANES, nameKey, relabelled, shown, takenNames, type DesignDocument } from "./document.ts";
 import { faceFeature, isFacePlane } from "./face-sketch.ts";
@@ -238,6 +238,30 @@ export function reorderItem(doc: DesignDocument, id: string, to: number): Reorde
     if (r.first === item && place(r.then.id) < to) return { refused: "after-dependent", message: `${itemName(item)} can't go after ${itemName(r.then)}: it uses ${bodyWords(doc, r.body)} as it is before ${itemName(r.then)}` };
   }
   const k = doc.timeline.features.indexOf(item);
+  // SL #676 item 3: nor a sketch past an item changing a body it is drawn on or follows an edge of (`sketchHolds`), nor
+  // that item past the sketch: the sketch is placed on the body as the items before it leave it, so it would quietly
+  // move, and the pad or cut built from it with it.
+  const passed = to < k ? doc.timeline.features.slice(to, k) : doc.timeline.features.slice(k + 1, to + 1);
+  const earlier = to < k;
+  const holds = sketchHolds(doc, item);
+  for (const x of holds === null ? [] : passed) {
+    const body = bodiesChanged(x).find((b) => holds?.(b) != null);
+    if (body === undefined || holds === null) continue;
+    const how = `${holds(body)} ${bodyWords(doc, body)}`;
+    return earlier
+      ? { refused: "before-dependency", message: `${itemName(item)} can't go before ${itemName(x)}: it is ${how} as ${itemName(x)} leaves it` }
+      : { refused: "after-dependent", message: `${itemName(item)} can't go after ${itemName(x)}: it is ${how} as it is before ${itemName(x)}` };
+  }
+  const changes = bodiesChanged(item);
+  for (const x of changes.length === 0 ? [] : passed) {
+    const on = sketchHolds(doc, x);
+    const body = on === null ? undefined : changes.find((b) => on(b) !== null);
+    if (body === undefined) continue;
+    const how = `${on!(body)} ${bodyWords(doc, body)}`;
+    return earlier
+      ? { refused: "before-dependency", message: `${itemName(item)} can't go before ${itemName(x)}: ${itemName(x)} is ${how} as it is before ${itemName(item)}` }
+      : { refused: "after-dependent", message: `${itemName(item)} can't go after ${itemName(x)}: ${itemName(x)} is ${how} as ${itemName(item)} leaves it` };
+  }
   if (k === to) return { doc };
   // The marker stays in its gap (Fusion's rule, owner's decision 2026-11-04): the item it is on, dragged away, leaves
   // it on the item before (or at the start), as a delete does, so no other item rolls back or starts building.

@@ -299,7 +299,8 @@ export interface Rebuild {
   results: Record<string, ItemResult>;
 }
 
-export type RefuseCause = "before-dependency" | "after-dependent" | "join-order";
+/** "used-later": SL #676 item 2, a Combine put in at the marker using up a tool an item after the marker works on. */
+export type RefuseCause = "before-dependency" | "after-dependent" | "join-order" | "used-later";
 
 /** An edit with its targets named: what the session runner hands the model and the code under test. */
 export type ConcreteOp =
@@ -372,6 +373,10 @@ export type ModelFault =
   | "reorder-past-shaper"
   /** SL #676 item 1: reordering ignores a later item changing a body an earlier one (a Copy, a Combine keeping tools) works on. */
   | "reorder-past-reader"
+  /** SL #676 item 3: reordering ignores the body a face sketch's face is on (a Move of it passing the sketch). */
+  | "reorder-past-face-body"
+  /** SL #676 item 2: a Combine put in at the marker uses up a tool an item after the marker works on. */
+  | "combine-uses-up-later"
   | "combine-tool-kept"
   | "combine-not-held"
   | "combine-pieces-dropped"
@@ -425,6 +430,8 @@ export const MODEL_FAULTS: readonly ModelFault[] = [
   "move-bodies-kept",
   "reorder-past-shaper",
   "reorder-past-reader",
+  "reorder-past-face-body",
+  "combine-uses-up-later",
   "combine-tool-kept",
   "combine-not-held",
   "combine-pieces-dropped",
@@ -1479,6 +1486,27 @@ function edit(doc: ModelDoc, op: Exclude<ConcreteOp, { op: "undo" | "redo" }>, f
             if (before.some((a) => reads(a, item) && at(a.id) > op.to)) return { kind: "refused", cause: "before-dependency" };
             if (before.some((b) => reads(item, b) && at(b.id) < op.to)) return { kind: "refused", cause: "after-dependent" };
           }
+          // SL #676 item 3: nor a sketch on a face past an item changing the body its face is on (its feature's, then each
+          // Combine's target that took one of those in before it, and that Combine's pieces), nor that item past it.
+          if (!faults.has("reorder-past-face-body")) {
+            const holders = (s: ModelItem): Set<string> => {
+              const held = new Set<string>();
+              if (s.kind !== "sketch" || s.on === undefined) return held;
+              held.add(s.on.feature);
+              for (const c of before.slice(0, before.indexOf(s))) {
+                if (c.kind === "combine" && (held.has(c.target) || held.has(c.tool))) held.add(c.target).add(c.id);
+              }
+              return held;
+            };
+            const moved = (i: ModelItem) => (i.kind === "move" ? [...i.bodies, ...(i.pieces ?? []).map((p) => p.slice(0, p.lastIndexOf("#")))] : changes(i));
+            const onBody = (s: ModelItem, x: ModelItem) => {
+              const held = holders(s);
+              return moved(x).some((b) => held.has(b));
+            };
+            const k0 = before.indexOf(item);
+            const passed = op.to < k0 ? before.slice(op.to, k0) : before.slice(k0 + 1, op.to + 1);
+            if (passed.some((x) => onBody(item, x) || onBody(x, item))) return { kind: "refused", cause: op.to < k0 ? "before-dependency" : "after-dependent" };
+          }
         }
       }
       if (k !== op.to) doc.marker = marker;
@@ -1507,6 +1535,11 @@ function edit(doc: ModelDoc, op: Exclude<ConcreteOp, { op: "undo" | "redo" }>, f
       return { kind: "done", ids: [] };
     }
     case "add-combine": {
+      // SL #676 item 2: with the marker rolled back, a tool it would use up that an item after the marker works on.
+      if (!op.keep && !faults.has("combine-uses-up-later")) {
+        const uses = (i: ModelItem) => (i.kind === "move" ? i.bodies : i.kind === "combine" ? [i.target, i.tool] : i.kind === "duplicate" ? [i.body] : []);
+        if (doc.items.slice(insertAt(doc)).some((i) => uses(i).includes(op.tool))) return { kind: "refused", cause: "used-later" };
+      }
       const id = newId(doc, "item", faults);
       insert(doc, { id, kind: "combine", target: op.target, tool: op.tool, operation: op.operation, keep: op.keep, suppressed: false });
       return { kind: "done", ids: [id] };

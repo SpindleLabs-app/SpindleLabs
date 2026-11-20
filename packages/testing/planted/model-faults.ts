@@ -453,6 +453,21 @@ export const PLANTS: Record<ModelFault, Plant> = {
     caught: "outcome differs from the model",
     why: "Design's seeds 1 to 30 don't reach it (a Copy or kept tool's Combine dragged past a later change of its body is rare); its 7 steps shrunk from seed 49 are saved in test/regressions/timeline-design/plant-reorder-past-reader-49.json, which planted/session.ts replays after the seeds (2026-11-12); workspaces/design/test/combine-shaping.test.ts catches it by hand",
   },
+  "reorder-past-face-body": {
+    what: "a reorder lets a sketch on a face pass a Move or Combine changing the body it is drawn on, or that item pass the sketch (SL #676 item 3)",
+    edits: [
+      { file: EDITS, find: "  const holds = sketchHolds(doc, item);", replace: "  const holds = null as ReturnType<typeof sketchHolds>;" },
+      { file: EDITS, find: "    const on = sketchHolds(doc, x);", replace: "    const on = null as ReturnType<typeof sketchHolds>;" },
+    ],
+    run: ["timeline"],
+    caught: "outcome differs from the model",
+  },
+  "combine-uses-up-later": {
+    what: "a Combine put in at a rolled-back marker uses up a tool a later item works on (SL #676 item 2)",
+    edits: [{ file: COMBINE, find: "  refuseUsedUpLater(doc, insertAt(doc), keepTools ? [] : tools, label);", replace: "  refuseUsedUpLater(doc, insertAt(doc), [], label);" }],
+    run: ["timeline"],
+    caught: "outcome differs from the model",
+  },
   "duplicate-no-body": {
     what: "a Duplicate builds but makes no copy (35e2)",
     edits: [{ file: REBUILD, find: "  bodies[id] = { feature: f.id, handle: spec === b.spec ? b.handle : await cache.body(spec), spec, ...(b.curves ? { curves: b.curves } : {}), ...(b.base && { base: b.base }) };\n  return { status: \"built\", bodies: [id] };", replace: "  return { status: \"built\" };" }],

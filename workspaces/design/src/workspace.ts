@@ -11,6 +11,7 @@ import { extrudePanel } from "./extrude-panel.ts";
 import { throughDistance, throughWords } from "./extrude-through.ts";
 import { FACE_ALONE, joinedView, ONE_PROFILE_OPERATION, pickedWords, severalWords, togglePick, type PickedProfile } from "./extrude-picks.ts";
 import { bodyChoices, operationNote, tickedBodies, touchingOnly, type BodyChoice, type Bounds, type ExtrudeOperation, type ListedBody } from "./extrude-operation.ts";
+import { operationWords } from "./body-uses.ts";
 import { CHANGED_WHILE_CHECKING, editableFeature, editFeature, editStep, readTyped, refusedSizes } from "./feature-edit.ts";
 import { featureEditPanel } from "./feature-edit-panel.ts";
 import { copiedText, copiesOf, DUPLICATE_STEP, insertDuplicates, MIRROR_STEP, mirrorPlaneProblem, pastedBodies, type MirrorPlane } from "./duplicate.ts";
@@ -20,7 +21,7 @@ import { draggedValues, editedBodies, editedMoveMesh, handlesCentre, heldBefore,
 import { movePanel } from "./move-panel.ts";
 import { changedCombine, COMBINE_STEP, forgetPieces, insertCombine } from "./combine.ts";
 import { combineDoneWords, combineHintWords, combinePanel } from "./combine-panel.ts";
-import { askWords, bodyNamer, checkedItem, cutAsk, type Checked } from "./cut-ask.ts";
+import { askWords, bodyNamer, breaksWords, checkedItem, cutAsk, type Checked } from "./cut-ask.ts";
 import type { Miss } from "./misses.ts";
 import { combineShown } from "./combine-flag.ts";
 import { chamferShown } from "./chamfer-flag.ts";
@@ -4968,7 +4969,8 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
     combineBox.busy(true);
     let checked: Checked;
     try {
-      checked = await okCheck(onceMoreAfterRestart(() => checkedItem(kernel, next, made)));
+      // An edit is compared with the build shown now, so a later step it would break is asked about (SL #676 item 2).
+      checked = await okCheck(onceMoreAfterRestart(() => checkedItem(kernel, next, made, id === null ? {} : resultsNow)));
     } catch (e) {
       checked = { refused: e instanceof Error ? e.message : String(e), misses: [] };
     }
@@ -4983,6 +4985,14 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
     if (checked.misses.length > 0 && op !== "intersect") {
       // Held while asked, so an Undo waits for the answer; but a wait for the person, not work (`asking`, SL #397).
       const yes = await okCheck(ctx.history.asking(missAsk.ask(askWords(op, checked.misses, combineLabel, { kind: "combine", keepTools: combineBox.keepTools }))));
+      if (!yes || combineOpenings !== opened) return;
+      if (designDoc() !== before) return combineBox.showError(COMBINE_CHANGED);
+      if (combineAsked() !== asked) return combineBox.showError(COMBINE_PICKS_CHANGED);
+    }
+    // SL #676 item 2: an edit that breaks a later step (a Cut made a Join, so a piece a later Move moves is gone) asks first.
+    if (id !== null && (checked.breaks?.length ?? 0) > 0) {
+      const label = before.timeline.features.find((f) => f.id === id)?.provenance.self.label ?? "Combine";
+      const yes = await okCheck(ctx.history.asking(missAsk.ask(breaksWords(label, checked.breaks!))));
       if (!yes || combineOpenings !== opened) return;
       if (designDoc() !== before) return combineBox.showError(COMBINE_CHANGED);
       if (combineAsked() !== asked) return combineBox.showError(COMBINE_PICKS_CHANGED);
@@ -5048,6 +5058,9 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
       editBox.showOperation(op);
       showEditBodies();
       void loadEditBodies(id);
+    } else {
+      const op = extrudeOperation(item);
+      if (op !== null) editBox.showOperationWords(operationWords(designDoc(), op));
     }
     void offerEditRegions(id);
   }
@@ -5193,11 +5206,12 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
     let refused: string | null;
     let misses: Miss[] = [];
     let numbered: DesignDocument | undefined;
+    let breaks: string[] | undefined;
     try {
       refused = await okCheck(refusedSizes(kernel, before, next, id));
       // An extrude that joins, cuts or intersects: its boolean must work too, or the edit says why and records nothing.
       const now = next.timeline.features.find((f) => f.id === id);
-      if (refused === null && now !== undefined && isOperationExtrude(now)) ({ refused, misses, numbered } = await okCheck(onceMoreAfterRestart(() => checkedItem(kernel, next, id))));
+      if (refused === null && now !== undefined && isOperationExtrude(now)) ({ refused, misses, numbered, breaks } = await okCheck(onceMoreAfterRestart(() => checkedItem(kernel, next, id, resultsNow))));
     } catch (e) {
       refused = e instanceof Error ? e.message : String(e);
     }
@@ -5210,6 +5224,12 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
     const op = extrudeOperation(next.timeline.features.find((f) => f.id === id)!)?.operation;
     if (misses.length > 0 && (op === "cut" || op === "join")) {
       if (!(await okCheck(askExtrudeMisses(next, id, op, misses))) || editBox.editing !== id || editOpenings !== opened) return;
+      if (designDoc() !== before) return editBox.showError(CHANGED_WHILE_CHECKING);
+    }
+    // SL #676 item 2: an operation changed so a later step no longer finds its body asks first, as a Combine's edit does.
+    if ((breaks?.length ?? 0) > 0) {
+      const label = before.timeline.features.find((f) => f.id === id)?.provenance.self.label ?? "the extrude";
+      if (!(await okCheck(ctx.history.asking(missAsk.ask(breaksWords(label, breaks!))))) || editBox.editing !== id || editOpenings !== opened) return;
       if (designDoc() !== before) return editBox.showError(CHANGED_WHILE_CHECKING);
     }
     // Its pieces numbered as the check built them, in this step (SL #622 item 7).

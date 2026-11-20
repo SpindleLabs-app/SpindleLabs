@@ -7,6 +7,7 @@
 // after edits before it, whatever made the body. The tool is shell-tool.ts
 // and shell-panel.ts (35h2c-app2); Edit feature changes its thickness here.
 
+import { notABody } from "./body-uses.ts";
 import type { Feature } from "@fission/core";
 import { bodyItem, counted, shellOf, freshName, insertAt, insertItem, isPiece, isShellItem, makesBody, makesPieces, numberedWhenBuilt, shellThicknessProblem, shown, takenNames, type DesignDocument } from "./document.ts";
 import { faceFeature, isFacePlane } from "./face-sketch.ts";
@@ -40,7 +41,7 @@ export function insertShell(doc: DesignDocument, body: string, faces: readonly s
   const item = bodyItem(body);
   const place = item === null ? -1 : doc.timeline.features.findIndex((f) => f.id === item);
   const maker = doc.timeline.features[place];
-  if (maker === undefined || !(numberedWhenBuilt(body, maker) ? makesPieces(maker) && (doc.bodies ?? []).some((b) => b.id === body) : makesBody(maker))) throw new Error(`${shown(body)} is not a body in the design`);
+  if (maker === undefined || !(numberedWhenBuilt(body, maker) ? makesPieces(maker) && (doc.bodies ?? []).some((b) => b.id === body) : makesBody(maker))) throw new Error(notABody(doc, body));
   if (place >= insertAt(doc)) throw new Error(`${maker.provenance.self.label} comes after the rollback marker, so a Shell put in at the marker can't use it`);
   const id = `feature-${doc.nextId}`;
   const label = freshName("Shell", doc.timeline.features.filter(isShellItem).length, takenNames(doc));
