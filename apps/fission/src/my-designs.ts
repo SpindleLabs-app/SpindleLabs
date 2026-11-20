@@ -71,7 +71,7 @@ export function reportWords(r: SyncReport | null): string {
       const refused = r.refused ?? [];
       if (refused.length) words.push(`The account service refused ${refused.map((n) => `“${n}”`).join(", ")}, so ${refused.length === 1 ? "it stays" : "they stay"} only in this browser until ${refused.length === 1 ? "it changes" : "they change"}. Your other designs are still kept.`);
       const gone = r.gone ?? [];
-      if (gone.length) words.push(`${gone.map((n) => `“${n}”`).join(", ")} ${gone.length === 1 ? "was" : "were"} deleted from your account, so the changes made here since are kept only in this browser. To keep ${gone.length === 1 ? "it" : "them"} in your account again, press Keep in my account again.`);
+      if (gone.length) words.push(`${gone.map((n) => `“${n}”`).join(", ")} ${gone.length === 1 ? "was" : "were"} deleted from your account, so the changes made here since are kept only in this browser. Use Save to keep a file of ${gone.length === 1 ? "it" : "them"}.`);
       return words.join(" ");
     }
     case "full":
