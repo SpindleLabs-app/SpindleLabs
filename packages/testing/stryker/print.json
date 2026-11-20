@@ -6,7 +6,8 @@
   },
   "mutate": [
     "src/print-check.ts",
-    "src/overhang.ts"
+    "src/overhang.ts",
+    "src/slice-run.ts"
   ],
   "inPlace": true,
   "reporters": [
