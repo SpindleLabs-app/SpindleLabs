@@ -450,7 +450,17 @@ jobs:
     # naming runs 12 seeded boolean sessions per mutant: 74 min on 2026-10-30,
     # past 120 once 35ed1 added its sliver tests (issue #199: the leg was
     # cancelled before its report); the other legs finish within an hour.
-    timeout-minutes: 240
+    # design went from 134 min (2026-11-18) past 240 (11-19, #199 again):
+    # 388 more mutants (3,472 to 3,860) from the Shell, Pattern-round-an-axis
+    # and #759's reader checks, and five more test files each surviving
+    # mutant runs. 350 keeps a night's verdict, under the hosted limit of 360,
+    # and still ends before the day runs start at 22:35 UTC. Stryker's own
+    # per-mutant limit is the lone dry run's time × timeoutFactor + timeoutMS,
+    # but mutants run four at once: print (factor 4 in print.json) timed out
+    # nearly every survivor at the default 1.5 on 11-19 and timeouts count as
+    # kills (1 survivor where a local run finds over 60; #879, #880). The
+    # per-file table below shows the timeout column each night.
+    timeout-minutes: 350
     strategy:
       fail-fast: false
       max-parallel: ${{ (github.event_name == 'schedule' || inputs.night) && 8 || 3 }}
@@ -471,7 +481,7 @@ jobs:
         run: |
           mkdir -p "$OUT"
           set -o pipefail
-          packages/testing/stryker/run.sh "$TARGET" 2>&1 | tee "$OUT/$TARGET.log" | grep -E '^(UNEXPLAINED|explained\.json lists|[a-z]+: [0-9]+ survivors|[0-9]+ problem)' | tee "$OUT/$TARGET.txt"
+          packages/testing/stryker/run.sh "$TARGET" 2>&1 | tee "$OUT/$TARGET.log" | grep -E '^(UNEXPLAINED|explained\.json lists|[a-z]+: [0-9]+ survivors|[0-9]+ problem)|^ ?[A-Za-z][A-Za-z0-9 ._-]* \| +[0-9.]+ \| +[0-9.]+ \|' | tee "$OUT/$TARGET.txt"
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         if: always()
         with:
