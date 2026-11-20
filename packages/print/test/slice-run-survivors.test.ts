@@ -501,3 +501,175 @@ test("holdsUp: the centre of the underside is the only thing inside an outline t
   const left = [wall([-5, 20], [8, 20]), wall([8, 34], [8, 20]), wall([8, 34], [-5, 34]), wall([-5, 20], [-5, 34])];
   assert.equal(rests(left, under([20, 20], [32, 14], [28, 28])), HANGS);
 });
+
+// ---------- the refusal words ----------
+// The reaches (build-area.ts): the warm-up loop 3.957 mm, Better grip's brim 4.714 mm, both 8.672 mm past the part on
+// every side, so twice that across. The P1S takes up to 256 mm wide and 256 − 5 = 251 mm deep (the front 5 mm is the
+// prime line's strip), and a part reaching into the 18 × 28 mm front-left corner must be at most 238 wide or 228 deep.
+
+const across = (named: string, x2: number | string, y2: number | string) => `the part${named}, placed at (1, 2), runs from (0, 0) to (${x2}, ${y2}), off the 256 × 256 mm bed`;
+const strip = (named: string, d: number | string) => `the part${named} reaches y = -2.5 mm, over the prime line's strip at the front of the bed (it must stay at y ≥ 5 mm); it is ${d} mm deep, and fits when at most 251 mm deep`;
+const corner = (named: string, w: number | string, d: number | string) =>
+  `the part${named} is ${w} × ${d} mm and reaches into the P1S plate's front-left corner, which must stay clear (x < 18 mm, y < 28 mm); moving it right or back would take it off the plate. Make it smaller or turn it so it clears the corner (a part up to 238 mm wide or 228 mm deep fits)`;
+const PLATE_WORDS = "the P1S's plate takes 256 × 256 mm.";
+const SMALLER = "Make it smaller or split it into pieces.";
+const WARM = " with its warm-up loop";
+const BRIM = " with its brim";
+const BOTH = " with its brim and warm-up loop";
+
+test("refusalWords: off the bed with the loop, the brim or both, and which to turn off", () => {
+  // 260 × 100 with the loop: 260 − 2 × 3.957 = 252.1 mm wide without it; that fits (252.1 ≤ 256, 92.1 ≤ 251 and
+  // 92.1 ≤ 228 clears the corner).
+  assert.equal(refusalWords(across(WARM, 260, 100)), `The part is 252.1 mm wide, 260 mm with its warm-up loop, and ${PLATE_WORDS} Without its warm-up loop it fits: turn Warm-up loop off and slice again.`);
+  // 258 × 10 with the brim: the loop is already off, so the first try (the loop off) is skipped; the brim off takes
+  // 2 × 4.714 = 9.43 mm: 248.6 × 0.6 fits.
+  assert.equal(refusalWords(across(BRIM, 258, 10)), `The part is 248.6 mm wide, 258 mm with Better grip's brim, and ${PLATE_WORDS} Without Better grip's brim it fits: turn Better grip off and slice again.`);
+  // 262 × 240 with both: the loop off leaves the brim, 2 × (8.672 − 4.714) = 7.92 mm less, 254.1 × 232.1: too deep for
+  // the corner (232.1 > 228) and too wide (> 238); the brim off, 9.43 mm less, 252.6 × 230.6: the same; both off,
+  // 17.34 mm less, 244.7 × 222.7: clears the corner by depth.
+  assert.equal(refusalWords(across(BOTH, 262, 240)), `The part is 244.7 mm wide, 262 mm with Better grip's brim and its warm-up loop, and ${PLATE_WORDS} Without Better grip's brim and its warm-up loop it fits: turn Better grip and Warm-up loop off and slice again.`);
+  // 300 × 100 with the loop: 292.1 is still too wide, nothing to turn off helps.
+  assert.equal(refusalWords(across(WARM, 300, 100)), `The part is 292.1 mm wide, 300 mm with its warm-up loop, and ${PLATE_WORDS} ${SMALLER}`);
+  // 100 × 270 with the loop: deeper than wide, so "deep"; 262.1 deep without it, still more than 251.
+  assert.equal(refusalWords(across(WARM, 100, 270)), `The part is 262.1 mm deep, 270 mm with its warm-up loop, and ${PLATE_WORDS} ${SMALLER}`);
+  // A part not from (0, 0): from (−10, −20) to (250, 40) is 260 × 60.
+  assert.equal(
+    refusalWords("the part, placed at (1, 2), runs from (-10, -20) to (250, 40), off the 256 × 256 mm bed"),
+    `The part is 260 mm wide, and ${PLATE_WORDS} ${SMALLER}`,
+  );
+  // From (0, −20) to (100, 250): 100 wide, 250 − (−20) = 270 deep.
+  assert.equal(
+    refusalWords("the part, placed at (1, 2), runs from (0, -20) to (100, 250), off the 256 × 256 mm bed"),
+    `The part is 270 mm deep, and ${PLATE_WORDS} ${SMALLER}`,
+  );
+});
+
+test("refusalWords: over the front strip, how deep, and the loop off when the width is not known", () => {
+  const front = "the P1S takes up to 251 mm: the front 5 mm of the plate is kept for the nozzle's prime line.";
+  assert.equal(refusalWords(strip("", 260)), `The part is 260 mm deep, and ${front} ${SMALLER}`);
+  // 230 deep with the loop: 222.1 without it. The width is not said, so it is taken as the widest the plate takes
+  // (256): 256 × 222.1 fits (222.1 ≤ 228 clears the corner).
+  assert.equal(refusalWords(strip(WARM, 230)), `The part is 222.1 mm deep, 230 mm with its warm-up loop, and ${front} Without its warm-up loop it fits: turn Warm-up loop off and slice again.`);
+  // 245 deep: 237.1 without the loop, past 228, so at 256 wide it reaches the corner; at most 238 wide it fits.
+  assert.equal(refusalWords(strip(WARM, 245)), `The part is 237.1 mm deep, 245 mm with its warm-up loop, and ${front} Without its warm-up loop it fits if it is at most 238 mm wide: turn Warm-up loop off and slice again.`);
+  // 262 deep: 254.1 without it, more than 251 (the plate's 256 less the 5 mm strip, not plus it) at any width.
+  assert.equal(refusalWords(strip(WARM, 262)), `The part is 254.1 mm deep, 262 mm with its warm-up loop, and ${front} ${SMALLER}`);
+  // 240 deep with the brim (the loop already off, so that try is skipped: with nothing taken off, 240 at 238 wide
+  // would read as fitting): without the brim 230.6, fine at 238 wide.
+  assert.equal(refusalWords(strip(BRIM, 240)), `The part is 230.6 mm deep, 240 mm with Better grip's brim, and ${front} Without Better grip's brim it fits if it is at most 238 mm wide: turn Better grip off and slice again.`);
+  // 270 deep: 262.1 without it, more than 251 either way.
+  assert.equal(refusalWords(strip(WARM, 270)), `The part is 262.1 mm deep, 270 mm with its warm-up loop, and ${front} ${SMALLER}`);
+  // With both, 250 deep: the loop off gives 242.1 (too deep for the corner at 256 wide, fine at 238: kept as the
+  // first "narrower" answer); the brim off 240.6 and both off 232.7 are still past 228, so the first answer is said.
+  assert.equal(refusalWords(strip(BOTH, 250)), `The part is 232.7 mm deep, 250 mm with Better grip's brim and its warm-up loop, and ${front} Without its warm-up loop it fits if it is at most 238 mm wide: turn Warm-up loop off and slice again.`);
+});
+
+test("refusalWords: the plate's limits are inclusive, at exactly 251 and 228 mm deep", () => {
+  // The loop's width across is 2 × 3.957079632679490; a depth of 228 or 251 plus that, less that again, is exactly 228
+  // or 251 in floating point (checked first), so the part fits exactly at the limit.
+  const two = 2 * 3.95707963267949;
+  for (const at of [228, 251]) assert.equal(Number(String(at + two)) - two, at);
+  assert.match(refusalWords(strip(WARM, String(228 + two))), /Without its warm-up loop it fits: turn/);
+  assert.match(refusalWords(strip(WARM, String(251 + two))), /Without its warm-up loop it fits if it is at most 238 mm wide/);
+  // In the corner: 238 + loop wide, 240 + loop deep: 238 × 240 without it, exactly at the corner's width limit, fits.
+  assert.match(refusalWords(corner(WARM, String(238 + two), String(240 + two))), /Without its warm-up loop it fits: turn/);
+  // The same 0.01 mm wider does not (it is past 238 and 240 > 228): the corner's own words.
+  assert.match(refusalWords(corner(WARM, String(238.01 + two), String(240 + two))), /Make it smaller or turn it so it clears the corner \(with its warm-up loop, up to 230\.1 mm wide or 220\.1 mm deep fits\)/);
+});
+
+test("refusalWords: the front-left corner, with and without extras", () => {
+  const reaches = "reaches into the P1S plate's front-left corner, which must stay clear, with no room on the plate to move it clear.";
+  assert.equal(refusalWords(corner("", 240.25, 235)), `The part is 240.3 × 235 mm and ${reaches} Make it smaller or turn it so it clears the corner (up to 238 mm wide or 228 mm deep fits).`);
+  // 242 × 233 with the loop: 234.1 × 225.1 without it, narrow enough (≤ 238).
+  assert.equal(refusalWords(corner(WARM, 242, 233)), `The part is 234.1 × 225.1 mm, 242 × 233 mm with its warm-up loop, and ${reaches} Without its warm-up loop it fits: turn Warm-up loop off and slice again.`);
+  // 256 × 250 with both: 238.7 × 232.7 with neither, still past both limits: the corner's limits less both reaches,
+  // 238 − 17.34 = 220.7 wide or 228 − 17.34 = 210.7 deep.
+  assert.equal(
+    refusalWords(corner(BOTH, 256, 250)),
+    `The part is 238.7 × 232.7 mm, 256 × 250 mm with Better grip's brim and its warm-up loop, and ${reaches} Make it smaller or turn it so it clears the corner (with Better grip's brim and its warm-up loop, up to 220.7 mm wide or 210.7 mm deep fits).`,
+  );
+});
+
+test("refusalWords: in mid-air, and any other message with a capital", () => {
+  assert.equal(
+    refusalWords("layer 3 starts in mid-air at z = 12.5 mm, around (-35.25, 105.5), with nothing under it"),
+    "Part of the model hangs in the air 12.5 mm above the plate, around (-35.25, 105.5) mm, with nothing under it. Turn Supports on, or move it down onto the plate or the part.",
+  );
+  assert.equal(
+    refusalWords("layer 1 starts in mid-air at z = 3 mm, around (4.5, -2), with nothing under it"),
+    "Part of the model hangs in the air 3 mm above the plate, around (4.5, -2) mm, with nothing under it. Turn Supports on, or move it down onto the plate or the part.",
+  );
+  // Not a message it knows, with or without a height: kept, with a capital.
+  assert.equal(refusalWords("the engine stopped", 12), "The engine stopped");
+  assert.equal(refusalWords("x"), "X");
+});
+
+// ---------- the file names ----------
+
+test("file names: every choice and plate in the name, the filament only when not the file's own", () => {
+  const c = { ...PRINT_DEFAULTS, layerHeight: 0.12, walls: 3, infill: 40 };
+  assert.equal(gcodeName(c), "spindlelabs-0.12mm-3w-40pc.gcode");
+  assert.equal(gcodeName({ ...c, supports: "normal", warmUp: false, betterGrip: true }, "bracket"), "bracket-0.12mm-3w-40pc-supports-no-warm-up-grip.gcode");
+  assert.equal(gcodeName({ ...c, supports: "tree" }), "spindlelabs-0.12mm-3w-40pc-tree-supports.gcode");
+  // Plain G-code's own filament is Generic PLA: said only for Bambu PLA Basic. The P1S file's is Bambu PLA Basic.
+  assert.equal(gcodeName({ ...c, filament: "generic-pla" }), "spindlelabs-0.12mm-3w-40pc.gcode");
+  assert.equal(gcodeName({ ...c, filament: "bambu-pla-basic" }), "spindlelabs-0.12mm-3w-40pc-bambu-pla-basic.gcode");
+  assert.equal(printFileName({ ...c, filament: "bambu-pla-basic" }, "textured"), "spindlelabs-0.12mm-3w-40pc-textured.gcode.3mf");
+  assert.equal(printFileName({ ...c, filament: "generic-pla" }, "smooth"), "spindlelabs-0.12mm-3w-40pc-generic-pla-smooth.gcode.3mf");
+  assert.equal(printFileName(c, "cool_plate", "high-flow"), "spindlelabs-0.12mm-3w-40pc-cool-high-flow.gcode.3mf");
+  assert.equal(printFileName(c, "supertack_plate", "standard", "lid"), "lid-0.12mm-3w-40pc-supertack.gcode.3mf");
+});
+
+test("file names: a long project name is cut to 120 characters and 200 bytes, never mid-character or ending in a space", () => {
+  // Settings "-0.2mm-2w-15pc" (14) and ".gcode" (6) leave 100 characters and 200 − 20 = 180 bytes for the lead.
+  assert.equal(gcodeName(PRINT_DEFAULTS, "a".repeat(150)), `${"a".repeat(100)}-0.2mm-2w-15pc.gcode`);
+  // "é" is 2 bytes: 180 / 2 = 90 fit (the 90th exactly fills the bytes).
+  assert.equal(gcodeName(PRINT_DEFAULTS, "é".repeat(150)), `${"é".repeat(90)}-0.2mm-2w-15pc.gcode`);
+  // Cut just after a space: the 100 kept end "x… " and the space goes.
+  assert.equal(gcodeName(PRINT_DEFAULTS, `${"x".repeat(99)} yyyy`), `${"x".repeat(99)}-0.2mm-2w-15pc.gcode`);
+  // A name that fits is kept whole, its inner spaces too (only the project's ends are trimmed).
+  assert.equal(gcodeName(PRINT_DEFAULTS, "  my part  "), "my part-0.2mm-2w-15pc.gcode");
+});
+
+test("printLead: a named project keeps its own name over the file's", () => {
+  assert.equal(printLead("bracket", "saved-file"), "bracket");
+  assert.equal(printLead(undefined, "saved-file"), "saved-file");
+  assert.equal(nameLead(undefined), "spindlelabs");
+});
+
+// ---------- the slice's words ----------
+
+test("printWords: layers, grams, metres and the time with its profile", () => {
+  // 1730 mm is 1.73 m; 240 s is 4 min.
+  assert.equal(printWords({ layers: 1, filamentMm: 1730, filamentG: 5.2, printTimeS: 240, unprintedVolume: 0 }), "1 layer, 5.2 g of PLA (1.73 m of filament), about 4 min of printing (plus heating and levelling).");
+  // No time known: no time words.
+  assert.equal(printWords({ layers: 100, filamentMm: 1730, filamentG: 5.2, printTimeS: NaN, unprintedVolume: 0 }, "generic-pla"), "100 layers, 5.2 g of PLA (1.73 m of filament).");
+  // 3720 s is 1 h 2 min; 12345 mm is 12.35 m (to two places).
+  assert.equal(
+    printWords({ layers: 2, filamentMm: 12345, filamentG: 37.04, printTimeS: 3720, unprintedVolume: 0 }, "bambu-pla-basic"),
+    "2 layers, 37 g of PLA (12.35 m of filament), about 1 h 2 min of printing with Bambu PLA Basic (plus heating and levelling).",
+  );
+});
+
+test("progressWords: every stage's words", () => {
+  assert.equal(progressWords(null), "");
+  assert.equal(progressWords({ stage: "layers", done: 2, total: 9 }), "Cutting the bodies into layers…");
+  assert.equal(progressWords({ stage: "walls", done: 120, total: 254 }), "Walls: layer 120 of 254");
+  assert.equal(progressWords({ stage: "infill", done: 2, total: 9 }), "Infill and solid layers…");
+  assert.equal(progressWords({ stage: "supports", done: 2, total: 9 }), "Supports: layer 2 of 9");
+  assert.equal(progressWords({ stage: "file", done: 2, total: 9 }), "Writing the file…");
+});
+
+test("fileCrawl: creeps toward 0.99 with a time constant of twice the time before, at least 5 s", () => {
+  // 1 s before the file: 2 s is under 5 s, so τ = 5 s; 5 s in: 0.5 + (0.99 − 0.5)(1 − e^−1) = 0.5 + 0.49 × 0.632121 = 0.809739.
+  assert.ok(Math.abs(fileCrawl(0.5, 1000, 5000) - 0.8097390738) < 1e-9);
+  // 10 s before: τ = 20 s; 20 s in: the same 0.809739. 5 s in: 0.5 + 0.49 × (1 − e^−0.25) = 0.5 + 0.49 × 0.221199 = 0.608388.
+  assert.ok(Math.abs(fileCrawl(0.5, 10000, 20000) - 0.8097390738) < 1e-9);
+  assert.ok(Math.abs(fileCrawl(0.5, 10000, 5000) - 0.6083877) < 1e-6);
+  // Time before not known (NaN): τ = 5 s.
+  assert.ok(Math.abs(fileCrawl(0.5, NaN, 5000) - 0.8097390738) < 1e-9);
+  // Already at or past 0.99, or no time in the file yet: left where it is.
+  assert.equal(fileCrawl(0.995, 1000, 5000), 0.995);
+  assert.equal(fileCrawl(0.5, 1000, 0), 0.5);
+  assert.equal(fileCrawl(0.5, 1000, -5), 0.5);
+});
