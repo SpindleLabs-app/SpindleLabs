@@ -33,14 +33,18 @@ test("written when the project's save lands, not before; a flush (the page going
   assert.equal(await s.stored("p"), null, "a fresh start with nothing kept writes nothing");
   s.edit(20);
   await tick();
-  assert.equal(await s.stored("p"), null, "not before the save lands");
+  // Nothing kept yet: the first change is written at once, so a reload before its save lands finds it (#764 item 5).
+  assert.deepEqual(await s.stored("p"), ["", "Width 20"], "the first change, with nothing kept before it");
+  s.edit(25);
+  await tick();
+  assert.deepEqual(await s.stored("p"), ["", "Width 20"], "a later change: not before the save lands");
   s.kept.saved();
   await tick();
-  assert.deepEqual(await s.stored("p"), ["", "Width 20"]);
+  assert.deepEqual(await s.stored("p"), ["", "Width 20", "Width 25"]);
   s.edit(30);
   s.kept.flush();
   await tick();
-  assert.deepEqual(await s.stored("p"), ["", "Width 20", "Width 30"]);
+  assert.deepEqual(await s.stored("p"), ["", "Width 20", "Width 25", "Width 30"]);
   await s.steps.forget("p");
   s.kept.saved(); // nothing changed since the flush
   await tick();
@@ -255,4 +259,40 @@ test("steps that don't end at the project, and no change came back from the jour
   s.kept.follow("p");
   await s.kept.settled();
   assert.equal(s.history.canUndo(), false);
+});
+
+test("SL #764 item 5 (S-4): a project followed from its first change keeps its steps once read, before any save lands", async () => {
+  // An opened file is kept at its first change: `keep` follows it and the change is recorded straight after, before
+  // the (empty) kept steps are read. The page may go before the save lands, and the browser may never finish a write
+  // started as it goes, so the steps are written as soon as they are known: the opening state and the change.
+  const s = setup();
+  s.kept.follow("p");
+  s.edit(20); // recorded before the read answers
+  await s.kept.settled();
+  await tick();
+  assert.deepEqual(await s.stored("p"), ["", "Width 20"], "kept with no save landed");
+  assert.deepEqual((await s.steps.read("p")).kept.map((e) => e.snapshot), ["w=10", "w=20"]);
+  // The control: followed with nothing recorded before the read, as a reload or a fresh start is, nothing is written.
+  const fresh = setup();
+  fresh.kept.follow("q");
+  await fresh.kept.settled();
+  await tick();
+  assert.equal(await fresh.stored("q"), null, "a fresh start with nothing kept still writes nothing");
+});
+
+test("SL #764 item 5: steps already kept that don't fit are not written over at once; the next save replaces them", async () => {
+  const kv = memoryKeyValue();
+  await stepsStore(kv).write("p", two, 1);
+  const s = setup(kv);
+  s.app.project = "w=40";
+  s.history.reset();
+  s.kept.follow("p");
+  s.edit(50);
+  await s.kept.settled();
+  await tick();
+  assert.deepEqual(await s.stored("p"), ["", "Width 20"], "another tab's steps stay until this tab's save lands");
+  s.app.refused = true;
+  s.kept.saved();
+  await tick();
+  assert.deepEqual(await s.stored("p"), ["", "Width 20"], "and never by a refused tab");
 });

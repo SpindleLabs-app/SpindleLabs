@@ -60,3 +60,9 @@
   /* No room on that row for Extrude beside Finish Sketch either (about 266 px against 268 at 600 px wide): the toolbar's. */
   .phone-float .phone-float-next:not(#none) { display: none; }
 }
+/* The narrowest phones (under 360 px): Finish's tool name is hidden but still read out, so Finish and Cancel keep one
+   row left of the view cube (the bar may be the screen less 112 px: 208 px at 320, and "Finish Combine" with Cancel
+   needed 233), and the tool's hint under the bar is never over Cancel (SL #764 item 8). */
+@media (max-width: 359px) {
+  .phone-float .phone-float-tool { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+}
