@@ -7,6 +7,18 @@ import { applyOp, createModel, faceKey, rebuild, resolveFace, UnmodelledCombine,
 import { sketchMovedAlone } from "../src/timeline-session.ts";
 
 const run = (m: TimelineModel, ...ops: ConcreteOp[]) => ops.map((op) => applyOp(m, op));
+/**
+ * A face sketch put after a Combine changing its body, as a drag did before SL #676 item 3 refused it: files saved
+ * then still hold such orders, so the model's naming rules for them are kept (the refusal let off for this one drag).
+ */
+function oldDrag(m: TimelineModel, item: string, to: number) {
+  (m.faults as Set<ModelFault>).add("reorder-past-face-body");
+  try {
+    return run(m, { op: "reorder", item, to });
+  } finally {
+    (m.faults as Set<ModelFault>).delete("reorder-past-face-body");
+  }
+}
 const faces = (b: ModelBody | undefined) => (b?.faces ?? []).map((f) => [faceKey(f.name), (f.also ?? []).map(faceKey), f.area]);
 
 test("hand-worked: a Join of a 40 × 30 × 20 box and an 8 × 55 × 8 bar from the same corner, faces lying on each other merged", () => {
@@ -52,7 +64,7 @@ function cutBar(): TimelineModel {
     { op: "add-face-sketch", shape: { kind: "circle", centre: [0, 0], radius: 3 }, face: { feature: "item-1", role: "top" } },
     { op: "add-combine", target: "item-1", tool: "item-2", operation: "cut", keep: false },
   );
-  assert.deepEqual(run(m, { op: "reorder", item: "item-6", to: 3 }), [{ kind: "done", ids: [] }]);
+  assert.deepEqual(oldDrag(m, "item-6", 3), [{ kind: "done", ids: [] }]);
   return m;
 }
 
@@ -174,7 +186,8 @@ test("hand-worked: a sketch drawn on a top that a Combine before it turned into 
     { op: "add-preset", kind: "box", sizes: [2, 47, 29] },
     { op: "add-combine", target: "item-4", tool: "item-1", operation: "cut", keep: false },
   );
-  assert.deepEqual(run(m, { op: "reorder", item: "item-2", to: 3 }), [{ kind: "done", ids: [] }]);
+  assert.deepEqual(run(m, { op: "reorder", item: "item-2", to: 3 }), [{ kind: "refused", cause: "after-dependent" }], "refused now (SL #676 item 3)");
+  assert.deepEqual(oldDrag(m, "item-2", 3), [{ kind: "done", ids: [] }]);
   const r = rebuild(m.doc);
   const roof = (r.results["item-4"] as { body?: ModelBody }).body?.faces.find((f) => faceKey(f.name) === "item-1/top");
   // The roof: 2 · 30 = 60 mm², at z = 20, looking down.
