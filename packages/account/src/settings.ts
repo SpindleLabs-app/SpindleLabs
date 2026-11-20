@@ -22,8 +22,11 @@
 //   - this browser remembers a code for the last account that synced here (SETTINGS_LAST_KEY, `personTag`): someone
 //     else's first round here takes their account's settings and sends none of what the browser has that their account
 //     lacks (a shared computer: it may be the last person's); that stays here, set aside in the base, never sent;
-//   - signing out notes the settings changed here and not sent yet (SETTINGS_UNSENT_PREFIX), so they are sent on the
-//     same person's next sign-in here, and a round still running when they sign out writes nothing (`current`).
+//   - signing out notes, for every setting, the value this browser and the account last agreed on and the value here
+//     (SETTINGS_UNSENT_PREFIX): at the same person's next sign-in here, while nobody else synced settings here since,
+//     each is merged three ways against that note, so a change made here before or after signing out is sent instead
+//     of being replaced by the account's older value (issue #628 item 6); after someone else synced here, only a change
+//     still as they left it counts as theirs. A round still running when they sign out writes nothing (`current`).
 
 import type { SmallStore } from "./auth.ts";
 import type { DataResult } from "./data.ts";
@@ -247,7 +250,7 @@ export const SETTINGS_HISTORY = "spindlelabs.account.history";
 /** Where this browser keeps a code for the last account it synced settings with (see `personTag`); it stays on sign out. */
 export const SETTINGS_LAST_KEY = "spindle.account.settings-last";
 
-/** Where this browser keeps, per person, the settings changed here but not yet sent when they signed out. */
+/** Where this browser keeps, per person, each setting's agreed value and its value here when they signed out (see the top). */
 export const SETTINGS_UNSENT_PREFIX = "spindle.account.settings-unsent/";
 
 /**
@@ -455,8 +458,18 @@ export function settingsSync(deps: SettingsSyncDeps) {
       }
       const base = readBase(store, userId);
       const unsent = base === null ? readUnsent(store, userId) : new Map() as Unsent;
-      // Settings changed here and not sent when this person signed out, still as they left them: theirs.
-      const theirs = new Set([...unsent].filter(([k, [, here]]) => local[k] === here).map(([k]) => k));
+      // Signed out here, and nobody else synced settings here since: every setting noted is merged against what was
+      // agreed then, so a change made here before or after signing out is theirs (#628 item 6). After someone else
+      // synced here, only a setting still as this person left it is.
+      // (A setting with no value then, either agreed or here, isn't written in the note: it counts as none on both.)
+      let noted = false;
+      try {
+        noted = base === null && store.getItem(SETTINGS_UNSENT_PREFIX + userId) !== null;
+      } catch {
+        // Storage blocked: no note.
+      }
+      const backAgain = noted && lastHere === tag;
+      const theirs = backAgain ? new Set(specs.map((s) => s.key)) : new Set([...unsent].filter(([k, [, here]]) => local[k] === here).map(([k]) => k));
       // The first round here for someone who isn't the last person who synced settings in this browser: what this browser
       // has that their account doesn't may be someone else's (a shared computer), so it stays here and isn't sent.
       const stranger = base === null && lastHere !== null && lastHere !== tag;
@@ -490,7 +503,7 @@ export function settingsSync(deps: SettingsSyncDeps) {
         const merged = mergeSettings(specs, fresh ? {} : base.settings, mine, remote.settings, fresh ? "remote" : "local");
         for (const s of specs) {
           if (!theirs.has(s.key)) continue;
-          const [was] = unsent.get(s.key)!;
+          const [was] = unsent.get(s.key) ?? [undefined, undefined];
           const v = mergeSettings([s], was === undefined ? {} : { [s.key]: was }, local, remote.settings, "local")[s.key];
           if (v === undefined) delete merged[s.key];
           else merged[s.key] = v;
@@ -568,8 +581,13 @@ export function settingsSync(deps: SettingsSyncDeps) {
         const raw = localNow();
         const unsent: Record<string, [string | null, string | null]> = {};
         const refused = base.held !== undefined && specs.every((s) => now[s.key] === base.held![s.key]);
-        if (!refused) for (const s of specs) if (now[s.key] !== base.settings[s.key]) unsent[s.key] = [base.settings[s.key] ?? null, raw[s.key] ?? null];
-        if (Object.keys(unsent).length) store.setItem(SETTINGS_UNSENT_PREFIX + userId, JSON.stringify(unsent));
+        // Every setting, changed or not: one changed after signing out is merged against the value agreed (#628 item 6).
+        // A change the account refused as too big is noted as agreed, so it isn't sent again unchanged.
+        for (const s of specs) {
+          const agreed = (refused ? raw[s.key] : base.settings[s.key]) ?? null;
+          if (agreed !== null || raw[s.key] !== undefined) unsent[s.key] = [agreed, raw[s.key] ?? null];
+        }
+        store.setItem(SETTINGS_UNSENT_PREFIX + userId, JSON.stringify(unsent)); // even empty: it marks this person signed out here (#628 item 6)
       } catch {
         // Storage blocked: nothing noted.
       }

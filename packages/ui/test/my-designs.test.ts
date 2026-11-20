@@ -3,7 +3,7 @@
 // refused, a list that can't be read says why. The real app in Chromium: apps/fission/e2e/my-designs.mjs.
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { designRows, KEEPING_OFF_NOTE, myDesigns, NO_DESIGNS, othersWords, removeQuestion, sizeWords, spaceWords, tagOf, type AccountDesign, type MyDesignsParts } from "../src/my-designs.ts";
+import { designRows, goneWords, KEEP_GONE, KEEPING_OFF_NOTE, myDesigns, NO_DESIGNS, othersWords, removeQuestion, sizeWords, spaceWords, tagOf, type AccountDesign, type MyDesignsParts } from "../src/my-designs.ts";
 
 const { Window } = await import("happy-dom");
 
@@ -216,4 +216,33 @@ test("with keeping off, nothing is asked about other projects", async () => {
   const p = page({ others: () => ({ state: "ask", count: 2 }), keeping: async () => false });
   await p.dialog.show();
   assert.equal(p.doc.getElementById("my-designs-others")!.children.length, 0);
+});
+
+test("issue #628 item 2: projects changed here whose designs were deleted from the account are offered back, then the offer goes", async () => {
+  let gone = 2;
+  const p = page({
+    gone: () => gone,
+    keepGone: async () => {
+      p.calls.push("keep gone");
+      gone = 0;
+    },
+  });
+  await p.dialog.show();
+  const box = () => p.doc.getElementById("my-designs-gone")!;
+  assert.equal(box().querySelector("p")!.textContent, "2 projects changed in this browser were deleted from your account, so they aren't kept there any more.");
+  assert.equal(goneWords(1), "1 project changed in this browser was deleted from your account, so it isn't kept there any more.");
+  assert.deepEqual([...box().querySelectorAll("button")].map((b) => b.textContent), [KEEP_GONE]);
+  box().querySelector<HTMLButtonElement>(".my-designs-keep-gone")!.click();
+  await p.settle();
+  await p.settle();
+  assert.deepEqual(p.calls, ["keep gone"]);
+  assert.equal(box().children.length, 0, "nothing left to offer");
+});
+
+test("issue #628 item 2: no offer with keeping off, with none gone, or from a shell without keepGone", async () => {
+  for (const over of [{ gone: () => 1, keepGone: async () => {}, keeping: async () => false }, { gone: () => 0, keepGone: async () => {} }, { gone: () => 1 }]) {
+    const p = page(over);
+    await p.dialog.show();
+    assert.equal(p.doc.getElementById("my-designs-gone")!.children.length, 0);
+  }
 });

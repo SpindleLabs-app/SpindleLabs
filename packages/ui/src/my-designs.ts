@@ -64,6 +64,13 @@ export function othersWords(state: "ask" | "left", count: number): string {
     ? `${n} in this browser before you signed in. Keep ${count === 1 ? "it" : "them"} in your account too? On a shared computer ${count === 1 ? "it" : "they"} may be someone else's. Nothing is sent until you choose.`
     : `${n} in this browser before you signed in and ${count === 1 ? "isn't" : "aren't"} kept in your account.`;
 }
+/** The offer to keep again projects whose designs were deleted from the account but changed here since. */
+export function goneWords(count: number): string {
+  return count === 1
+    ? "1 project changed in this browser was deleted from your account, so it isn't kept there any more."
+    : `${count} projects changed in this browser were deleted from your account, so they aren't kept there any more.`;
+}
+export const KEEP_GONE = "Keep in my account again";
 export const removeQuestion = (name: string) => `Delete “${name}” from your account? The copy in this browser, if there is one, stays. This can't be undone.`;
 
 export interface MyDesignsParts {
@@ -91,6 +98,10 @@ export interface MyDesignsParts {
   keepOthers(keep: boolean): Promise<void>;
   /** Words about the last sending round ("Your account's space is full…"), or "" when there is nothing to say. */
   syncWords(): string;
+  /** How many projects changed here had their designs deleted from the account (read when the list is), offered back (#628 item 2). */
+  gone?(): number;
+  /** Keeps those projects in the account again, each as a new design. */
+  keepGone?(): Promise<void>;
   now?: () => Date;
 }
 
@@ -120,12 +131,13 @@ export function myDesigns(doc: Document, parts: MyDesignsParts): MyDesigns {
   keepRow.append(keep, keepWords);
   const space = el("p", { id: "my-designs-space", className: "my-designs-space" });
   const others = el("div", { id: "my-designs-others", className: "my-designs-others" });
+  const goneRow = el("div", { id: "my-designs-gone", className: "my-designs-others my-designs-gone" });
   const status = el("p", { id: "my-designs-status", className: "my-designs-status" });
   status.setAttribute("role", "status"); // read out as it changes
   status.setAttribute("role", "status");
   const items = el("ul", { id: "my-designs-items", className: "my-designs-items" });
   const body = el("div", { className: "my-designs-body" });
-  body.append(note, keepRow, space, others, status, items);
+  body.append(note, keepRow, space, others, goneRow, status, items);
   dialog.append(head, body);
   doc.body.append(dialog);
 
@@ -144,6 +156,7 @@ export function myDesigns(doc: Document, parts: MyDesignsParts): MyDesigns {
     keep.checked = on === true;
     space.textContent = used ? spaceWords(used, parts.limits) : "";
     fillOthers(on !== false);
+    fillGone(on !== false);
     if (!listed.ok) {
       items.replaceChildren();
       return say(`Your designs can't be listed right now. ${message(listed.e)}`, true);
@@ -167,6 +180,15 @@ export function myDesigns(doc: Document, parts: MyDesignsParts): MyDesigns {
       no.addEventListener("click", () => void act(() => parts.keepOthers(false), false));
       others.append(no);
     }
+  }
+
+  /** The offer to keep again the projects whose designs were deleted from the account (only while keeping is on). */
+  function fillGone(keeping: boolean): void {
+    const n = keeping && parts.keepGone ? (parts.gone?.() ?? 0) : 0;
+    if (n === 0) return goneRow.replaceChildren();
+    const yes = el("button", { type: "button", className: "my-designs-button my-designs-keep-gone", textContent: KEEP_GONE });
+    yes.addEventListener("click", () => void act(() => parts.keepGone!(), false));
+    goneRow.replaceChildren(el("p", { className: "my-designs-others-words", textContent: goneWords(n) }), yes);
   }
 
   function rowFor(row: DesignRowWords): HTMLLIElement {

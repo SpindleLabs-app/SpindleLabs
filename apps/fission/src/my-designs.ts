@@ -71,7 +71,7 @@ export function reportWords(r: SyncReport | null): string {
       const refused = r.refused ?? [];
       if (refused.length) words.push(`The account service refused ${refused.map((n) => `“${n}”`).join(", ")}, so ${refused.length === 1 ? "it stays" : "they stay"} only in this browser until ${refused.length === 1 ? "it changes" : "they change"}. Your other designs are still kept.`);
       const gone = r.gone ?? [];
-      if (gone.length) words.push(`${gone.map((n) => `“${n}”`).join(", ")} ${gone.length === 1 ? "was" : "were"} deleted from your account, so the changes made here since are kept only in this browser. Use Save to keep a file of ${gone.length === 1 ? "it" : "them"}.`);
+      if (gone.length) words.push(`${gone.map((n) => `“${n}”`).join(", ")} ${gone.length === 1 ? "was" : "were"} deleted from your account, so the changes made here since are kept only in this browser. To keep ${gone.length === 1 ? "it" : "them"} in your account again, press Keep in my account again.`);
       return words.join(" ");
     }
     case "full":
@@ -289,8 +289,18 @@ export function startDesigns(client: AuthClient, host: DesignsHost, store: Small
       }
       return (others = { state: "ask", count });
     }
+    // Made here while this person was signed out: asked about as the first time (#628 item 5).
+    const arrived = await s.arrivedCount();
+    if (arrived > 0) return (others = { state: "ask", count: arrived });
     const left = s.leftCount();
     return (others = left > 0 ? { state: "left", count: left } : null);
+  }
+
+  /** Projects changed here whose designs were deleted from the account, as the dialog offers them (#628 item 2). */
+  let gone = 0;
+  async function refreshGone(): Promise<void> {
+    const user = userId();
+    gone = user ? syncFor(user).goneHere() : 0;
   }
 
   let dialog: MyDesigns | null = null;
@@ -298,6 +308,7 @@ export function startDesigns(client: AuthClient, host: DesignsHost, store: Small
     dialog ??= myDesigns(document, {
       list: async () => {
         await refreshOthers();
+        await refreshGone();
         void sendNow(); // anything not sent yet goes now, and the list shows it next time
         const r = await api.list();
         if (r.kind !== "ok") throw failure(r);
@@ -337,12 +348,19 @@ export function startDesigns(client: AuthClient, host: DesignsHost, store: Small
         if (yes) void sendNow();
       },
       syncWords: () => reportWords(last),
+      gone: () => gone,
+      keepGone: async () => {
+        const user = userId();
+        if (!user) throw failure({ kind: "signed-out" });
+        if (!(await syncFor(user).keepGone())) throw failure({ kind: "failed", reason: "storage" });
+        await sendNow();
+      },
       others: () => others,
       keepOthers: async (keep) => {
         const user = userId();
         if (!user) throw failure({ kind: "signed-out" });
         const s = syncFor(user);
-        const ok = s.firstTime() ? await s.firstChoice(keep) : keep ? await s.includeLeft() : true;
+        const ok = s.firstTime() ? await s.firstChoice(keep) : (await s.arrivedCount()) > 0 ? await s.arrivedChoice(keep) : keep ? await s.includeLeft() : true;
         if (!ok) throw failure({ kind: "failed", reason: "storage" });
         await sendNow();
       },
@@ -384,7 +402,19 @@ export function startDesigns(client: AuthClient, host: DesignsHost, store: Small
       if (r.value === null) throw new Error("That version is no longer kept in your account: the oldest are given up when your space is full.");
       return r.value;
     },
-    /** Signing out or deleting the account: links and remembered tags go, and nothing more is sent. */
+    /**
+     * Signing out, or the session ending under the app: nothing more is sent, and the projects here now are noted, so one
+     * made before `user` signs in here again is asked about first (#628 item 5). The links stay: nothing goes twice.
+     */
+    async away(user: string): Promise<void> {
+      if (timer) clearTimeout(timer);
+      timer = null;
+      if (retry) clearTimeout(retry);
+      retry = null;
+      dialog?.close();
+      await syncFor(user).away().catch(() => false);
+    },
+    /** Deleting the account: links and remembered tags go, and nothing more is sent. */
     forget(user: string) {
       if (timer) clearTimeout(timer);
       timer = null;
