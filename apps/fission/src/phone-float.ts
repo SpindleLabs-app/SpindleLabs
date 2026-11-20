@@ -57,6 +57,20 @@ export const ENDERS: readonly Ender[] = [
   { kind: "sketch", panel: ".sketchbar-finish", ok: "#finish-sketch", cancel: null, label: "Finish Sketch", errors: [], status: null, next: { id: "float-extrude", label: "Extrude", target: "#extrude" } },
 ];
 
+/**
+ * Finish's tool name ("Combine" in "Finish Combine") in a span of its own, which the narrowest phones hide but still
+ * read out (phone-float.css): at 320 px "Finish Combine" and Cancel needed 233 px against the bar's 208 and wrapped to
+ * two rows, the second under the tool's hint (SL #764 item 8). The words stay the same text.
+ */
+function toolWord(button: HTMLElement): void {
+  const word = button.querySelector(".tool-word") ?? button;
+  const text = word.textContent ?? "";
+  const space = text.indexOf(" ");
+  if (space < 0) return;
+  const tool = Object.assign(button.ownerDocument.createElement("span"), { className: "phone-float-tool", textContent: text.slice(space) });
+  word.replaceChildren(text.slice(0, space), tool);
+}
+
 /** The sketch's three planes, by the sketch panel's button ids. */
 const PLANES = ["XY", "XZ", "YZ"] as const;
 /** The sketch panel's construction plane buttons (59a3, behind ?construct), proxied after the three. */
@@ -135,6 +149,7 @@ export function startPhoneFloat(workspace: HTMLElement, viewport: HTMLElement, c
       return bar.replaceChildren(words, ...planes, proxy("float-cancel", "Cancel", "#sketch-cancel"));
     }
     const finish = withIcon(proxy("float-finish", state.ender.label, state.ender.ok, "phone-float-finish"), "finish");
+    if (state.ender.cancel) toolWord(finish); // Finish Sketch alone fits whole
     finish.disabled = okButton?.disabled ?? false;
     if (finish.disabled) finish.title = why || "Not yet: the panel in Properties says why";
     bar.replaceChildren(finish);

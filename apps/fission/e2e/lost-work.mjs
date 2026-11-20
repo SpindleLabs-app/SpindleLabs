@@ -4,7 +4,7 @@
 //   - browser storage failing at the start, then a change and the tab closed (item 4);
 //   - the store's text differing from today's only in layout, as an older SpindleLabs' text differs in its data
 //     version: the kept History must still go back (item 6; the reader brings both to the same text);
-//   - a change, then a reload 200 ms later (item 7).
+//   - a change, then a reload 200 ms later (item 7), and the same as a file's first change (SL #764 item 5).
 // Run from apps/fission after `npm run build`: node e2e/lost-work.mjs
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
@@ -244,6 +244,43 @@ await check("a change, then a reload 200 ms later: the change is kept, and so ar
   await volume(page, "30,000 mm³"); // exactly the change made before leaving
   await page.click("#undo");
   await volume(page, "24,000 mm³"); // and the width before it: 40 × 30 × 20
+});
+
+// SL #764 item 5 (S-4): the first change after opening a file, then a reload before its save lands. Nothing was kept
+// yet to extend (the steps were written only as a save landed, or as the page went, a write the browser may never
+// finish), so the change came back with Undo off.
+await check("a file opened, its first change, then a reload 200 ms later: the change is kept, and Undo takes it back", async (context) => {
+  const page = await context.newPage();
+  await page.addInitScript(() => {
+    const put = IDBObjectStore.prototype.put;
+    IDBObjectStore.prototype.put = function (value, key) {
+      if (window.__leaving && typeof key === "string" && /^steps/.test(key)) return put.call(this, value, "dropped/" + key);
+      return put.call(this, value, key);
+    };
+    window.addEventListener("beforeunload", () => (window.__leaving = true), true);
+    window.addEventListener("pagehide", () => (window.__leaving = true), true);
+  });
+  await page.goto(url);
+  await startWithBox(page, false);
+  await sheetsClearFor(page, CLEAR);
+  await saved(page);
+  await page.setInputFiles("#open-file", { name: "saved.spindle", mimeType: "application/octet-stream", buffer: readFileSync(new URL("./saved.spindle", import.meta.url)) });
+  await volume(page, "30,000 mm³"); // the file's 50 × 30 × 20 box
+  await sheetsClearFor(page, CLEAR);
+  await pinProperties(page);
+  await page.waitForTimeout(800);
+  await page.fill("#height", "33");
+  await page.keyboard.press("Tab");
+  await volume(page, "49,500 mm³"); // 50 × 30 × 33
+  await page.waitForTimeout(200);
+  assert.notEqual(await page.$eval("#save-status", (s) => s.dataset.state), "saved", "left before the first save landed");
+  await page.reload();
+  await volume(page, "49,500 mm³"); // the change is kept
+  await sheetsClearFor(page, CLEAR);
+  await page.waitForTimeout(800);
+  assert.equal(await page.isDisabled("#undo"), false, "Undo is still on");
+  await page.click("#undo");
+  await volume(page, "30,000 mm³"); // exactly the change made before leaving: the file as it opened
 });
 
 try {
