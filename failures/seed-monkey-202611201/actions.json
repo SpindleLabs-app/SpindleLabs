@@ -1,0 +1,6921 @@
+{
+  "seed": 202611201,
+  "failure": {
+    "check": "no kernel body leaks",
+    "message": "the kernel holds 37 bodies, the Bodies group lists 13, and its Moves and Combines keep 4 bodies as they were"
+  },
+  "shrunk": true,
+  "replayed": true,
+  "outOfTime": true,
+  "actions": [
+    {
+      "do": "select-bodies"
+    },
+    {
+      "do": "type",
+      "sel": "#project-name",
+      "text": " 7 ",
+      "finish": "Enter"
+    },
+    {
+      "do": "key",
+      "key": "Enter"
+    },
+    {
+      "do": "canvas",
+      "x": 0.603,
+      "y": 0.253,
+      "double": false
+    },
+    {
+      "do": "wheel",
+      "x": 0.792,
+      "y": 0.562,
+      "dy": -100
+    },
+    {
+      "do": "unstick"
+    },
+    {
+      "do": "click",
+      "sel": "button[data-view=\"right\"]"
+    },
+    {
+      "do": "click",
+      "sel": "#file-menu"
+    },
+    {
+      "do": "canvas",
+      "x": 0.108,
+      "y": 0.521,
+      "double": false
+    },
+    {
+      "do": "key",
+      "key": "Backspace"
+    },
+    {
+      "do": "drag",
+      "x": 0.338,
+      "y": 0.189,
+      "x2": 0.395,
+      "y2": 0.064,
+      "button": "right",
+      "shift": false
+    },
+    {
+      "do": "click",
+      "sel": "#create-sketch"
+    },
+    {
+      "do": "click",
+      "sel": "#sketch-plane-YZ"
+    },
+    {
+      "do": "hover",
+      "x": 0.431,
+      "y": 0.863
+    },
+    {
+      "do": "click",
+      "sel": "#sketch-tool-circle"
+    },
+    {
+      "do": "click",
+      "sel": "button[data-view=\"home\"]"
+    },
+    {
+      "do": "click",
+      "sel": "#sketch-tool-horizontal"
+    },
+    {
+      "do": "click",
+      "sel": "#sketch-finish"
+    },
+    {
+      "do": "click",
+      "sel": "#extrude"
+    },
+    {
+      "do": "click",
+      "sel": "#extrude-symmetric"
+    },
+    {
+      "do": "canvas",
+      "x": 0.504,
+      "y": 0.674,
+      "double": false
+    },
+    {
+      "do": "canvas",
+      "x": 0.425,
+      "y": 0.367,
+      "double": false
+    },
+    {
+      "do": "click",
+      "sel": "li[data-item=\"sketch-1\"]"
+    },
+    {
+      "do": "key",
+      "key": "Delete"
+    },
+    {
+      "do": "type",
+      "sel": "#extrude-distance",
+      "text": "12mm",
+      "finish": "Enter"
+    },
+    {
+      "do": "type",
+      "sel": "#extrude-distance",
+      "text": "1,5",
+      "finish": "Enter"
+    },
+    {
+      "do": "hover",
+      "x": 0.482,
+      "y": 0.48
+    },
+    {
+      "do": "unstick"
+    },
+    {
+      "do": "double",
+      "sel": "span[data-node=\"sketches/sketch-1\"]"
+    },
+    {
+      "do": "type",
+      "sel": "#sketch-grid",
+      "text": "0",
+      "finish": "Tab"
+    },
+    {
+      "do": "canvas",
+      "x": 0.911,
+      "y": 0.377,
+      "double": false
+    },
+    {
+      "do": "open",
+      "edit": "suppress",
+      "at": 346
+    },
+    {
+      "do": "click",
+      "sel": "#modify-menu"
+    },
+    {
+      "do": "type",
+      "sel": "#project-name",
+      "text": "0",
+      "finish": "Escape"
+    },
+    {
+      "do": "open",
+      "edit": "add-solid",
+      "at": 428
+    },
+    {
+      "do": "canvas",
+      "x": 0.355,
+      "y": 0.493,
+      "double": false
+    },
+    {
+      "do": "click",
+      "sel": "#file-menu"
+    },
+    {
+      "do": "key",
+      "key": "h"
+    },
+    {
+      "do": "type",
+      "sel": "#project-name",
+      "text": "3.5",
+      "finish": "Escape"
+    },
+    {
+      "do": "menu",
+      "sel": "li[data-item=\"sketch-1\"]"
+    },
+    {
+      "do": "click",
+      "sel": "#row-menu-marker"
+    },
+    {
+      "do": "drag",
+      "x": 0.858,
+      "y": 0.161,
+      "x2": 0.419,
+      "y2": 0.236,
+      "button": "left",
+      "shift": true
+    },
+    {
+      "do": "canvas",
+      "x": 0.491,
+      "y": 0.73,
+      "double": false
+    },
+    {
+      "do": "key",
+      "key": "Control+c"
+    },
+    {
+      "do": "key",
+      "key": "Control+Shift+z"
+    },
+    {
+      "do": "type",
+      "sel": "#project-name",
+      "text": "1e-9",
+      "finish": "Tab"
+    },
+    {
+      "do": "round-trip"
+    },
+    {
+      "do": "click",
+      "sel": "#extrude"
+    },
+    {
+      "do": "select-bodies"
+    },
+    {
+      "do": "key",
+      "key": "Control+y"
+    },
+    {
+      "do": "canvas",
+      "x": 0.343,
+      "y": 0.517,
+      "double": false
+    },
+    {
+      "do": "menu",
+      "sel": "li[data-item=\"sketch-1\"]"
+    },
+    {
+      "do": "drag",
+      "x": 0.808,
+      "y": 0.313,
+      "x2": 0.26,
+      "y2": 0.554,
+      "button": "left",
+      "shift": true
+    },
+    {
+      "do": "click",
+      "sel": "#extrude-cancel"
+    },
+    {
+      "do": "canvas",
+      "x": 0.189,
+      "y": 0.826,
+      "double": false
+    },
+    {
+      "do": "key",
+      "key": "Delete"
+    },
+    {
+      "do": "click",
+      "sel": "span[data-node=\"sketches/sketch-1\"]"
+    },
+    {
+      "do": "click",
+      "sel": "#create-menu"
+    },
+    {
+      "do": "canvas",
+      "x": 0.906,
+      "y": 0.595,
+      "double": false
+    },
+    {
+      "do": "double",
+      "sel": "li[data-item=\"sketch-1\"]"
+    },
+    {
+      "do": "click",
+      "sel": "#settings-open"
+    },
+    {
+      "do": "undo-redo"
+    },
+    {
+      "do": "click",
+      "sel": "button:text-is(\"Dark\")"
+    },
+    {
+      "do": "undo-redo"
+    },
+    {
+      "do": "click",
+      "sel": "#settings-report-bug"
+    },
+    {
+      "do": "key",
+      "key": "p"
+    },
+    {
+      "do": "undo-redo"
+    },
+    {
+      "do": "round-trip"
+    },
+    {
+      "do": "click",
+      "sel": "#bug-report-cancel"
+    },
+    {
+      "do": "canvas",
+      "x": 0.909,
+      "y": 0.85,
+      "double": false
+    },
+    {
+      "do": "click",
+      "sel": "#extrude"
+    },
+    {
+      "do": "type",
+      "sel": "#extrude-distance",
+      "text": "-Infinity",
+      "finish": "none"
+    },
+    {
+      "do": "key",
+      "key": "p"
+    },
+    {
+      "do": "click",
+      "sel": "#extrude-several"
+    },
+    {
+      "do": "round-trip"
+    },
+    {
+      "do": "double",
+      "sel": "span[data-node=\"sketches/sketch-1\"]"
+    },
+    {
+      "do": "click",
+      "sel": "#inspect-menu"
+    },
+    {
+      "do": "click",
+      "sel": "#file-menu"
+    },
+    {
+      "do": "click",
+      "sel": "#undo"
+    },
+    {
+      "do": "drag",
+      "x": 0.221,
+      "y": 0.476,
+      "x2": 0.607,
+      "y2": 0.565,
+      "button": "left",
+      "shift": false
+    },
+    {
+      "do": "round-trip"
+    },
+    {
+      "do": "click",
+      "sel": "summary:text-is(\"Bodies\")"
+    },
+    {
+      "do": "round-trip"
+    },
+    {
+      "do": "menu",
+      "sel": "span[data-node=\"sketches/sketch-1\"]"
+    },
+    {
+      "do": "click",
+      "sel": "#row-menu-delete"
+    },
+    {
+      "do": "menu",
+      "sel": "li[data-item=\"feature-2\"]"
+    },
+    {
+      "do": "canvas",
+      "x": 0.404,
+      "y": 0.234,
+      "double": false
+    },
+    {
+      "do": "click",
+      "sel": "#create-sketch"
+    },
+    {
+      "do": "key",
+      "key": "f"
+    },
+    {
+      "do": "canvas",
+      "x": 0.612,
+      "y": 0.619,
+      "double": false
+    },
+    {
+      "do": "key",
+      "key": "f"
+    },
+    {
+      "do": "click",
+      "sel": "#sketch-plane-XZ"
+    },
+    {
+      "do": "canvas",
+      "x": 0.245,
+      "y": 0.649,
+      "double": true
+    },
+    {
+      "do": "hover",
+      "x": 0.591,
+      "y": 0.424
+    },
+    {
+      "do": "click",
+      "sel": "#sketch-tool-tangent"
+    },
+    {
+      "do": "drag",
+      "x": 0.725,
+      "y": 0.173,
+      "x2": 0.3,
+      "y2": 0.668,
+      "button": "right",
+      "shift": true
+    },
+    {
+      "do": "hover",
+      "x": 0.752,
+      "y": 0.469
+    },
+    {
+      "do": "key",
+      "key": "Control+c"
+    },
+    {
+      "do": "drag",
+      "x": 0.296,
+      "y": 0.763,
+      "x2": 0.581,
+      "y2": 0.065,
+      "button": "right",
+      "shift": true
+    },
+    {
+      "do": "type",
+      "sel": "#project-name",
+      "text": "-Infinity",
+      "finish": "Enter"
+    },
+    {
+      "do": "type",
+      "sel": "#sketch-grid",
+      "text": "0",
+      "finish": "Escape"
+    },
+    {
+      "do": "canvas",
+      "x": 0.41,
+      "y": 0.119,
+      "double": false
+    },
+    {
+      "do": "drag",
+      "x": 0.719,
+      "y": 0.166,
+      "x2": 0.637,
+      "y2": 0.374,
+      "button": "right",
+      "shift": true
+    },
+    {
+      "do": "type",
+      "sel": "#sketch-grid",
+      "text": "NaN",
+      "finish": "Enter"
+    },
+    {
+      "do": "click",
+      "sel": "#sketch-tool-fix"
+    },
+    {
+      "do": "menu",
+      "sel": "span[data-node=\"sketches/sketch-3\"]"
+    },
+    {
+      "do": "canvas",
+      "x": 0.163,
+      "y": 0.697,
+      "double": false
+    },
+    {
+      "do": "hover",
+      "x": 0.34,
+      "y": 0.342
+    },
+    {
+      "do": "canvas",
+      "x": 0.201,
+      "y": 0.142,
+      "double": false
+    },
+    {
+      "do": "click",
+      "sel": "#sketch-tool-centre"
+    },
+    {
+      "do": "type",
+      "sel": "#project-name",
+      "text": "0.5",
+      "finish": "Enter"
+    },
+    {
+      "do": "hover",
+      "x": 0.086,
+      "y": 0.938
+    },
+    {
+      "do": "click",
+      "sel": "#sketch-tool-dimension"
+    },
+    {
+      "do": "click",
+      "sel": "li[data-item=\"feature-2\"]"
+    },
+    {
+      "do": "click",
+      "sel": "#sketch-tool-line"
+    },
+    {
+      "do": "open",
+      "edit": "no-marker",
+      "at": 43
+    },
+    {
+      "do": "click",
+      "sel": "#properties-handle"
+    },
+    {
+      "do": "click",
+      "sel": "#modify-menu"
+    },
+    {
+      "do": "unstick"
+    },
+    {
+      "do": "click",
+      "sel": "#modify-menu"
+    },
+    {
+      "do": "click",
+      "sel": "#modify-menu-combine"
+    },
+    {
+      "do": "click",
+      "sel": "#combine-keep"
+    },
+    {
+      "do": "click",
+      "sel": "#combine-target"
+    },
+    {
+      "do": "key",
+      "key": "Control+Shift+z"
+    },
+    {
+      "do": "click",
+      "sel": "#inspect-measure"
+    },
+    {
+      "do": "open",
+      "edit": "same",
+      "at": 11
+    },
+    {
+      "do": "click",
+      "sel": "span[data-node=\"sketches/sketch-3\"]"
+    },
+    {
+      "do": "canvas",
+      "x": 0.821,
+      "y": 0.389,
+      "double": false
+    },
+    {
+      "do": "click",
+      "sel": "summary:text-is(\"Origin\")"
+    },
+    {
+      "do": "key",
+      "key": "Control+y"
+    },
+    {
+      "do": "click",
+      "sel": "#extrude"
+    },
+    {
+      "do": "key",
+      "key": "?"
+    },
+    {
+      "do": "type",
+      "sel": "#project-name",
+      "text": "1/2",
+      "finish": "Tab"
+    },
+    {
+      "do": "menu",
+      "sel": "li[data-item=\"sketch-3\"]"
+    },
+    {
+      "do": "canvas",
+      "x": 0.502,
+      "y": 0.202,
+      "double": false
+    },
+    {
+      "do": "key",
+      "key": "Tab"
+    },
+    {
+      "do": "key",
+      "key": "?"
+    },
+    {
+      "do": "open",
+      "edit": "marker-start",
+      "at": 576
+    },
+    {
+      "do": "click",
+      "sel": "button:text-is(\"Close\")"
+    },
+    {
+      "do": "canvas",
+      "x": 0.211,
+      "y": 0.648,
+      "double": false
+    },
+    {
+      "do": "resize",
+      "size": [
+        820,
+        600
+      ]
+    },
+    {
+      "do": "click",
+      "sel": "button:text-is(\"Close\")"
+    },
+    {
+      "do": "wheel",
+      "x": 0.224,
+      "y": 0.213,
+      "dy": 100
+    },
+    {
+      "do": "undo-redo"
+    },
+    {
+      "do": "unstick"
+    },
+    {
+      "do": "click",
+      "sel": "#extrude"
+    },
+    {
+      "do": "double",
+      "sel": "li[data-item=\"sketch-3\"]"
+    },
+    {
+      "do": "click",
+      "sel": "#extrude-several"
+    },
+    {
+      "do": "resize",
+      "size": [
+        820,
+        600
+      ]
+    },
+    {
+      "do": "open",
+      "edit": "marker",
+      "at": 985
+    },
+    {
+      "do": "resize",
+      "size": [
+        820,
+        600
+      ]
+    },
+    {
+      "do": "canvas",
+      "x": 0.49,
+      "y": 0.7,
+      "double": false
+    },
+    {
+      "do": "click",
+      "sel": "button[data-nav=\"zoom\"]"
+    },
+    {
+      "do": "canvas",
+      "x": 0.53,
+      "y": 0.588,
+      "double": true
+    },
+    {
+      "do": "menu",
+      "sel": "span[data-node=\"origin-x\"]"
+    },
+    {
+      "do": "resize",
+      "size": [
+        820,
+        600
+      ]
+    },
+    {
+      "do": "hover",
+      "x": 0.601,
+      "y": 0.205
+    },
+    {
+      "do": "double",
+      "sel": "li[data-item=\"sketch-3\"]"
+    },
+    {
+      "do": "menu",
+      "sel": "li[data-item=\"feature-2\"]"
+    },
+    {
+      "do": "hover",
+      "x": 0.354,
+      "y": 0.371
+    },
+    {
+      "do": "canvas",
+      "x": 0.547,
+      "y": 0.745,
+      "double": false
+    },
+    {
+      "do": "canvas",
+      "x": 0.327,
+      "y": 0.383,
+      "double": false
+    },
+    {
+      "do": "canvas",
+      "x": 0.12,
+      "y": 0.651,
+      "double": false
+    },
+    {
+      "do": "hover",
+      "x": 0.499,
+      "y": 0.703
+    },
+    {
+      "do": "click",
+      "sel": "#sketch-tool-project"
+    },
+    {
+      "do": "wheel",
+      "x": 0.452,
+      "y": 0.775,
+      "dy": -400
+    },
+    {
+      "do": "unstick"
+    },
+    {
+      "do": "click",
+      "sel": "li[data-item=\"sketch-3\"]"
+    },
+    {
+      "do": "key",
+      "key": "Enter"
+    },
+    {
+      "do": "key",
+      "key": "Escape"
+    },
+    {
+      "do": "undo-redo"
+    },
+    {
+      "do": "round-trip"
+    },
+    {
+      "do": "key",
+      "key": "Control+c"
+    },
+    {
+      "do": "key",
+      "key": "Tab"
+    },
+    {
+      "do": "unstick"
+    },
+    {
+      "do": "resize",
+      "size": [
+        1280,
+        800
+      ]
+    },
+    {
+      "do": "type",
+      "sel": "#project-name",
+      "text": "--3",
+      "finish": "Escape"
+    },
+    {
+      "do": "resize",
+      "size": [
+        820,
+        600
+      ]
+    },
+    {
+      "do": "click",
+      "sel": "#move"
+    },
+    {
+      "do": "key",
+      "key": "r"
+    },
+    {
+      "do": "click",
+      "sel": "#file-menu"
+    },
+    {
+      "do": "open",
+      "edit": "truncate",
+      "at": 991
+    },
+    {
+      "do": "click",
+      "sel": "#start-fresh"
+    },
+    {
+      "do": "undo-redo"
+    },
+    {
+      "do": "key",
+      "key": "Control+c"
+    },
+    {
+      "do": "canvas",
+      "x": 0.079,
+      "y": 0.053,
+      "double": false
+    },
+    {
+      "do": "open",
+      "edit": "suppress",
+      "at": 376
+    },
+    {
+      "do": "undo-redo"
+    },
+    {
+      "do": "select-bodies"
+    },
+    {
+      "do": "key",
+      "key": "Escape"
+    },
+    {
+      "do": "open",
+      "edit": "bad-number",
+      "at": 8
+    },
+    {
+      "do": "open",
+      "edit": "same",
+      "at": 927
+    },
+    {
+      "do": "click",
+      "sel": "#combine"
+    },
+    {
+      "do": "drag",
+      "x": 0.373,
+      "y": 0.531,
+      "x2": 0.725,
+      "y2": 0.751,
+      "button": "middle",
+      "shift": false
+    },
+    {
+      "do": "click",
+      "sel": "#combine-keep"
+    },
+    {
+      "do": "click",
+      "sel": "#combine-keep"
+    },
+    {
+      "do": "click",
+      "sel": "#combine-keep"
+    },
+    {
+      "do": "click",
+      "sel": "#combine-target"
+    },
+    {
+      "do": "open",
+      "edit": "swap",
+      "at": 420
+    },
+    {
+      "do": "click",
+      "sel": "#create-sketch"
+    },
+    {
+      "do": "click",
+      "sel": "#sketch-plane-XY"
+    },
+    {
+      "do": "key",
+      "key": "t"
+    },
+    {
+      "do": "key",
+      "key": "Escape"
+    },
+    {
+      "do": "click",
+      "sel": "#sketch-tool-rectangle"
+    },
+    {
+      "do": "canvas",
+      "x": 0.684,
+      "y": 0.098,
+      "double": false
+    },
+    {
+      "do": "click",
+      "sel": "#sketch-tool-circle"
+    },
+    {
+      "do": "hover",
+      "x": 0.785,
+      "y": 0.296
+    },
+    {
+      "do": "click",
+      "sel": "#sketch-tool-fix"
+    },
+    {
+      "do": "click",
+      "sel": "summary:text-is(\"Browser\")"
+    },
+    {
+      "do": "click",
+      "sel": "#extrude"
+    },
+    {
+      "do": "click",
+      "sel": "#extrude-clear"
+    },
+    {
+      "do": "key",
+      "key": "Control+c"
+    },
+    {
+      "do": "undo-redo"
+    },
+    {
+      "do": "select-bodies"
+    },
+    {
+      "do": "wheel",
+      "x": 0.135,
+      "y": 0.473,
+      "dy": 100
+    },
+    {
+      "do": "select-bodies"
+    },
+    {
+      "do": "double",
+      "sel": "li[data-item=\"sketch-3\"]"
+    },
+    {
+      "do": "canvas",
+      "x": 0.318,
+      "y": 0.431,
+      "double": false
+    },
+    {
+      "do": "select-bodies"
+    },
+    {
+      "do": "click",
+      "sel": "button[data-view=\"home\"]"
+    },
+    {
+      "do": "undo-redo"
+    },
+    {
+      "do": "click",
+      "sel": "#command-search-button"
+    },
+    {
+      "do": "canvas",
+      "x": 0.294,
+      "y": 0.64,
+      "double": false
+    },
+    {
+      "do": "canvas",
+      "x": 0.569,
+      "y": 0.253,
+      "double": false
+    },
+    {
+      "do": "type",
+      "sel": "#command-search-input",
+      "text": "1e308",
+      "finish": "none"
+    },
+    {
+      "do": "hover",
+      "x": 0.853,
+      "y": 0.945
+    },
+    {
+      "do": "round-trip"
+    },
+    {
+      "do": "open",
+      "edit": "bad-number",
+      "at": 886
+    },
+    {
+      "do": "undo-redo"
+    },
+    {
+      "do": "canvas",
+      "x": 0.156,
+      "y": 0.581,
+      "double": false
+    },
+    {
+      "do": "unstick"
+    },
+    {
+      "do": "round-trip"
+    },
+    {
+      "do": "resize",
+      "size": [
+        1280,
+        800
+      ]
+    },
+    {
+      "do": "select-bodies"
+    },
+    {
+      "do": "click",
+      "sel": "#modify-menu"
+    },
+    {
+      "do": "click",
+      "sel": "li[data-item=\"feature-2\"]"
+    },
+    {
+      "do": "key",
+      "key": "a"
+    },
+    {
+      "do": "select-bodies"
+    },
+    {
+      "do": "click",
+      "sel": "#file-menu"
+    },
+    {
+      "do": "wheel",
+      "x": 0.375,
+      "y": 0.374,
+      "dy": -400
+    },
+    {
+      "do": "double",
+      "sel": "li[data-item=\"sketch-4\"]"
+    },
+    {
+      "do": "click",
+      "sel": "#sketch-tool-select"
+    },
+    {
+      "do": "click",
+      "sel": "#sketch-tool-rectangle"
+    },
+    {
+      "do": "open",
+      "edit": "suppress",
+      "at": 511
+    },
+    {
+      "do": "canvas",
+      "x": 0.276,
+      "y": 0.242,
+      "double": false
+    },
+    {
+      "do": "click",
+      "sel": "#extrude"
+    },
+    {
+      "do": "type",
+      "sel": "#extrude-distance",
+      "text": "3e2",
+      "finish": "Enter"
+    },
+    {
+      "do": "key",
+      "key": "Control+c"
+    },
+    {
+      "do": "click",
+      "sel": "#extrude-flip"
+    },
+    {
+      "do": "click",
+      "sel": "#extrude-cancel"
+    },
+    {
+      "do": "round-trip"
+    },
+    {
+      "do": "unstick"
+    },
+    {
+      "do": "type",
+      "sel": "#project-name",
+      "text": "",
+      "finish": "none"
+    },
+    {
+      "do": "click",
+      "sel": "#create-menu"
+    },
+    {
+      "do": "key",
+      "key": "a"
+    },
+    {
+      "do": "key",
+      "key": "l"
+    },
+    {
+      "do": "click",
+      "sel": "#coming-revolve"
+    },
+    {
+      "do": "click",
+      "sel": "#modify-menu"
+    },
+    {
+      "do": "type",
+      "sel": "#project-name",
+      "text": "12mm",
+      "finish": "Escape"
+    },
+    {
+      "do": "open",
+      "edit": "add-solid",
+      "at": 293
+    },
+    {
+      "do": "key",
+      "key": "Enter"
+    },
+    {
+      "do": "canvas",
+      "x": 0.09,
+      "y": 0.077,
+      "double": false
+    },
+    {
+      "do": "click",
+      "sel": "#inspect-measure"
+    },
+    {
+      "do": "open",
+      "edit": "add-solid",
+      "at": 350
+    },
+    {
+      "do": "undo-redo"
+    },
+    {
+      "do": "click",
+      "sel": "li[data-item=\"sketch-4\"]"
+    },
+    {
+      "do": "click",
+      "sel": "#combine"
+    },
+    {
+      "do": "canvas",
+      "x": 0.724,
+      "y": 0.208,
+      "double": false
+    },
+    {
+      "do": "open",
+      "edit": "drop",
+      "at": 877
+    },
+    {
+      "do": "menu",
+      "sel": "li[data-item=\"sketch-4\"]"
+    },
+    {
+      "do": "round-trip"
+    },
+    {
+      "do": "unstick"
+    },
+    {
+      "do": "undo-redo"
+    },
+    {
+      "do": "click",
+      "sel": "#extrude"
+    },
+    {
+      "do": "key",
+      "key": "t"
+    },
+    {
+      "do": "click",
+      "sel": "#extrude-flip"
+    },
+    {
+      "do": "type",
+      "sel": "#extrude-distance",
+      "text": " ",
+      "finish": "Tab"
+    },
+    {
+      "do": "hover",
+      "x": 0.899,
+      "y": 0.868
+    },
+    {
+      "do": "menu",
+      "sel": "li[data-item=\"feature-2\"]"
+    },
+    {
+      "do": "open",
+      "edit": "drop",
+      "at": 375
+    },
+    {
+      "do": "type",
+      "sel": "#width",
+      "text": "２０",
+      "finish": "Tab"
+    },
+    {
+      "do": "click",
+      "sel": "#modify-menu"
+    },
+    {
+      "do": "type",
+      "sel": "#width",
+      "text": "12mm",
+      "finish": "Tab"
+    },
+    {
+      "do": "reload"
+    },
+    {
+      "do": "click",
+      "sel": "#extrude"
+    },
+    {
+      "do": "click",
+      "sel": "#modify-menu"
+    },
+    {
+      "do": "undo-redo"
+    },
+    {
+      "do": "select-bodies"
+    },
+    {
+      "do": "undo-redo"
+    },
+    {
+      "do": "click",
+      "sel": "button:text-is(\"⋯\")"
+    },
+    {
+      "do": "click",
+      "sel": "button:text-is(\"Download OBJ\")"
+    },
+    {
+      "do": "double",
+      "sel": "li[data-item=\"feature-7\"]"
+    },
+    {
+      "do": "click",
+      "sel": "#feature-edit-cancel"
+    },
+    {
+      "do": "click",
+      "sel": "#create-sketch"
+    },
+    {
+      "do": "canvas",
+      "x": 0.877,
+      "y": 0.885,
+      "double": false
+    },
+    {
+      "do": "click",
+      "sel": "#sketch-plane-YZ"
+    },
+    {
+      "do": "drag",
+      "x": 0.388,
+      "y": 0.315,
+      "x2": 0.471,
+      "y2": 0.325,
+      "button": "left",
+      "shift": false
+    },
+    {
+      "do": "canvas",
+      "x": 0.54,
+      "y": 0.434,
+      "double": false
+    },
+    {
+      "do": "canvas",
+      "x": 0.336,
+      "y": 0.281,
+      "double": false
+    },
+    {
+      "do": "canvas",
+      "x": 0.688,
+      "y": 0.598,
+      "double": false
+    },
+    {
+      "do": "key",
+      "key": "Backspace"
+    },
+    {
+      "do": "canvas",
+      "x": 0.528,
+      "y": 0.795,
+      "double": false
+    },
+    {
+      "do": "canvas",
+      "x": 0.666,
+      "y": 0.735,
+      "double": false
+    },
+    {
+      "do": "key",
+      "key": "Delete"
+    },
+    {
+      "do": "canvas",
+      "x": 0.169,
+      "y": 0.621,
+      "double": false
+    },
+    {
+      "do": "canvas",
+      "x": 0.144,
+      "y": 0.232,
+      "double": false
+    },
+    {
+      "do": "click",
+      "sel": "#sketch-grid-snap"
+    },
+    {
+      "do": "hover",
+      "x": 0.29,
+      "y": 0.344
+    },
+    {
+      "do": "click",
+      "sel": "button[data-node=\"body-4\"]"
+    },
+    {
+      "do": "click",
+      "sel": "button[data-node=\"body-4\"]"
+    },
+    {
+      "do": "canvas",
+      "x": 0.077,
+      "y": 0.839,
+      "double": false
+    },
+    {
+      "do": "canvas",
+      "x": 0.244,
+      "y": 0.168,
+      "double": false
+    },
+    {
+      "do": "round-trip"
+    },
+    {
+      "do": "round-trip"
+    },
+    {
+      "do": "type",
+      "sel": "#depth",
+      "text": "3.5",
+      "finish": "Escape"
+    },
+    {
+      "do": "click",
+      "sel": "button[data-node=\"body-4\"]"
+    },
+    {
+      "do": "click",
+      "sel": "#file-menu"
+    },
+    {
+      "do": "key",
+      "key": "?"
+    },
+    {
+      "do": "undo-redo"
+    },
+    {
+      "do": "click",
+      "sel": "#create-sketch"
+    },
+    {
+      "do": "click",
+      "sel": "#sketch-plane-XY"
+    },
+    {
+      "do": "hover",
+      "x": 0.58,
+      "y": 0.639
+    },
+    {
+      "do": "resize",
+      "size": [
+        1280,
+        800
+      ]
+    },
+    {
+      "do": "hover",
+      "x": 0.228,
+      "y": 0.231
+    },
+    {
+      "do": "click",
+      "sel": "#sketch-grid-snap"
+    },
+    {
+      "do": "canvas",
+      "x": 0.397,
+      "y": 0.452,
+      "double": false
+    },
+    {
+      "do": "click",
+      "sel": "button[data-node=\"body-4\"]"
+    },
+    {
+      "do": "type",
+      "sel": "#sketch-grid",
+      "text": "NaN",
+      "finish": "Enter"
+    },
+    {
+      "do": "undo-redo"
+    },
+    {
+      "do": "hover",
+      "x": 0.683,
+      "y": 0.205
+    },
+    {
+      "do": "type",
+      "sel": "#height",
+      "text": "0x10",
+      "finish": "Escape"
+    },
+    {
+      "do": "open",
+      "edit": "marker",
+      "at": 670
+    },
+    {
+      "do": "combine",
+      "a": 0.8593772291205823,
+      "b": 0.4996798150241375,
+      "op": "intersect",
+      "keep": true,
+      "ok": false
+    },
+    {
+      "do": "click",
+      "sel": "#modify-menu"
+    },
+    {
+      "do": "click",
+      "sel": "#extrude"
+    },
+    {
+      "do": "type",
+      "sel": "#extrude-distance",
+      "text": "40",
+      "finish": "none"
+    },
+    {
+      "do": "double",
+      "sel": "span[data-node=\"sketches/sketch-3\"]"
+    },
+    {
+      "do": "click",
+      "sel": "#extrude-clear"
+    },
+    {
+      "do": "type",
+      "sel": "#extrude-distance",
+      "text": "999999999",
+      "finish": "Escape"
+    },
+    {
+      "do": "canvas",
+      "x": 0.355,
+      "y": 0.471,
+      "double": false
+    },
+    {
+      "do": "click",
+      "sel": "button[data-node=\"body-4\"]"
+    },
+    {
+      "do": "wheel",
+      "x": 0.336,
+      "y": 0.351,
+      "dy": -100
+    },
+    {
+      "do": "resize",
+      "size": [
+        375,
+        740
+      ]
+    },
+    {
+      "do": "menu",
+      "sel": "li[data-item=\"sketch-8\"]"
+    },
+    {
+      "do": "click",
+      "sel": "#row-menu-edit-sketch"
+    },
+    {
+      "do": "reload"
+    },
+    {
+      "do": "click",
+      "sel": "li[data-item=\"feature-7\"]"
+    },
+    {
+      "do": "unstick"
+    },
+    {
+      "do": "open",
+      "edit": "marker-start",
+      "at": 430
+    },
+    {
+      "do": "drag",
+      "x": 0.289,
+      "y": 0.807,
+      "x2": 0.662,
+      "y2": 0.786,
+      "button": "right",
+      "shift": true
+    },
+    {
+      "do": "key",
+      "key": "?"
+    },
+    {
+      "do": "click",
+      "sel": "button:text-is(\"Close\")"
+    },
+    {
+      "do": "click",
+      "sel": "button:text-is(\"Close\")"
+    },
+    {
+      "do": "click",
+      "sel": "button:text-is(\"Close\")"
+    },
+    {
+      "do": "unstick"
+    },
+    {
+      "do": "click",
+      "sel": "#create-sketch"
+    },
+    {
+      "do": "select-bodies"
+    },
+    {
+      "do": "click",
+      "sel": "button[data-view=\"fit\"]"
+    },
+    {
+      "do": "drag",
+      "x": 0.479,
+      "y": 0.058,
+      "x2": 0.527,
+      "y2": 0.668,
+      "button": "middle",
+      "shift": false
+    },
+    {
+      "do": "undo-redo"
+    },
+    {
+      "do": "click",
+      "sel": "#modify-menu"
+    },
+    {
+      "do": "click",
+      "sel": "#create-sketch"
+    },
+    {
+      "do": "select-bodies"
+    },
+    {
+      "do": "unstick"
+    },
+    {
+      "do": "click",
+      "sel": "button[data-view=\"right\"]"
+    },
+    {
+      "do": "canvas",
+      "x": 0.51,
+      "y": 0.344,
+      "double": false
+    },
+    {
+      "do": "wheel",
+      "x": 0.543,
+      "y": 0.099,
+      "dy": -400
+    },
+    {
+      "do": "canvas",
+      "x": 0.582,
+      "y": 0.63,
+      "double": false
+    },
+    {
+      "do": "canvas",
+      "x": 0.906,
+      "y": 0.765,
+      "double": false
+    },
+    {
+      "do": "click",
+      "sel": "#extrude"
+    },
+    {
+      "do": "drag",
+      "x": 0.563,
+      "y": 0.391,
+      "x2": 0.394,
+      "y2": 0.554,
+      "button": "left",
+      "shift": true
+    },
+    {
+      "do": "key",
+      "key": "t"
+    },
+    {
+      "do": "menu",
+      "sel": "li[data-item=\"sketch-24\"]"
+    },
+    {
+      "do": "click",
+      "sel": "#row-menu-rename"
+    },
+    {
+      "do": "canvas",
+      "x": 0.785,
+      "y": 0.769,
+      "double": false
+    },
+    {
+      "do": "click",
+      "sel": "#create-sketch"
+    },
+    {
+      "do": "click",
+      "sel": "#create-sketch"
+    },
+    {
+      "do": "open",
+      "edit": "bad-number",
+      "at": 402
+    },
+    {
+      "do": "unstick"
+    },
+    {
+      "do": "click",
+      "sel": "li[data-item=\"sketch-4\"]"
+    },
+    {
+      "do": "click",
+      "sel": "#modify-menu"
+    },
+    {
+      "do": "key",
+      "key": "Escape"
+    },
+    {
+      "do": "click",
+      "sel": "li[data-item=\"sketch-4\"]"
+    },
+    {
+      "do": "click",
+      "sel": "button[data-nav=\"pan\"]"
+    },
+    {
+      "do": "open",
+      "edit": "marker",
+      "at": 827
+    },
+    {
+      "do": "click",
+      "sel": "li[data-item=\"sketch-4\"]"
+    },
+    {
+      "do": "reload"
+    },
+    {
+      "do": "click",
+      "sel": "li[data-item=\"sketch-24\"]"
+    },
+    {
+      "do": "unstick"
+    },
+    {
+      "do": "key",
+      "key": "?"
+    },
+    {
+      "do": "undo-redo"
+    },
+    {
+      "do": "select-bodies"
+    },
+    {
+      "do": "undo-redo"
+    },
+    {
+      "do": "click",
+      "sel": "button:text-is(\"Close\")"
+    },
+    {
+      "do": "click",
+      "sel": "button:text-is(\"Close\")"
+    },
+    {
+      "do": "wheel",
+      "x": 0.31,
+      "y": 0.091,
+      "dy": 100
+    },
+    {
+      "do": "click",
+      "sel": "button:text-is(\"Close\")"
+    },
+    {
+      "do": "click",
+      "sel": "button:text-is(\"Close\")"
+    },
+    {
+      "do": "key",
+      "key": "p"
+    },
+    {
+      "do": "round-trip"
+    },
+    {
+      "do": "click",
+      "sel": "button:text-is(\"Close\")"
+    },
+    {
+      "do": "click",
+      "sel": "button:text-is(\"Close\")"
+    },
+    {
+      "do": "canvas",
+      "x": 0.931,
+      "y": 0.378,
+      "double": false
+    },
+    {
+      "do": "canvas",
+      "x": 0.499,
+      "y": 0.734,
+      "double": false
+    },
+    {
+      "do": "unstick"
+    },
+    {
+      "do": "unstick"
+    },
+    {
+      "do": "select-bodies"
+    },
+    {
+      "do": "click",
+      "sel": "#file-menu"
+    },
+    {
+      "do": "wheel",
+      "x": 0.804,
+      "y": 0.469,
+      "dy": -400
+    },
+    {
+      "do": "select-bodies"
+    },
+    {
+      "do": "canvas",
+      "x": 0.942,
+      "y": 0.104,
+      "double": false
+    },
+    {
+      "do": "canvas",
+      "x": 0.648,
+      "y": 0.937,
+      "double": false
+    },
+    {
+      "do": "menu",
+      "sel": "li[data-item=\"sketch-24\"]"
+    },
+    {
+      "do": "click",
+      "sel": "#row-menu-marker"
+    },
+    {
+      "do": "undo-redo"
+    },
+    {
+      "do": "unstick"
+    },
+    {
+      "do": "open",
+      "edit": "drop",
+      "at": 528
+    },
+    {
+      "do": "menu",
+      "sel": "li[data-item=\"sketch-8\"]"
+    },
+    {
+      "do": "canvas",
+      "x": 0.735,
+      "y": 0.187,
+      "double": false
+    },
+    {
+      "do": "select-bodies"
+    },
+    {
+      "do": "unstick"
+    },
+    {
+      "do": "click",
+      "sel": "#create-sketch"
+    },
+    {
+      "do": "click",
+      "sel": "#modify-menu"
+    },
+    {
+      "do": "key",
+      "key": "Enter"
+    },
+    {
+      "do": "click",
+      "sel": "#float-cancel"
+    },
+    {
+      "do": "canvas",
+      "x": 0.324,
+      "y": 0.255,
+      "double": false
+    },
+    {
+      "do": "canvas",
+      "x": 0.273,
+      "y": 0.705,
+      "double": false
+    },
+    {
+      "do": "canvas",
+      "x": 0.219,
+      "y": 0.674,
+      "double": false
+    },
+    {
+      "do": "open",
+      "edit": "add-solid",
+      "at": 195
+    },
+    {
+      "do": "undo-redo"
+    },
+    {
+      "do": "click",
+      "sel": "#browser-toggle"
+    },
+    {
+      "do": "drag",
+      "x": 0.914,
+      "y": 0.578,
+      "x2": 0.675,
+      "y2": 0.475,
+      "button": "right",
+      "shift": false
+    },
+    {
+      "do": "click",
+      "sel": "#extrude"
+    },
+    {
+      "do": "click",
+      "sel": "#extrude"
+    },
+    {
+      "do": "click",
+      "sel": "span[data-node=\"sketches/sketch-3\"]"
+    },
+    {
+      "do": "click",
+      "sel": "span[data-node=\"sketches/sketch-24\"]"
+    },
+    {
+      "do": "canvas",
+      "x": 0.782,
+      "y": 0.101,
+      "double": false
+    },
+    {
+      "do": "unstick"
+    },
+    {
+      "do": "click",
+      "sel": "li[data-item=\"sketch-4\"]"
+    },
+    {
+      "do": "key",
+      "key": "f"
+    },
+    {
+      "do": "key",
+      "key": "Control+Shift+z"
+    },
+    {
+      "do": "menu",
+      "sel": "li[data-item=\"sketch-4\"]"
+    },
+    {
+      "do": "wheel",
+      "x": 0.094,
+      "y": 0.181,
+      "dy": 400
+    },
+    {
+      "do": "reload"
+    },
+    {
+      "do": "click",
+      "sel": "#create-sketch"
+    },
+    {
+      "do": "resize",
+      "size": [
+        375,
+        740
+      ]
+    },
+    {
+      "do": "drag",
+      "x": 0.852,
+      "y": 0.247,
+      "x2": 0.051,
+      "y2": 0.892,
+      "button": "left",
+      "shift": true
+    },
+    {
+      "do": "click",
+      "sel": "#file-menu"
+    },
+    {
+      "do": "canvas",
+      "x": 0.759,
+      "y": 0.601,
+      "double": false
+    },
+    {
+      "do": "canvas",
+      "x": 0.818,
+      "y": 0.7,
+      "double": false
+    },
+    {
+      "do": "click",
+      "sel": "li[data-item=\"sketch-8\"]"
+    },
+    {
+      "do": "click",
+      "sel": "li[data-item=\"feature-7\"]"
+    },
+    {
+      "do": "resize",
+      "size": [
+        375,
+        740
+      ]
+    },
+    {
+      "do": "open",
+      "edit": "marker",
+      "at": 390
+    },
+    {
+      "do": "click",
+      "sel": "#menu-toggle"
+    },
+    {
+      "do": "canvas",
+      "x": 0.593,
+      "y": 0.736,
+      "double": false
+    },
+    {
+      "do": "click",
+      "sel": "#modify-menu"
+    },
+    {
+      "do": "undo-redo"
+    },
+    {
+      "do": "resize",
+      "size": [
+        1280,
+        800
+      ]
+    },
+    {
+      "do": "menu",
+      "sel": "span[data-node=\"sketches/sketch-24\"]"
+    },
+    {
+      "do": "click",
+      "sel": "#row-menu-suppress"
+    },
+    {
+      "do": "wheel",
+      "x": 0.791,
+      "y": 0.248,
+      "dy": -400
+    },
+    {
+      "do": "click",
+      "sel": "#account-open"
+    },
+    {
+      "do": "resize",
+      "size": [
+        1280,
+        800
+      ]
+    },
+    {
+      "do": "click",
+      "sel": "#account-emails"
+    },
+    {
+      "do": "click",
+      "sel": "button:text-is(\"Close\")"
+    },
+    {
+      "do": "drag",
+      "x": 0.391,
+      "y": 0.269,
+      "x2": 0.577,
+      "y2": 0.099,
+      "button": "right",
+      "shift": true
+    },
+    {
+      "do": "click",
+      "sel": "button:text-is(\"Close\")"
+    },
+    {
+      "do": "click",
+      "sel": "#account-emails"
+    },
+    {
+      "do": "click",
+      "sel": "#account-emails"
+    },
+    {
+      "do": "canvas",
+      "x": 0.731,
+      "y": 0.448,
+      "double": false
+    },
+    {
+      "do": "click",
+      "sel": "#create-sketch"
+    },
+    {
+      "do": "click",
+      "sel": "button[data-node=\"body-2\"]"
+    },
+    {
+      "do": "click",
+      "sel": "#create-sketch"
+    },
+    {
+      "do": "combine",
+      "a": 0.003289505373686552,
+      "b": 0.4989707418717444,
+      "op": "intersect",
+      "keep": false,
+      "ok": true
+    },
+    {
+      "do": "canvas",
+      "x": 0.904,
+      "y": 0.146,
+      "double": false
+    },
+    {
+      "do": "click",
+      "sel": "#combine-ok"
+    },
+    {
+      "do": "click",
+      "sel": "button[data-node=\"body-2\"]"
+    },
+    {
+      "do": "click",
+      "sel": "#create-sketch"
+    },
+    {
+      "do": "select-bodies"
+    },
+    {
+      "do": "wheel",
+      "x": 0.408,
+      "y": 0.889,
+      "dy": -400
+    },
+    {
+      "do": "undo-redo"
+    },
+    {
+      "do": "open",
+      "edit": "marker",
+      "at": 427
+    },
+    {
+      "do": "double",
+      "sel": "button[data-node=\"sketches/sketch-8\"]"
+    },
+    {
+      "do": "hover",
+      "x": 0.577,
+      "y": 0.316
+    },
+    {
+      "do": "canvas",
+      "x": 0.565,
+      "y": 0.681,
+      "double": false
+    },
+    {
+      "do": "click",
+      "sel": "#sketch-tool-vertical"
+    },
+    {
+      "do": "click",
+      "sel": "#sketch-tool-fix"
+    },
+    {
+      "do": "key",
+      "key": "t"
+    },
+    {
+      "do": "click",
+      "sel": "button[data-view=\"right\"]"
+    },
+    {
+      "do": "type",
+      "sel": "#project-name",
+      "text": "0x10",
+      "finish": "Tab"
+    },
+    {
+      "do": "double",
+      "sel": "span[data-node=\"sketches/sketch-3\"]"
+    },
+    {
+      "do": "hover",
+      "x": 0.365,
+      "y": 0.273
+    },
+    {
+      "do": "click",
+      "sel": "#sketch-grid-snap"
+    },
+    {
+      "do": "round-trip"
+    },
+    {
+      "do": "type",
+      "sel": "#depth",
+      "text": "abc",
+      "finish": "Enter"
+    },
+    {
+      "do": "open",
+      "edit": "truncate",
+      "at": 802
+    },
+    {
+      "do": "wheel",
+      "x": 0.756,
+      "y": 0.09,
+      "dy": 400
+    },
+    {
+      "do": "click",
+      "sel": "#move"
+    },
+    {
+      "do": "open",
+      "edit": "no-marker",
+      "at": 254
+    },
+    {
+      "do": "canvas",
+      "x": 0.283,
+      "y": 0.449,
+      "double": true
+    },
+    {
+      "do": "click",
+      "sel": "#settings-open"
+    },
+    {
+      "do": "drag",
+      "x": 0.515,
+      "y": 0.707,
+      "x2": 0.622,
+      "y2": 0.296,
+      "button": "middle",
+      "shift": false
+    },
+    {
+      "do": "open",
+      "edit": "drop",
+      "at": 516
+    },
+    {
+      "do": "hover",
+      "x": 0.508,
+      "y": 0.197
+    },
+    {
+      "do": "drag",
+      "x": 0.927,
+      "y": 0.422,
+      "x2": 0.522,
+      "y2": 0.841,
+      "button": "left",
+      "shift": true
+    },
+    {
+      "do": "type",
+      "sel": "#height",
+      "text": "1,5",
+      "finish": "none"
+    },
+    {
+      "do": "click",
+      "sel": "#create-sketch"
+    },
+    {
+      "do": "open",
+      "edit": "no-marker",
+      "at": 270
+    },
+    {
+      "do": "double",
+      "sel": "li[data-item=\"feature-7\"]"
+    },
+    {
+      "do": "key",
+      "key": "c"
+    },
+    {
+      "do": "canvas",
+      "x": 0.62,
+      "y": 0.667,
+      "double": false
+    },
+    {
+      "do": "double",
+      "sel": "span[data-node=\"sketches/sketch-4\"]"
+    },
+    {
+      "do": "click",
+      "sel": "#feature-edit-cancel"
+    },
+    {
+      "do": "click",
+      "sel": "li[data-item=\"feature-6\"]"
+    },
+    {
+      "do": "key",
+      "key": "p"
+    },
+    {
+      "do": "click",
+      "sel": "#modify-menu"
+    },
+    {
+      "do": "menu",
+      "sel": "button[data-node=\"sketches/sketch-8\"]"
+    },
+    {
+      "do": "click",
+      "sel": "#row-menu-suppress"
+    },
+    {
+      "do": "canvas",
+      "x": 0.403,
+      "y": 0.875,
+      "double": false
+    },
+    {
+      "do": "type",
+      "sel": "#height",
+      "text": "1/2",
+      "finish": "Tab"
+    },
+    {
+      "do": "click",
+      "sel": "#extrude"
+    },
+    {
+      "do": "click",
+      "sel": "button[data-node=\"sketches/sketch-8\"]"
+    },
+    {
+      "do": "key",
+      "key": "h"
+    },
+    {
+      "do": "canvas",
+      "x": 0.221,
+      "y": 0.175,
+      "double": false
+    },
+    {
+      "do": "canvas",
+      "x": 0.167,
+      "y": 0.925,
+      "double": false
+    },
+    {
+      "do": "open",
+      "edit": "no-marker",
+      "at": 28
+    },
+    {
+      "do": "undo-redo"
+    },
+    {
+      "do": "unstick"
+    },
+    {
+      "do": "click",
+      "sel": "#inspect-facts"
+    },
+    {
+      "do": "drag",
+      "x": 0.193,
+      "y": 0.268,
+      "x2": 0.826,
+      "y2": 0.127,
+      "button": "right",
+      "shift": false
+    },
+    {
+      "do": "click",
+      "sel": "button[data-node=\"body-5\"]"
+    },
+    {
+      "do": "click",
+      "sel": "button[data-view=\"top\"]"
+    },
+    {
+      "do": "open",
+      "edit": "add-solid",
+      "at": 678
+    },
+    {
+      "do": "type",
+      "sel": "#depth",
+      "text": "40",
+      "finish": "Tab"
+    },
+    {
+      "do": "canvas",
+      "x": 0.208,
+      "y": 0.053,
+      "double": false
+    },
+    {
+      "do": "double",
+      "sel": "span[data-node=\"sketches/sketch-3\"]"
+    },
+    {
+      "do": "click",
+      "sel": "#modify-menu"
+    },
+    {
+      "do": "key",
+      "key": "Control+z"
+    },
+    {
+      "do": "click",
+      "sel": "#modify-menu"
+    },
+    {
+      "do": "double",
+      "sel": "button[data-node=\"sketches/sketch-8\"]"
+    },
+    {
+      "do": "double",
+      "sel": "button[data-node=\"sketches/sketch-8\"]"
+    },
+    {
+      "do": "canvas",
+      "x": 0.267,
+      "y": 0.833,
+      "double": true
+    },
+    {
+      "do": "drag",
+      "x": 0.335,
+      "y": 0.482,
+      "x2": 0.216,
+      "y2": 0.594,
+      "button": "left",
+      "shift": false
+    },
+    {
+      "do": "hover",
+      "x": 0.731,
+      "y": 0.509
+    },
+    {
+      "do": "click",
+      "sel": "#extrude"
+    },
+    {
+      "do": "click",
+      "sel": "#extrude-symmetric"
+    },
+    {
+      "do": "click",
+      "sel": "#insert"
+    },
+    {
+      "do": "combine",
+      "a": 0.07769297412596643,
+      "b": 0.5580804466735572,
+      "op": "cut",
+      "keep": false,
+      "ok": false
+    },
+    {
+      "do": "combine",
+      "a": 0.9837043101433665,
+      "b": 0.211713049095124,
+      "op": "cut",
+      "keep": false,
+      "ok": true
+    },
+    {
+      "do": "click",
+      "sel": "summary:text-is(\"Bodies\")"
+    },
+    {
+      "do": "select-bodies"
+    },
+    {
+      "do": "canvas",
+      "x": 0.06,
+      "y": 0.771,
+      "double": false
+    },
+    {
+      "do": "type",
+      "sel": "#extrude-distance",
+      "text": "1e-9",
+      "finish": "Enter"
+    },
+    {
+      "do": "resize",
+      "size": [
+        820,
+        600
+      ]
+    },
+    {
+      "do": "type",
+      "sel": "#extrude-distance",
+      "text": "NaN",
+      "finish": "none"
+    },
+    {
+      "do": "click",
+      "sel": "#extrude-symmetric"
+    },
+    {
+      "do": "type",
+      "sel": "#extrude-distance",
+      "text": "999999999",
+      "finish": "Tab"
+    },
+    {
+      "do": "click",
+      "sel": "#extrude"
+    },
+    {
+      "do": "click",
+      "sel": "span[data-node=\"sketches/sketch-4\"]"
+    },
+    {
+      "do": "type",
+      "sel": "#extrude-distance",
+      "text": "",
+      "finish": "Tab"
+    },
+    {
+      "do": "click",
+      "sel": "li[data-item=\"sketch-3\"]"
+    },
+    {
+      "do": "type",
+      "sel": "#extrude-distance",
+      "text": "abc",
+      "finish": "Tab"
+    },
+    {
+      "do": "click",
+      "sel": "#create-menu"
+    },
+    {
+      "do": "canvas",
+      "x": 0.525,
+      "y": 0.079,
+      "double": false
+    },
+    {
+      "do": "type",
+      "sel": "#extrude-distance",
+      "text": "NaN",
+      "finish": "Enter"
+    },
+    {
+      "do": "double",
+      "sel": "li[data-item=\"sketch-24\"]"
+    },
+    {
+      "do": "key",
+      "key": "r"
+    },
+    {
+      "do": "menu",
+      "sel": "li[data-item=\"sketch-24\"]"
+    },
+    {
+      "do": "canvas",
+      "x": 0.631,
+      "y": 0.563,
+      "double": true
+    },
+    {
+      "do": "hover",
+      "x": 0.384,
+      "y": 0.859
+    },
+    {
+      "do": "click",
+      "sel": "#file-menu"
+    },
+    {
+      "do": "key",
+      "key": "p"
+    },
+    {
+      "do": "menu",
+      "sel": "li[data-item=\"sketch-24\"]"
+    },
+    {
+      "do": "open",
+      "edit": "suppress",
+      "at": 520
+    },
+    {
+      "do": "undo-redo"
+    },
+    {
+      "do": "click",
+      "sel": "#file-menu"
+    },
+    {
+      "do": "open",
+      "edit": "truncate",
+      "at": 680
+    },
+    {
+      "do": "unstick"
+    },
+    {
+      "do": "click",
+      "sel": "#insert"
+    },
+    {
+      "do": "click",
+      "sel": "button[data-view=\"fit\"]"
+    },
+    {
+      "do": "open",
+      "edit": "drop",
+      "at": 378
+    },
+    {
+      "do": "key",
+      "key": "Control+c"
+    },
+    {
+      "do": "unstick"
+    },
+    {
+      "do": "click",
+      "sel": "#create-sketch"
+    },
+    {
+      "do": "click",
+      "sel": "#sketch-plane-YZ"
+    },
+    {
+      "do": "double",
+      "sel": "button[data-node=\"sketches/sketch-8\"]"
+    },
+    {
+      "do": "canvas",
+      "x": 0.733,
+      "y": 0.32,
+      "double": false
+    },
+    {
+      "do": "canvas",
+      "x": 0.691,
+      "y": 0.865,
+      "double": false
+    },
+    {
+      "do": "canvas",
+      "x": 0.652,
+      "y": 0.624,
+      "double": false
+    },
+    {
+      "do": "open",
+      "edit": "marker",
+      "at": 825
+    },
+    {
+      "do": "combine",
+      "a": 0.40463650156743824,
+      "b": 0.8339996861759573,
+      "op": "cut",
+      "keep": false,
+      "ok": true
+    },
+    {
+      "do": "double",
+      "sel": "span[data-node=\"sketches/sketch-24\"]"
+    },
+    {
+      "do": "click",
+      "sel": "#file-menu"
+    },
+    {
+      "do": "click",
+      "sel": "#combine-keep"
+    },
+    {
+      "do": "menu",
+      "sel": "span[data-node=\"sketches/sketch-4\"]"
+    },
+    {
+      "do": "click",
+      "sel": "#row-menu-marker"
+    },
+    {
+      "do": "type",
+      "sel": "#width",
+      "text": "0x10",
+      "finish": "none"
+    },
+    {
+      "do": "click",
+      "sel": "#history"
+    },
+    {
+      "do": "click",
+      "sel": "#file-menu"
+    },
+    {
+      "do": "drag",
+      "x": 0.476,
+      "y": 0.842,
+      "x2": 0.165,
+      "y2": 0.091,
+      "button": "left",
+      "shift": false
+    },
+    {
+      "do": "resize",
+      "size": [
+        375,
+        740
+      ]
+    },
+    {
+      "do": "undo-redo"
+    },
+    {
+      "do": "wheel",
+      "x": 0.104,
+      "y": 0.167,
+      "dy": 400
+    },
+    {
+      "do": "menu",
+      "sel": "li[data-item=\"sketch-4\"]"
+    },
+    {
+      "do": "unstick"
+    },
+    {
+      "do": "canvas",
+      "x": 0.85,
+      "y": 0.297,
+      "double": false
+    },
+    {
+      "do": "wheel",
+      "x": 0.844,
+      "y": 0.528,
+      "dy": -100
+    },
+    {
+      "do": "menu",
+      "sel": "li[data-item=\"sketch-8\"]"
+    },
+    {
+      "do": "key",
+      "key": "c"
+    },
+    {
+      "do": "click",
+      "sel": "#row-menu-unsuppress"
+    },
+    {
+      "do": "canvas",
+      "x": 0.308,
+      "y": 0.556,
+      "double": false
+    },
+    {
+      "do": "open",
+      "edit": "add-solid",
+      "at": 983
+    },
+    {
+      "do": "select-bodies"
+    },
+    {
+      "do": "click",
+      "sel": "button[data-view=\"home\"]"
+    },
+    {
+      "do": "wheel",
+      "x": 0.715,
+      "y": 0.922,
+      "dy": 100
+    },
+    {
+      "do": "drag",
+      "x": 0.563,
+      "y": 0.056,
+      "x2": 0.289,
+      "y2": 0.054,
+      "button": "middle",
+      "shift": false
+    },
+    {
+      "do": "click",
+      "sel": "li[data-item=\"sketch-24\"]"
+    },
+    {
+      "do": "click",
+      "sel": "li[data-item=\"sketch-8\"]"
+    },
+    {
+      "do": "menu",
+      "sel": "li[data-item=\"sketch-24\"]"
+    },
+    {
+      "do": "click",
+      "sel": "#row-menu-unsuppress"
+    },
+    {
+      "do": "canvas",
+      "x": 0.552,
+      "y": 0.893,
+      "double": false
+    },
+    {
+      "do": "click",
+      "sel": "#create-sketch"
+    },
+    {
+      "do": "key",
+      "key": "Escape"
+    },
+    {
+      "do": "click",
+      "sel": "#create-sketch"
+    },
+    {
+      "do": "unstick"
+    },
+    {
+      "do": "open",
+      "edit": "same",
+      "at": 73
+    },
+    {
+      "do": "key",
+      "key": "p"
+    },
+    {
+      "do": "undo-redo"
+    },
+    {
+      "do": "key",
+      "key": "Control+z"
+    },
+    {
+      "do": "click",
+      "sel": "#create-sketch"
+    },
+    {
+      "do": "click",
+      "sel": "#create-sketch"
+    },
+    {
+      "do": "unstick"
+    },
+    {
+      "do": "canvas",
+      "x": 0.072,
+      "y": 0.117,
+      "double": false
+    },
+    {
+      "do": "open",
+      "edit": "marker",
+      "at": 651
+    },
+    {
+      "do": "click",
+      "sel": "#menu-toggle"
+    },
+    {
+      "do": "click",
+      "sel": "#file-menu"
+    },
+    {
+      "do": "select-bodies"
+    },
+    {
+      "do": "canvas",
+      "x": 0.892,
+      "y": 0.337,
+      "double": false
+    },
+    {
+      "do": "click",
+      "sel": "li[data-item=\"sketch-4\"]"
+    },
+    {
+      "do": "double",
+      "sel": "li[data-item=\"sketch-4\"]"
+    },
+    {
+      "do": "click",
+      "sel": "button[data-view=\"right\"]"
+    },
+    {
+      "do": "select-bodies"
+    },
+    {
+      "do": "click",
+      "sel": "#extrude"
+    },
+    {
+      "do": "click",
+      "sel": "li[data-item=\"sketch-4\"]"
+    },
+    {
+      "do": "wheel",
+      "x": 0.227,
+      "y": 0.263,
+      "dy": -100
+    },
+    {
+      "do": "canvas",
+      "x": 0.245,
+      "y": 0.682,
+      "double": false
+    },
+    {
+      "do": "key",
+      "key": "Control+c"
+    },
+    {
+      "do": "click",
+      "sel": "#modify-menu"
+    },
+    {
+      "do": "unstick"
+    },
+    {
+      "do": "canvas",
+      "x": 0.393,
+      "y": 0.166,
+      "double": false
+    },
+    {
+      "do": "canvas",
+      "x": 0.817,
+      "y": 0.932,
+      "double": false
+    },
+    {
+      "do": "wheel",
+      "x": 0.614,
+      "y": 0.31,
+      "dy": 400
+    },
+    {
+      "do": "click",
+      "sel": "#file-menu"
+    },
+    {
+      "do": "canvas",
+      "x": 0.693,
+      "y": 0.556,
+      "double": false
+    },
+    {
+      "do": "round-trip"
+    },
+    {
+      "do": "click",
+      "sel": "#extrude"
+    },
+    {
+      "do": "canvas",
+      "x": 0.638,
+      "y": 0.517,
+      "double": false
+    },
+    {
+      "do": "key",
+      "key": "Delete"
+    },
+    {
+      "do": "canvas",
+      "x": 0.613,
+      "y": 0.595,
+      "double": false
+    },
+    {
+      "do": "click",
+      "sel": "button[data-view=\"top\"]"
+    },
+    {
+      "do": "unstick"
+    },
+    {
+      "do": "wheel",
+      "x": 0.235,
+      "y": 0.222,
+      "dy": 400
+    },
+    {
+      "do": "unstick"
+    },
+    {
+      "do": "click",
+      "sel": "#command-search-button"
+    },
+    {
+      "do": "undo-redo"
+    },
+    {
+      "do": "type",
+      "sel": "#command-search-input",
+      "text": "3.5",
+      "finish": "none"
+    },
+    {
+      "do": "type",
+      "sel": "#command-search-input",
+      "text": "1/2",
+      "finish": "Tab"
+    },
+    {
+      "do": "reload"
+    },
+    {
+      "do": "round-trip"
+    },
+    {
+      "do": "click",
+      "sel": "li[data-item=\"sketch-8\"]"
+    },
+    {
+      "do": "click",
+      "sel": "#file-menu"
+    },
+    {
+      "do": "hover",
+      "x": 0.374,
+      "y": 0.578
+    },
+    {
+      "do": "round-trip"
+    },
+    {
+      "do": "canvas",
+      "x": 0.857,
+      "y": 0.196,
+      "double": false
+    },
+    {
+      "do": "click",
+      "sel": "#menu-toggle"
+    },
+    {
+      "do": "click",
+      "sel": "button[data-view=\"front\"]"
+    },
+    {
+      "do": "undo-redo"
+    },
+    {
+      "do": "click",
+      "sel": "li[data-item=\"sketch-4\"]"
+    },
+    {
+      "do": "undo-redo"
+    },
+    {
+      "do": "canvas",
+      "x": 0.257,
+      "y": 0.18,
+      "double": false
+    },
+    {
+      "do": "click",
+      "sel": "#create-sketch"
+    },
+    {
+      "do": "wheel",
+      "x": 0.924,
+      "y": 0.3,
+      "dy": 400
+    },
+    {
+      "do": "drag",
+      "x": 0.07,
+      "y": 0.87,
+      "x2": 0.583,
+      "y2": 0.2,
+      "button": "left",
+      "shift": true
+    },
+    {
+      "do": "click",
+      "sel": "#extrude"
+    },
+    {
+      "do": "click",
+      "sel": "li[data-item=\"feature-7\"]"
+    },
+    {
+      "do": "canvas",
+      "x": 0.907,
+      "y": 0.446,
+      "double": false
+    },
+    {
+      "do": "canvas",
+      "x": 0.658,
+      "y": 0.095,
+      "double": false
+    },
+    {
+      "do": "menu",
+      "sel": "li[data-item=\"sketch-8\"]"
+    },
+    {
+      "do": "open",
+      "edit": "suppress",
+      "at": 572
+    },
+    {
+      "do": "undo-redo"
+    },
+    {
+      "do": "click",
+      "sel": "#modify-menu"
+    },
+    {
+      "do": "key",
+      "key": "c"
+    },
+    {
+      "do": "click",
+      "sel": "#browser-toggle"
+    },
+    {
+      "do": "click",
+      "sel": "#modify-menu"
+    },
+    {
+      "do": "key",
+      "key": "?"
+    },
+    {
+      "do": "canvas",
+      "x": 0.617,
+      "y": 0.345,
+      "double": false
+    },
+    {
+      "do": "select-bodies"
+    },
+    {
+      "do": "click",
+      "sel": "#extrude"
+    },
+    {
+      "do": "canvas",
+      "x": 0.8,
+      "y": 0.257,
+      "double": false
+    },
+    {
+      "do": "undo-redo"
+    },
+    {
+      "do": "reload"
+    },
+    {
+      "do": "round-trip"
+    },
+    {
+      "do": "resize",
+      "size": [
+        375,
+        740
+      ]
+    },
+    {
+      "do": "open",
+      "edit": "add-solid",
+      "at": 632
+    },
+    {
+      "do": "click",
+      "sel": "li[data-item=\"sketch-4\"]"
+    },
+    {
+      "do": "round-trip"
+    },
+    {
+      "do": "click",
+      "sel": "button[data-view=\"top\"]"
+    },
+    {
+      "do": "hover",
+      "x": 0.35,
+      "y": 0.186
+    },
+    {
+      "do": "drag",
+      "x": 0.752,
+      "y": 0.158,
+      "x2": 0.608,
+      "y2": 0.542,
+      "button": "right",
+      "shift": false
+    },
+    {
+      "do": "click",
+      "sel": "#file-menu"
+    },
+    {
+      "do": "click",
+      "sel": "#file-save-picture"
+    },
+    {
+      "do": "open",
+      "edit": "add-solid",
+      "at": 884
+    },
+    {
+      "do": "canvas",
+      "x": 0.473,
+      "y": 0.28,
+      "double": false
+    },
+    {
+      "do": "click",
+      "sel": "#properties-toggle"
+    },
+    {
+      "do": "click",
+      "sel": "#file-menu"
+    },
+    {
+      "do": "canvas",
+      "x": 0.855,
+      "y": 0.429,
+      "double": false
+    },
+    {
+      "do": "key",
+      "key": "Backspace"
+    },
+    {
+      "do": "canvas",
+      "x": 0.683,
+      "y": 0.901,
+      "double": false
+    },
+    {
+      "do": "unstick"
+    },
+    {
+      "do": "open",
+      "edit": "marker",
+      "at": 920
+    },
+    {
+      "do": "click",
+      "sel": "li[data-item=\"sketch-4\"]"
+    },
+    {
+      "do": "click",
+      "sel": "#command-search-button"
+    },
+    {
+      "do": "open",
+      "edit": "suppress",
+      "at": 239
+    },
+    {
+      "do": "resize",
+      "size": [
+        820,
+        600
+      ]
+    },
+    {
+      "do": "key",
+      "key": "Escape"
+    },
+    {
+      "do": "drag",
+      "x": 0.808,
+      "y": 0.22,
+      "x2": 0.727,
+      "y2": 0.168,
+      "button": "left",
+      "shift": true
+    },
+    {
+      "do": "click",
+      "sel": "#modify-menu"
+    },
+    {
+      "do": "click",
+      "sel": "#create-sketch"
+    },
+    {
+      "do": "click",
+      "sel": "#sketch-plane-YZ"
+    },
+    {
+      "do": "open",
+      "edit": "marker",
+      "at": 572
+    },
+    {
+      "do": "click",
+      "sel": "#modify-menu"
+    },
+    {
+      "do": "hover",
+      "x": 0.432,
+      "y": 0.443
+    },
+    {
+      "do": "combine",
+      "a": 0.828176056034863,
+      "b": 0.18091198289766908,
+      "op": "intersect",
+      "keep": false,
+      "ok": false
+    },
+    {
+      "do": "key",
+      "key": "Control+y"
+    },
+    {
+      "do": "click",
+      "sel": "#create-sketch"
+    },
+    {
+      "do": "click",
+      "sel": "#sketch-cancel"
+    },
+    {
+      "do": "open",
+      "edit": "bad-number",
+      "at": 96
+    },
+    {
+      "do": "click",
+      "sel": "#modify-menu"
+    },
+    {
+      "do": "key",
+      "key": "Enter"
+    },
+    {
+      "do": "combine",
+      "a": 0.7892839952837676,
+      "b": 0.8661073215771466,
+      "op": "join",
+      "keep": true,
+      "ok": true
+    },
+    {
+      "do": "key",
+      "key": "Control+z"
+    },
+    {
+      "do": "combine",
+      "a": 0.3191495235078037,
+      "b": 0.8540176688693464,
+      "op": "join",
+      "keep": false,
+      "ok": true
+    },
+    {
+      "do": "click",
+      "sel": "button[data-node=\"body-7\"]"
+    },
+    {
+      "do": "click",
+      "sel": "#combine-keep"
+    },
+    {
+      "do": "key",
+      "key": "Delete"
+    },
+    {
+      "do": "drag",
+      "x": 0.246,
+      "y": 0.576,
+      "x2": 0.367,
+      "y2": 0.18,
+      "button": "left",
+      "shift": false
+    },
+    {
+      "do": "resize",
+      "size": [
+        820,
+        600
+      ]
+    },
+    {
+      "do": "round-trip"
+    },
+    {
+      "do": "key",
+      "key": "c"
+    },
+    {
+      "do": "key",
+      "key": "a"
+    },
+    {
+      "do": "open",
+      "edit": "truncate",
+      "at": 223
+    },
+    {
+      "do": "open",
+      "edit": "bad-number",
+      "at": 907
+    },
+    {
+      "do": "resize",
+      "size": [
+        1280,
+        800
+      ]
+    },
+    {
+      "do": "click",
+      "sel": "#extrude"
+    },
+    {
+      "do": "drag",
+      "x": 0.088,
+      "y": 0.063,
+      "x2": 0.642,
+      "y2": 0.086,
+      "button": "middle",
+      "shift": false
+    },
+    {
+      "do": "canvas",
+      "x": 0.469,
+      "y": 0.637,
+      "double": false
+    },
+    {
+      "do": "type",
+      "sel": "#extrude-distance",
+      "text": "12mm",
+      "finish": "Enter"
+    },
+    {
+      "do": "round-trip"
+    },
+    {
+      "do": "round-trip"
+    },
+    {
+      "do": "round-trip"
+    },
+    {
+      "do": "key",
+      "key": "Escape"
+    },
+    {
+      "do": "drag",
+      "x": 0.909,
+      "y": 0.204,
+      "x2": 0.725,
+      "y2": 0.136,
+      "button": "left",
+      "shift": false
+    },
+    {
+      "do": "click",
+      "sel": "#create-sketch"
+    },
+    {
+      "do": "open",
+      "edit": "add-solid",
+      "at": 233
+    },
+    {
+      "do": "double",
+      "sel": "span[data-node=\"sketches/sketch-3\"]"
+    },
+    {
+      "do": "type",
+      "sel": "#height",
+      "text": " ",
+      "finish": "none"
+    },
+    {
+      "do": "key",
+      "key": "Control+y"
+    },
+    {
+      "do": "key",
+      "key": "Control+y"
+    },
+    {
+      "do": "click",
+      "sel": "#file-menu"
+    },
+    {
+      "do": "key",
+      "key": "Control+c"
+    },
+    {
+      "do": "click",
+      "sel": "#create-sketch"
+    },
+    {
+      "do": "click",
+      "sel": "li[data-item=\"feature-30\"]"
+    },
+    {
+      "do": "click",
+      "sel": "#sketch-plane-XZ"
+    },
+    {
+      "do": "type",
+      "sel": "#sketch-grid",
+      "text": "0.5",
+      "finish": "Tab"
+    },
+    {
+      "do": "wheel",
+      "x": 0.125,
+      "y": 0.246,
+      "dy": -100
+    },
+    {
+      "do": "type",
+      "sel": "#sketch-grid",
+      "text": "1/2",
+      "finish": "none"
+    },
+    {
+      "do": "click",
+      "sel": "#extrude"
+    },
+    {
+      "do": "click",
+      "sel": "button[data-node=\"body-10\"]"
+    },
+    {
+      "do": "canvas",
+      "x": 0.792,
+      "y": 0.588,
+      "double": false
+    },
+    {
+      "do": "key",
+      "key": "Delete"
+    },
+    {
+      "do": "click",
+      "sel": "li[data-item=\"feature-6\"]"
+    },
+    {
+      "do": "click",
+      "sel": "#extrude-several"
+    },
+    {
+      "do": "reload"
+    },
+    {
+      "do": "canvas",
+      "x": 0.901,
+      "y": 0.756,
+      "double": false
+    },
+    {
+      "do": "click",
+      "sel": "#extrude"
+    },
+    {
+      "do": "canvas",
+      "x": 0.429,
+      "y": 0.487,
+      "double": false
+    },
+    {
+      "do": "canvas",
+      "x": 0.582,
+      "y": 0.929,
+      "double": false
+    },
+    {
+      "do": "type",
+      "sel": "#project-name",
+      "text": "3.5",
+      "finish": "Enter"
+    },
+    {
+      "do": "key",
+      "key": "Backspace"
+    },
+    {
+      "do": "select-bodies"
+    },
+    {
+      "do": "type",
+      "sel": "#extrude-distance",
+      "text": "abc",
+      "finish": "Escape"
+    },
+    {
+      "do": "type",
+      "sel": "#height",
+      "text": "1e308",
+      "finish": "Enter"
+    },
+    {
+      "do": "hover",
+      "x": 0.178,
+      "y": 0.079
+    },
+    {
+      "do": "canvas",
+      "x": 0.693,
+      "y": 0.083,
+      "double": false
+    },
+    {
+      "do": "click",
+      "sel": "#extrude"
+    },
+    {
+      "do": "click",
+      "sel": "#extrude-several"
+    },
+    {
+      "do": "key",
+      "key": "r"
+    },
+    {
+      "do": "undo-redo"
+    },
+    {
+      "do": "drag",
+      "x": 0.63,
+      "y": 0.251,
+      "x2": 0.312,
+      "y2": 0.725,
+      "button": "left",
+      "shift": false
+    },
+    {
+      "do": "key",
+      "key": "Backspace"
+    },
+    {
+      "do": "hover",
+      "x": 0.539,
+      "y": 0.906
+    },
+    {
+      "do": "click",
+      "sel": "button[data-node=\"body-4\"]"
+    },
+    {
+      "do": "click",
+      "sel": "li[data-item=\"feature-29\"]"
+    },
+    {
+      "do": "drag",
+      "x": 0.199,
+      "y": 0.593,
+      "x2": 0.846,
+      "y2": 0.145,
+      "button": "middle",
+      "shift": true
+    },
+    {
+      "do": "click",
+      "sel": "li[data-item=\"sketch-51\"]"
+    },
+    {
+      "do": "combine",
+      "a": 0.3250513724051416,
+      "b": 0.5787532420363277,
+      "op": "intersect",
+      "keep": true,
+      "ok": true
+    },
+    {
+      "do": "key",
+      "key": "r"
+    },
+    {
+      "do": "combine",
+      "a": 0.8378654329571873,
+      "b": 0.4075391385704279,
+      "op": "cut",
+      "keep": false,
+      "ok": true
+    },
+    {
+      "do": "click",
+      "sel": "#combine-target"
+    },
+    {
+      "do": "click",
+      "sel": "#combine-ok"
+    },
+    {
+      "do": "resize",
+      "size": [
+        375,
+        740
+      ]
+    },
+    {
+      "do": "click",
+      "sel": "#combine-keep"
+    },
+    {
+      "do": "click",
+      "sel": "#combine-keep"
+    },
+    {
+      "do": "click",
+      "sel": "#combine-keep"
+    },
+    {
+      "do": "round-trip"
+    },
+    {
+      "do": "canvas",
+      "x": 0.321,
+      "y": 0.806,
+      "double": false
+    },
+    {
+      "do": "click",
+      "sel": "button[data-view=\"right\"]"
+    },
+    {
+      "do": "key",
+      "key": "Escape"
+    },
+    {
+      "do": "round-trip"
+    },
+    {
+      "do": "key",
+      "key": "p"
+    },
+    {
+      "do": "click",
+      "sel": "#extrude"
+    },
+    {
+      "do": "open",
+      "edit": "drop",
+      "at": 858
+    },
+    {
+      "do": "select-bodies"
+    },
+    {
+      "do": "round-trip"
+    },
+    {
+      "do": "key",
+      "key": "c"
+    },
+    {
+      "do": "menu",
+      "sel": "li[data-item=\"sketch-4\"]"
+    },
+    {
+      "do": "open",
+      "edit": "add-solid",
+      "at": 915
+    },
+    {
+      "do": "round-trip"
+    },
+    {
+      "do": "canvas",
+      "x": 0.655,
+      "y": 0.916,
+      "double": false
+    },
+    {
+      "do": "click",
+      "sel": "#create-sketch"
+    },
+    {
+      "do": "click",
+      "sel": "li[data-item=\"sketch-4\"]"
+    },
+    {
+      "do": "canvas",
+      "x": 0.237,
+      "y": 0.673,
+      "double": false
+    },
+    {
+      "do": "click",
+      "sel": "#extrude"
+    },
+    {
+      "do": "click",
+      "sel": "#command-search-button"
+    },
+    {
+      "do": "drag",
+      "x": 0.856,
+      "y": 0.399,
+      "x2": 0.647,
+      "y2": 0.2,
+      "button": "right",
+      "shift": false
+    },
+    {
+      "do": "key",
+      "key": "a"
+    },
+    {
+      "do": "click",
+      "sel": "#file-menu"
+    },
+    {
+      "do": "canvas",
+      "x": 0.546,
+      "y": 0.903,
+      "double": false
+    },
+    {
+      "do": "open",
+      "edit": "suppress",
+      "at": 439
+    },
+    {
+      "do": "click",
+      "sel": "#modify-menu"
+    },
+    {
+      "do": "select-bodies"
+    },
+    {
+      "do": "click",
+      "sel": "#modify-menu"
+    },
+    {
+      "do": "canvas",
+      "x": 0.687,
+      "y": 0.133,
+      "double": true
+    },
+    {
+      "do": "click",
+      "sel": "li[data-item=\"sketch-24\"]"
+    },
+    {
+      "do": "combine",
+      "a": 0.6393311673309654,
+      "b": 0.03531242930330336,
+      "op": "join",
+      "keep": false,
+      "ok": true
+    },
+    {
+      "do": "canvas",
+      "x": 0.168,
+      "y": 0.265,
+      "double": false
+    },
+    {
+      "do": "click",
+      "sel": "#extrude"
+    },
+    {
+      "do": "click",
+      "sel": "#file-menu"
+    },
+    {
+      "do": "key",
+      "key": "Control+Shift+z"
+    },
+    {
+      "do": "canvas",
+      "x": 0.292,
+      "y": 0.57,
+      "double": false
+    },
+    {
+      "do": "click",
+      "sel": "#create-menu"
+    },
+    {
+      "do": "reload"
+    },
+    {
+      "do": "click",
+      "sel": "#modify-menu"
+    },
+    {
+      "do": "canvas",
+      "x": 0.083,
+      "y": 0.798,
+      "double": false
+    },
+    {
+      "do": "click",
+      "sel": "li[data-item=\"sketch-24\"]"
+    },
+    {
+      "do": "click",
+      "sel": "#float-finish"
+    },
+    {
+      "do": "menu",
+      "sel": "li[data-item=\"sketch-24\"]"
+    },
+    {
+      "do": "click",
+      "sel": "#row-menu-rename"
+    },
+    {
+      "do": "type",
+      "sel": "#rename-input",
+      "text": "0",
+      "finish": "Tab"
+    },
+    {
+      "do": "undo-redo"
+    },
+    {
+      "do": "type",
+      "sel": "#rename-input",
+      "text": "２０",
+      "finish": "none"
+    },
+    {
+      "do": "type",
+      "sel": "#rename-input",
+      "text": "--3",
+      "finish": "Escape"
+    },
+    {
+      "do": "click",
+      "sel": "button[data-nav=\"orbit\"]"
+    },
+    {
+      "do": "click",
+      "sel": "li[data-item=\"feature-7\"]"
+    },
+    {
+      "do": "click",
+      "sel": "#file-menu"
+    },
+    {
+      "do": "key",
+      "key": "l"
+    },
+    {
+      "do": "select-bodies"
+    },
+    {
+      "do": "click",
+      "sel": "#create-sketch"
+    },
+    {
+      "do": "key",
+      "key": "l"
+    },
+    {
+      "do": "canvas",
+      "x": 0.904,
+      "y": 0.839,
+      "double": false
+    },
+    {
+      "do": "undo-redo"
+    },
+    {
+      "do": "click",
+      "sel": "#file-menu"
+    },
+    {
+      "do": "select-bodies"
+    },
+    {
+      "do": "select-bodies"
+    },
+    {
+      "do": "resize",
+      "size": [
+        375,
+        740
+      ]
+    },
+    {
+      "do": "click",
+      "sel": "#command-search-button"
+    },
+    {
+      "do": "reload"
+    },
+    {
+      "do": "click",
+      "sel": "#create-sketch"
+    },
+    {
+      "do": "combine",
+      "a": 0.8912467798218131,
+      "b": 0.8576968680135906,
+      "op": "join",
+      "keep": true,
+      "ok": true
+    },
+    {
+      "do": "click",
+      "sel": "#create-sketch"
+    },
+    {
+      "do": "key",
+      "key": "f"
+    },
+    {
+      "do": "drag",
+      "x": 0.237,
+      "y": 0.12,
+      "x2": 0.449,
+      "y2": 0.111,
+      "button": "middle",
+      "shift": false
+    },
+    {
+      "do": "drag",
+      "x": 0.753,
+      "y": 0.41,
+      "x2": 0.88,
+      "y2": 0.665,
+      "button": "middle",
+      "shift": false
+    },
+    {
+      "do": "menu",
+      "sel": "li[data-item=\"sketch-8\"]"
+    },
+    {
+      "do": "key",
+      "key": "Delete"
+    },
+    {
+      "do": "unstick"
+    },
+    {
+      "do": "combine",
+      "a": 0.2500414226669818,
+      "b": 0.8788177210371941,
+      "op": "intersect",
+      "keep": false,
+      "ok": true
+    },
+    {
+      "do": "drag",
+      "x": 0.291,
+      "y": 0.263,
+      "x2": 0.775,
+      "y2": 0.144,
+      "button": "right",
+      "shift": false
+    },
+    {
+      "do": "click",
+      "sel": "#combine-ok"
+    },
+    {
+      "do": "click",
+      "sel": "#combine-keep"
+    },
+    {
+      "do": "click",
+      "sel": "#combine-keep"
+    },
+    {
+      "do": "click",
+      "sel": "#combine-keep"
+    },
+    {
+      "do": "click",
+      "sel": "#float-finish"
+    },
+    {
+      "do": "wheel",
+      "x": 0.127,
+      "y": 0.484,
+      "dy": -100
+    },
+    {
+      "do": "canvas",
+      "x": 0.683,
+      "y": 0.301,
+      "double": false
+    },
+    {
+      "do": "canvas",
+      "x": 0.815,
+      "y": 0.757,
+      "double": false
+    },
+    {
+      "do": "drag",
+      "x": 0.443,
+      "y": 0.701,
+      "x2": 0.769,
+      "y2": 0.689,
+      "button": "middle",
+      "shift": false
+    },
+    {
+      "do": "click",
+      "sel": "button[data-nav=\"orbit\"]"
+    },
+    {
+      "do": "undo-redo"
+    },
+    {
+      "do": "undo-redo"
+    },
+    {
+      "do": "click",
+      "sel": "#create-sketch"
+    },
+    {
+      "do": "key",
+      "key": "r"
+    },
+    {
+      "do": "double",
+      "sel": "li[data-item=\"sketch-4\"]"
+    },
+    {
+      "do": "open",
+      "edit": "suppress",
+      "at": 234
+    },
+    {
+      "do": "drag",
+      "x": 0.74,
+      "y": 0.406,
+      "x2": 0.572,
+      "y2": 0.236,
+      "button": "right",
+      "shift": false
+    },
+    {
+      "do": "click",
+      "sel": "#properties-toggle"
+    },
+    {
+      "do": "click",
+      "sel": "#properties-toggle"
+    },
+    {
+      "do": "canvas",
+      "x": 0.136,
+      "y": 0.364,
+      "double": false
+    },
+    {
+      "do": "click",
+      "sel": "#create-sketch"
+    },
+    {
+      "do": "click",
+      "sel": "li[data-item=\"feature-7\"]"
+    },
+    {
+      "do": "click",
+      "sel": "#properties-toggle"
+    },
+    {
+      "do": "open",
+      "edit": "add-solid",
+      "at": 127
+    },
+    {
+      "do": "click",
+      "sel": "li[data-item=\"sketch-4\"]"
+    },
+    {
+      "do": "click",
+      "sel": "#modify-menu"
+    },
+    {
+      "do": "open",
+      "edit": "swap",
+      "at": 190
+    },
+    {
+      "do": "undo-redo"
+    },
+    {
+      "do": "key",
+      "key": "p"
+    },
+    {
+      "do": "click",
+      "sel": "button[data-view=\"top\"]"
+    },
+    {
+      "do": "combine",
+      "a": 0.9928205281030387,
+      "b": 0.2735626450739801,
+      "op": "intersect",
+      "keep": false,
+      "ok": true
+    },
+    {
+      "do": "click",
+      "sel": "#modify-menu"
+    },
+    {
+      "do": "combine",
+      "a": 0.01790835545398295,
+      "b": 0.5561539272312075,
+      "op": "cut",
+      "keep": false,
+      "ok": true
+    },
+    {
+      "do": "click",
+      "sel": "#undo"
+    },
+    {
+      "do": "click",
+      "sel": "#file-menu"
+    },
+    {
+      "do": "unstick"
+    },
+    {
+      "do": "resize",
+      "size": [
+        375,
+        740
+      ]
+    },
+    {
+      "do": "click",
+      "sel": "#modify-menu"
+    },
+    {
+      "do": "open",
+      "edit": "marker-start",
+      "at": 478
+    },
+    {
+      "do": "select-bodies"
+    },
+    {
+      "do": "click",
+      "sel": "#browser-toggle"
+    },
+    {
+      "do": "key",
+      "key": "a"
+    },
+    {
+      "do": "undo-redo"
+    },
+    {
+      "do": "wheel",
+      "x": 0.908,
+      "y": 0.348,
+      "dy": 400
+    },
+    {
+      "do": "select-bodies"
+    },
+    {
+      "do": "undo-redo"
+    },
+    {
+      "do": "click",
+      "sel": "#command-search-button"
+    },
+    {
+      "do": "canvas",
+      "x": 0.827,
+      "y": 0.807,
+      "double": false
+    },
+    {
+      "do": "unstick"
+    },
+    {
+      "do": "canvas",
+      "x": 0.29,
+      "y": 0.098,
+      "double": false
+    },
+    {
+      "do": "select-bodies"
+    },
+    {
+      "do": "resize",
+      "size": [
+        1280,
+        800
+      ]
+    },
+    {
+      "do": "open",
+      "edit": "drop",
+      "at": 557
+    },
+    {
+      "do": "round-trip"
+    },
+    {
+      "do": "drag",
+      "x": 0.653,
+      "y": 0.543,
+      "x2": 0.38,
+      "y2": 0.768,
+      "button": "right",
+      "shift": false
+    },
+    {
+      "do": "resize",
+      "size": [
+        820,
+        600
+      ]
+    },
+    {
+      "do": "unstick"
+    },
+    {
+      "do": "canvas",
+      "x": 0.697,
+      "y": 0.13,
+      "double": false
+    },
+    {
+      "do": "undo-redo"
+    },
+    {
+      "do": "click",
+      "sel": "#extrude"
+    },
+    {
+      "do": "wheel",
+      "x": 0.238,
+      "y": 0.06,
+      "dy": 100
+    },
+    {
+      "do": "undo-redo"
+    },
+    {
+      "do": "click",
+      "sel": "#modify-menu"
+    },
+    {
+      "do": "click",
+      "sel": "#settings-open"
+    },
+    {
+      "do": "click",
+      "sel": "button:text-is(\"Follow device\")"
+    },
+    {
+      "do": "canvas",
+      "x": 0.382,
+      "y": 0.744,
+      "double": false
+    },
+    {
+      "do": "canvas",
+      "x": 0.323,
+      "y": 0.094,
+      "double": false
+    },
+    {
+      "do": "click",
+      "sel": "button:text-is(\"Open\")"
+    },
+    {
+      "do": "click",
+      "sel": "li[data-item=\"feature-54\"]"
+    },
+    {
+      "do": "click",
+      "sel": "#construct-menu"
+    },
+    {
+      "do": "click",
+      "sel": "#file-menu"
+    },
+    {
+      "do": "click",
+      "sel": "#create-sketch"
+    },
+    {
+      "do": "click",
+      "sel": "#extrude"
+    },
+    {
+      "do": "open",
+      "edit": "add-solid",
+      "at": 145
+    },
+    {
+      "do": "click",
+      "sel": "#extrude"
+    },
+    {
+      "do": "canvas",
+      "x": 0.101,
+      "y": 0.782,
+      "double": false
+    },
+    {
+      "do": "open",
+      "edit": "same",
+      "at": 486
+    },
+    {
+      "do": "key",
+      "key": "t"
+    },
+    {
+      "do": "click",
+      "sel": "#create-menu"
+    },
+    {
+      "do": "hover",
+      "x": 0.366,
+      "y": 0.709
+    },
+    {
+      "do": "select-bodies"
+    },
+    {
+      "do": "click",
+      "sel": "#file-menu"
+    },
+    {
+      "do": "reload"
+    },
+    {
+      "do": "drag",
+      "x": 0.832,
+      "y": 0.484,
+      "x2": 0.199,
+      "y2": 0.172,
+      "button": "middle",
+      "shift": false
+    },
+    {
+      "do": "click",
+      "sel": "li[data-item=\"sketch-51\"]"
+    },
+    {
+      "do": "click",
+      "sel": "#file-menu"
+    },
+    {
+      "do": "click",
+      "sel": "#create-sketch"
+    },
+    {
+      "do": "click",
+      "sel": "#sketch-plane-XZ"
+    },
+    {
+      "do": "key",
+      "key": "Tab"
+    },
+    {
+      "do": "open",
+      "edit": "suppress",
+      "at": 151
+    },
+    {
+      "do": "click",
+      "sel": "#file-menu"
+    },
+    {
+      "do": "round-trip"
+    },
+    {
+      "do": "click",
+      "sel": "button[data-nav=\"orbit\"]"
+    },
+    {
+      "do": "open",
+      "edit": "marker-start",
+      "at": 100
+    },
+    {
+      "do": "select-bodies"
+    },
+    {
+      "do": "undo-redo"
+    },
+    {
+      "do": "round-trip"
+    },
+    {
+      "do": "drag",
+      "x": 0.279,
+      "y": 0.065,
+      "x2": 0.62,
+      "y2": 0.224,
+      "button": "left",
+      "shift": false
+    },
+    {
+      "do": "canvas",
+      "x": 0.66,
+      "y": 0.351,
+      "double": false
+    },
+    {
+      "do": "click",
+      "sel": "#modify-menu"
+    },
+    {
+      "do": "wheel",
+      "x": 0.7,
+      "y": 0.198,
+      "dy": -100
+    },
+    {
+      "do": "select-bodies"
+    },
+    {
+      "do": "drag",
+      "x": 0.661,
+      "y": 0.523,
+      "x2": 0.834,
+      "y2": 0.858,
+      "button": "right",
+      "shift": true
+    },
+    {
+      "do": "canvas",
+      "x": 0.195,
+      "y": 0.926,
+      "double": false
+    },
+    {
+      "do": "key",
+      "key": "Control+c"
+    },
+    {
+      "do": "select-bodies"
+    },
+    {
+      "do": "canvas",
+      "x": 0.672,
+      "y": 0.674,
+      "double": false
+    },
+    {
+      "do": "click",
+      "sel": "#file-menu"
+    },
+    {
+      "do": "canvas",
+      "x": 0.095,
+      "y": 0.771,
+      "double": false
+    },
+    {
+      "do": "drag",
+      "x": 0.356,
+      "y": 0.818,
+      "x2": 0.705,
+      "y2": 0.11,
+      "button": "middle",
+      "shift": true
+    },
+    {
+      "do": "click",
+      "sel": "#extrude"
+    },
+    {
+      "do": "canvas",
+      "x": 0.788,
+      "y": 0.687,
+      "double": false
+    },
+    {
+      "do": "open",
+      "edit": "add-solid",
+      "at": 575
+    },
+    {
+      "do": "hover",
+      "x": 0.085,
+      "y": 0.659
+    },
+    {
+      "do": "click",
+      "sel": "#extrude"
+    },
+    {
+      "do": "click",
+      "sel": "#extrude-flip"
+    },
+    {
+      "do": "type",
+      "sel": "#extrude-distance",
+      "text": "Infinity",
+      "finish": "Tab"
+    },
+    {
+      "do": "click",
+      "sel": "#extrude-flip"
+    },
+    {
+      "do": "key",
+      "key": "Control+y"
+    },
+    {
+      "do": "undo-redo"
+    },
+    {
+      "do": "click",
+      "sel": "#modify-menu"
+    },
+    {
+      "do": "key",
+      "key": "t"
+    },
+    {
+      "do": "click",
+      "sel": "#modify-menu"
+    },
+    {
+      "do": "click",
+      "sel": "li[data-item=\"feature-26\"]"
+    },
+    {
+      "do": "click",
+      "sel": "#combine"
+    },
+    {
+      "do": "undo-redo"
+    },
+    {
+      "do": "canvas",
+      "x": 0.304,
+      "y": 0.284,
+      "double": false
+    },
+    {
+      "do": "click",
+      "sel": "summary:text-is(\"Browser\")"
+    },
+    {
+      "do": "round-trip"
+    },
+    {
+      "do": "open",
+      "edit": "same",
+      "at": 40
+    },
+    {
+      "do": "select-bodies"
+    },
+    {
+      "do": "click",
+      "sel": "#modify-menu"
+    },
+    {
+      "do": "select-bodies"
+    },
+    {
+      "do": "menu",
+      "sel": "li[data-item=\"sketch-3\"]"
+    },
+    {
+      "do": "select-bodies"
+    },
+    {
+      "do": "canvas",
+      "x": 0.542,
+      "y": 0.264,
+      "double": false
+    },
+    {
+      "do": "open",
+      "edit": "suppress",
+      "at": 379
+    },
+    {
+      "do": "click",
+      "sel": "button[data-nav=\"pan\"]"
+    },
+    {
+      "do": "undo-redo"
+    },
+    {
+      "do": "open",
+      "edit": "same",
+      "at": 28
+    },
+    {
+      "do": "click",
+      "sel": "#extrude"
+    },
+    {
+      "do": "type",
+      "sel": "#extrude-distance",
+      "text": "",
+      "finish": "Escape"
+    },
+    {
+      "do": "click",
+      "sel": "#extrude-several"
+    },
+    {
+      "do": "drag",
+      "x": 0.843,
+      "y": 0.689,
+      "x2": 0.689,
+      "y2": 0.559,
+      "button": "left",
+      "shift": false
+    },
+    {
+      "do": "round-trip"
+    },
+    {
+      "do": "click",
+      "sel": "#extrude"
+    },
+    {
+      "do": "drag",
+      "x": 0.339,
+      "y": 0.815,
+      "x2": 0.32,
+      "y2": 0.946,
+      "button": "left",
+      "shift": true
+    },
+    {
+      "do": "click",
+      "sel": "#extrude-flip"
+    },
+    {
+      "do": "click",
+      "sel": "li[data-item=\"feature-7\"]"
+    },
+    {
+      "do": "open",
+      "edit": "bad-number",
+      "at": 984
+    },
+    {
+      "do": "key",
+      "key": "l"
+    },
+    {
+      "do": "key",
+      "key": "Enter"
+    },
+    {
+      "do": "canvas",
+      "x": 0.216,
+      "y": 0.055,
+      "double": false
+    },
+    {
+      "do": "click",
+      "sel": "#file-menu"
+    },
+    {
+      "do": "click",
+      "sel": "button[data-node=\"sketches/sketch-32\"]"
+    },
+    {
+      "do": "canvas",
+      "x": 0.274,
+      "y": 0.205,
+      "double": false
+    },
+    {
+      "do": "click",
+      "sel": "#row-menu-suppress"
+    },
+    {
+      "do": "click",
+      "sel": "button:text-is(\"⋯\")"
+    },
+    {
+      "do": "canvas",
+      "x": 0.701,
+      "y": 0.836,
+      "double": false
+    },
+    {
+      "do": "click",
+      "sel": "span[data-node=\"sketches/sketch-4\"]"
+    },
+    {
+      "do": "menu",
+      "sel": "span[data-node=\"sketches/sketch-31\"]"
+    },
+    {
+      "do": "unstick"
+    },
+    {
+      "do": "click",
+      "sel": "#modify-menu"
+    },
+    {
+      "do": "unstick"
+    },
+    {
+      "do": "canvas",
+      "x": 0.874,
+      "y": 0.558,
+      "double": false
+    },
+    {
+      "do": "click",
+      "sel": "#file-menu"
+    },
+    {
+      "do": "click",
+      "sel": "summary:text-is(\"Origin\")"
+    },
+    {
+      "do": "canvas",
+      "x": 0.847,
+      "y": 0.776,
+      "double": false
+    },
+    {
+      "do": "canvas",
+      "x": 0.74,
+      "y": 0.291,
+      "double": false
+    },
+    {
+      "do": "canvas",
+      "x": 0.405,
+      "y": 0.648,
+      "double": false
+    },
+    {
+      "do": "click",
+      "sel": "span[data-node=\"sketches/sketch-31\"]"
+    },
+    {
+      "do": "drag",
+      "x": 0.249,
+      "y": 0.721,
+      "x2": 0.338,
+      "y2": 0.806,
+      "button": "right",
+      "shift": true
+    },
+    {
+      "do": "drag",
+      "x": 0.46,
+      "y": 0.495,
+      "x2": 0.468,
+      "y2": 0.558,
+      "button": "middle",
+      "shift": true
+    },
+    {
+      "do": "click",
+      "sel": "#file-menu"
+    },
+    {
+      "do": "click",
+      "sel": "#file-menu"
+    },
+    {
+      "do": "key",
+      "key": "Delete"
+    },
+    {
+      "do": "key",
+      "key": "l"
+    },
+    {
+      "do": "canvas",
+      "x": 0.131,
+      "y": 0.544,
+      "double": false
+    },
+    {
+      "do": "canvas",
+      "x": 0.14,
+      "y": 0.775,
+      "double": false
+    },
+    {
+      "do": "click",
+      "sel": "#modify-menu"
+    },
+    {
+      "do": "click",
+      "sel": "#modify-menu"
+    },
+    {
+      "do": "round-trip"
+    },
+    {
+      "do": "click",
+      "sel": "li[data-item=\"sketch-27\"]"
+    },
+    {
+      "do": "canvas",
+      "x": 0.821,
+      "y": 0.838,
+      "double": false
+    },
+    {
+      "do": "select-bodies"
+    },
+    {
+      "do": "menu",
+      "sel": "li[data-item=\"sketch-51\"]"
+    },
+    {
+      "do": "click",
+      "sel": "#row-menu-marker"
+    },
+    {
+      "do": "drag",
+      "x": 0.141,
+      "y": 0.075,
+      "x2": 0.548,
+      "y2": 0.312,
+      "button": "left",
+      "shift": true
+    },
+    {
+      "do": "click",
+      "sel": "#file-menu"
+    },
+    {
+      "do": "click",
+      "sel": "#start-fresh"
+    },
+    {
+      "do": "key",
+      "key": "c"
+    },
+    {
+      "do": "canvas",
+      "x": 0.156,
+      "y": 0.124,
+      "double": false
+    },
+    {
+      "do": "unstick"
+    },
+    {
+      "do": "key",
+      "key": "Enter"
+    },
+    {
+      "do": "click",
+      "sel": "li[data-item=\"feature-54\"]"
+    },
+    {
+      "do": "menu",
+      "sel": "li[data-item=\"sketch-24\"]"
+    },
+    {
+      "do": "click",
+      "sel": "#row-menu-marker"
+    },
+    {
+      "do": "click",
+      "sel": "button:text-is(\"⋯\")"
+    },
+    {
+      "do": "canvas",
+      "x": 0.318,
+      "y": 0.16,
+      "double": false
+    },
+    {
+      "do": "click",
+      "sel": "li[data-item=\"feature-49\"]"
+    },
+    {
+      "do": "double",
+      "sel": "li[data-item=\"sketch-31\"]"
+    },
+    {
+      "do": "unstick"
+    },
+    {
+      "do": "wheel",
+      "x": 0.214,
+      "y": 0.333,
+      "dy": -100
+    },
+    {
+      "do": "click",
+      "sel": "button[data-node=\"body-4\"]"
+    },
+    {
+      "do": "select-bodies"
+    },
+    {
+      "do": "click",
+      "sel": "#extrude"
+    },
+    {
+      "do": "key",
+      "key": "Control+c"
+    },
+    {
+      "do": "type",
+      "sel": "#extrude-distance",
+      "text": "3e2",
+      "finish": "Enter"
+    },
+    {
+      "do": "key",
+      "key": "Delete"
+    },
+    {
+      "do": "type",
+      "sel": "#extrude-distance",
+      "text": "0.0000001",
+      "finish": "Escape"
+    },
+    {
+      "do": "open",
+      "edit": "no-marker",
+      "at": 788
+    },
+    {
+      "do": "unstick"
+    },
+    {
+      "do": "click",
+      "sel": "button[data-node=\"body-6\"]"
+    },
+    {
+      "do": "round-trip"
+    },
+    {
+      "do": "key",
+      "key": "h"
+    },
+    {
+      "do": "click",
+      "sel": "button[data-node=\"body-6\"]"
+    },
+    {
+      "do": "select-bodies"
+    },
+    {
+      "do": "key",
+      "key": "Enter"
+    },
+    {
+      "do": "click",
+      "sel": "#file-menu"
+    },
+    {
+      "do": "open",
+      "edit": "same",
+      "at": 247
+    },
+    {
+      "do": "double",
+      "sel": "li[data-item=\"sketch-4\"]"
+    },
+    {
+      "do": "combine",
+      "a": 0.0015984554775059223,
+      "b": 0.9422016616445035,
+      "op": "intersect",
+      "keep": true,
+      "ok": true
+    },
+    {
+      "do": "menu",
+      "sel": "li[data-item=\"sketch-4\"]"
+    },
+    {
+      "do": "hover",
+      "x": 0.212,
+      "y": 0.705
+    },
+    {
+      "do": "round-trip"
+    },
+    {
+      "do": "canvas",
+      "x": 0.067,
+      "y": 0.775,
+      "double": false
+    },
+    {
+      "do": "canvas",
+      "x": 0.561,
+      "y": 0.355,
+      "double": false
+    },
+    {
+      "do": "combine",
+      "a": 0.308748495997861,
+      "b": 0.9801130706910044,
+      "op": "intersect",
+      "keep": false,
+      "ok": true
+    },
+    {
+      "do": "menu",
+      "sel": "li[data-item=\"sketch-4\"]"
+    },
+    {
+      "do": "key",
+      "key": "Enter"
+    },
+    {
+      "do": "click",
+      "sel": "li[data-item=\"feature-26\"]"
+    },
+    {
+      "do": "canvas",
+      "x": 0.651,
+      "y": 0.456,
+      "double": false
+    },
+    {
+      "do": "key",
+      "key": "h"
+    },
+    {
+      "do": "undo-redo"
+    },
+    {
+      "do": "canvas",
+      "x": 0.756,
+      "y": 0.122,
+      "double": false
+    },
+    {
+      "do": "click",
+      "sel": "#finish-sketch"
+    },
+    {
+      "do": "undo-redo"
+    },
+    {
+      "do": "click",
+      "sel": "#extrude"
+    },
+    {
+      "do": "key",
+      "key": "p"
+    },
+    {
+      "do": "click",
+      "sel": "#extrude-symmetric"
+    },
+    {
+      "do": "open",
+      "edit": "suppress",
+      "at": 225
+    },
+    {
+      "do": "click",
+      "sel": "summary:text-is(\"Profiles\")"
+    },
+    {
+      "do": "click",
+      "sel": "#file-menu"
+    },
+    {
+      "do": "click",
+      "sel": "button[data-view=\"top\"]"
+    },
+    {
+      "do": "click",
+      "sel": "summary:text-is(\"Sketches\")"
+    },
+    {
+      "do": "key",
+      "key": "l"
+    },
+    {
+      "do": "hover",
+      "x": 0.302,
+      "y": 0.093
+    },
+    {
+      "do": "click",
+      "sel": "li[data-item=\"feature-49\"]"
+    },
+    {
+      "do": "reload"
+    },
+    {
+      "do": "canvas",
+      "x": 0.415,
+      "y": 0.893,
+      "double": false
+    },
+    {
+      "do": "click",
+      "sel": "#modify-menu"
+    },
+    {
+      "do": "canvas",
+      "x": 0.324,
+      "y": 0.513,
+      "double": false
+    },
+    {
+      "do": "reload"
+    },
+    {
+      "do": "drag",
+      "x": 0.729,
+      "y": 0.673,
+      "x2": 0.238,
+      "y2": 0.146,
+      "button": "right",
+      "shift": false
+    },
+    {
+      "do": "double",
+      "sel": "button[data-node=\"sketches/sketch-8\"]"
+    },
+    {
+      "do": "canvas",
+      "x": 0.929,
+      "y": 0.84,
+      "double": false
+    },
+    {
+      "do": "click",
+      "sel": "#sketch-tool-line"
+    },
+    {
+      "do": "click",
+      "sel": "#extrude"
+    },
+    {
+      "do": "menu",
+      "sel": "button[data-node=\"sketches/sketch-32\"]"
+    },
+    {
+      "do": "canvas",
+      "x": 0.669,
+      "y": 0.12,
+      "double": false
+    },
+    {
+      "do": "undo-redo"
+    },
+    {
+      "do": "canvas",
+      "x": 0.619,
+      "y": 0.694,
+      "double": false
+    },
+    {
+      "do": "resize",
+      "size": [
+        375,
+        740
+      ]
+    },
+    {
+      "do": "round-trip"
+    },
+    {
+      "do": "unstick"
+    },
+    {
+      "do": "canvas",
+      "x": 0.732,
+      "y": 0.705,
+      "double": false
+    },
+    {
+      "do": "wheel",
+      "x": 0.147,
+      "y": 0.624,
+      "dy": -100
+    },
+    {
+      "do": "resize",
+      "size": [
+        820,
+        600
+      ]
+    },
+    {
+      "do": "undo-redo"
+    },
+    {
+      "do": "canvas",
+      "x": 0.896,
+      "y": 0.225,
+      "double": false
+    },
+    {
+      "do": "combine",
+      "a": 0.579428477678448,
+      "b": 0.40346100949682295,
+      "op": "cut",
+      "keep": false,
+      "ok": true
+    },
+    {
+      "do": "click",
+      "sel": "#cut-ask-cancel"
+    },
+    {
+      "do": "open",
+      "edit": "add-solid",
+      "at": 716
+    },
+    {
+      "do": "menu",
+      "sel": "span[data-node=\"sketches/sketch-4\"]"
+    },
+    {
+      "do": "undo-redo"
+    },
+    {
+      "do": "click",
+      "sel": "#row-menu-rename"
+    },
+    {
+      "do": "reload"
+    },
+    {
+      "do": "click",
+      "sel": "#settings-open"
+    },
+    {
+      "do": "key",
+      "key": "a"
+    },
+    {
+      "do": "click",
+      "sel": "button:text-is(\"Inches (in)\")"
+    },
+    {
+      "do": "click",
+      "sel": "#settings-report-bug"
+    },
+    {
+      "do": "click",
+      "sel": "#bug-report-cancel"
+    },
+    {
+      "do": "select-bodies"
+    },
+    {
+      "do": "key",
+      "key": "l"
+    },
+    {
+      "do": "click",
+      "sel": "li[data-item=\"feature-54\"]"
+    },
+    {
+      "do": "undo-redo"
+    },
+    {
+      "do": "canvas",
+      "x": 0.662,
+      "y": 0.342,
+      "double": false
+    },
+    {
+      "do": "menu",
+      "sel": "li[data-item=\"feature-53\"]"
+    },
+    {
+      "do": "click",
+      "sel": "#row-menu-rename"
+    },
+    {
+      "do": "key",
+      "key": "c"
+    },
+    {
+      "do": "click",
+      "sel": "#rename-save"
+    },
+    {
+      "do": "wheel",
+      "x": 0.753,
+      "y": 0.423,
+      "dy": 400
+    },
+    {
+      "do": "canvas",
+      "x": 0.377,
+      "y": 0.606,
+      "double": false
+    },
+    {
+      "do": "click",
+      "sel": "#extrude"
+    },
+    {
+      "do": "click",
+      "sel": "#file-menu"
+    },
+    {
+      "do": "hover",
+      "x": 0.185,
+      "y": 0.2
+    },
+    {
+      "do": "click",
+      "sel": "li[data-item=\"feature-57\"]"
+    },
+    {
+      "do": "round-trip"
+    },
+    {
+      "do": "menu",
+      "sel": "span[data-node=\"sketches/sketch-56\"]"
+    },
+    {
+      "do": "undo-redo"
+    },
+    {
+      "do": "key",
+      "key": "Tab"
+    },
+    {
+      "do": "drag",
+      "x": 0.369,
+      "y": 0.842,
+      "x2": 0.616,
+      "y2": 0.892,
+      "button": "right",
+      "shift": false
+    },
+    {
+      "do": "click",
+      "sel": "#extrude"
+    },
+    {
+      "do": "key",
+      "key": "Control+Shift+z"
+    },
+    {
+      "do": "click",
+      "sel": "#extrude-clear"
+    },
+    {
+      "do": "type",
+      "sel": "#extrude-distance",
+      "text": "２０",
+      "finish": "Escape"
+    },
+    {
+      "do": "click",
+      "sel": "#create-sketch"
+    },
+    {
+      "do": "open",
+      "edit": "drop",
+      "at": 313
+    },
+    {
+      "do": "drag",
+      "x": 0.377,
+      "y": 0.157,
+      "x2": 0.749,
+      "y2": 0.465,
+      "button": "left",
+      "shift": false
+    },
+    {
+      "do": "undo-redo"
+    },
+    {
+      "do": "double",
+      "sel": "li[data-item=\"sketch-4\"]"
+    },
+    {
+      "do": "click",
+      "sel": "#sketch-tool-horizontal"
+    },
+    {
+      "do": "select-bodies"
+    },
+    {
+      "do": "undo-redo"
+    },
+    {
+      "do": "key",
+      "key": "Escape"
+    },
+    {
+      "do": "click",
+      "sel": "summary:text-is(\"Bodies\")"
+    },
+    {
+      "do": "canvas",
+      "x": 0.516,
+      "y": 0.076,
+      "double": false
+    },
+    {
+      "do": "hover",
+      "x": 0.477,
+      "y": 0.671
+    },
+    {
+      "do": "canvas",
+      "x": 0.826,
+      "y": 0.061,
+      "double": false
+    },
+    {
+      "do": "canvas",
+      "x": 0.216,
+      "y": 0.907,
+      "double": false
+    },
+    {
+      "do": "combine",
+      "a": 0.06290640053339303,
+      "b": 0.09640393289737403,
+      "op": "cut",
+      "keep": false,
+      "ok": true
+    },
+    {
+      "do": "click",
+      "sel": "button[data-nav=\"orbit\"]"
+    },
+    {
+      "do": "click",
+      "sel": "li[data-item=\"feature-52\"]"
+    },
+    {
+      "do": "canvas",
+      "x": 0.436,
+      "y": 0.246,
+      "double": false
+    },
+    {
+      "do": "click",
+      "sel": "#sketch-tool-coincident"
+    },
+    {
+      "do": "canvas",
+      "x": 0.567,
+      "y": 0.732,
+      "double": false
+    },
+    {
+      "do": "menu",
+      "sel": "li[data-item=\"sketch-27\"]"
+    },
+    {
+      "do": "click",
+      "sel": "#row-menu-marker"
+    },
+    {
+      "do": "canvas",
+      "x": 0.241,
+      "y": 0.449,
+      "double": false
+    },
+    {
+      "do": "double",
+      "sel": "span[data-node=\"sketches/sketch-27\"]"
+    },
+    {
+      "do": "canvas",
+      "x": 0.291,
+      "y": 0.364,
+      "double": false
+    },
+    {
+      "do": "unstick"
+    },
+    {
+      "do": "round-trip"
+    },
+    {
+      "do": "key",
+      "key": "c"
+    },
+    {
+      "do": "hover",
+      "x": 0.716,
+      "y": 0.755
+    },
+    {
+      "do": "select-bodies"
+    },
+    {
+      "do": "click",
+      "sel": "span[data-node=\"sketches/sketch-3\"]"
+    },
+    {
+      "do": "open",
+      "edit": "truncate",
+      "at": 96
+    },
+    {
+      "do": "key",
+      "key": "r"
+    },
+    {
+      "do": "click",
+      "sel": "li[data-item=\"feature-26\"]"
+    },
+    {
+      "do": "round-trip"
+    },
+    {
+      "do": "click",
+      "sel": "span[data-node=\"sketches/sketch-31\"]"
+    },
+    {
+      "do": "unstick"
+    },
+    {
+      "do": "menu",
+      "sel": "span[data-node=\"sketches/sketch-4\"]"
+    },
+    {
+      "do": "canvas",
+      "x": 0.735,
+      "y": 0.798,
+      "double": false
+    },
+    {
+      "do": "drag",
+      "x": 0.721,
+      "y": 0.518,
+      "x2": 0.576,
+      "y2": 0.432,
+      "button": "left",
+      "shift": false
+    },
+    {
+      "do": "key",
+      "key": "?"
+    },
+    {
+      "do": "undo-redo"
+    },
+    {
+      "do": "click",
+      "sel": "button:text-is(\"Close\")"
+    },
+    {
+      "do": "drag",
+      "x": 0.217,
+      "y": 0.799,
+      "x2": 0.687,
+      "y2": 0.855,
+      "button": "middle",
+      "shift": true
+    },
+    {
+      "do": "canvas",
+      "x": 0.339,
+      "y": 0.554,
+      "double": false
+    },
+    {
+      "do": "click",
+      "sel": "button:text-is(\"Close\")"
+    },
+    {
+      "do": "click",
+      "sel": "button:text-is(\"Close\")"
+    },
+    {
+      "do": "drag",
+      "x": 0.534,
+      "y": 0.591,
+      "x2": 0.151,
+      "y2": 0.308,
+      "button": "middle",
+      "shift": false
+    },
+    {
+      "do": "click",
+      "sel": "button:text-is(\"Close\")"
+    },
+    {
+      "do": "key",
+      "key": "Control+y"
+    },
+    {
+      "do": "key",
+      "key": "l"
+    },
+    {
+      "do": "drag",
+      "x": 0.071,
+      "y": 0.349,
+      "x2": 0.071,
+      "y2": 0.593,
+      "button": "left",
+      "shift": false
+    },
+    {
+      "do": "resize",
+      "size": [
+        1280,
+        800
+      ]
+    },
+    {
+      "do": "open",
+      "edit": "swap",
+      "at": 491
+    },
+    {
+      "do": "open",
+      "edit": "marker-start",
+      "at": 523
+    },
+    {
+      "do": "click",
+      "sel": "button:text-is(\"Close\")"
+    },
+    {
+      "do": "click",
+      "sel": "button:text-is(\"Close\")"
+    },
+    {
+      "do": "reload"
+    },
+    {
+      "do": "click",
+      "sel": "button[data-nav=\"zoom\"]"
+    },
+    {
+      "do": "menu",
+      "sel": "button[data-node=\"sketches/sketch-8\"]"
+    },
+    {
+      "do": "click",
+      "sel": "#row-menu-rename"
+    },
+    {
+      "do": "key",
+      "key": "Delete"
+    },
+    {
+      "do": "select-bodies"
+    },
+    {
+      "do": "key",
+      "key": "Delete"
+    },
+    {
+      "do": "click",
+      "sel": "#rename-cancel"
+    },
+    {
+      "do": "key",
+      "key": "Tab"
+    },
+    {
+      "do": "canvas",
+      "x": 0.67,
+      "y": 0.215,
+      "double": false
+    },
+    {
+      "do": "open",
+      "edit": "add-solid",
+      "at": 239
+    },
+    {
+      "do": "click",
+      "sel": "li[data-item=\"sketch-27\"]"
+    },
+    {
+      "do": "wheel",
+      "x": 0.578,
+      "y": 0.581,
+      "dy": -100
+    },
+    {
+      "do": "open",
+      "edit": "drop",
+      "at": 363
+    },
+    {
+      "do": "canvas",
+      "x": 0.875,
+      "y": 0.562,
+      "double": false
+    },
+    {
+      "do": "menu",
+      "sel": "span[data-node=\"sketches/sketch-27\"]"
+    },
+    {
+      "do": "canvas",
+      "x": 0.688,
+      "y": 0.575,
+      "double": false
+    },
+    {
+      "do": "click",
+      "sel": "#file-menu"
+    },
+    {
+      "do": "click",
+      "sel": "li[data-item=\"feature-28\"]"
+    },
+    {
+      "do": "select-bodies"
+    },
+    {
+      "do": "canvas",
+      "x": 0.128,
+      "y": 0.837,
+      "double": false
+    },
+    {
+      "do": "click",
+      "sel": "li[data-item=\"feature-58\"]"
+    },
+    {
+      "do": "click",
+      "sel": "#extrude"
+    },
+    {
+      "do": "click",
+      "sel": "li[data-item=\"feature-57\"]"
+    },
+    {
+      "do": "wheel",
+      "x": 0.714,
+      "y": 0.379,
+      "dy": 100
+    },
+    {
+      "do": "click",
+      "sel": "#extrude"
+    },
+    {
+      "do": "type",
+      "sel": "#extrude-distance",
+      "text": "-0",
+      "finish": "none"
+    },
+    {
+      "do": "click",
+      "sel": "span[data-node=\"sketches/sketch-24\"]"
+    },
+    {
+      "do": "type",
+      "sel": "#extrude-distance",
+      "text": "-1e3",
+      "finish": "Tab"
+    },
+    {
+      "do": "type",
+      "sel": "#extrude-distance",
+      "text": "Infinity",
+      "finish": "Enter"
+    },
+    {
+      "do": "click",
+      "sel": "li[data-item=\"sketch-27\"]"
+    },
+    {
+      "do": "type",
+      "sel": "#extrude-distance",
+      "text": "3e2",
+      "finish": "Tab"
+    },
+    {
+      "do": "unstick"
+    },
+    {
+      "do": "key",
+      "key": "l"
+    },
+    {
+      "do": "type",
+      "sel": "#depth",
+      "text": "-Infinity",
+      "finish": "Enter"
+    },
+    {
+      "do": "click",
+      "sel": "li[data-item=\"feature-58\"]"
+    },
+    {
+      "do": "click",
+      "sel": "li[data-item=\"feature-59\"]"
+    },
+    {
+      "do": "click",
+      "sel": "#create-sketch"
+    },
+    {
+      "do": "drag",
+      "x": 0.15,
+      "y": 0.353,
+      "x2": 0.171,
+      "y2": 0.747,
+      "button": "middle",
+      "shift": false
+    },
+    {
+      "do": "click",
+      "sel": "li[data-item=\"feature-53\"]"
+    },
+    {
+      "do": "click",
+      "sel": "#create-sketch"
+    },
+    {
+      "do": "click",
+      "sel": "#sketch-plane-YZ"
+    },
+    {
+      "do": "click",
+      "sel": "li[data-item=\"feature-7\"]"
+    },
+    {
+      "do": "click",
+      "sel": "#undo"
+    },
+    {
+      "do": "click",
+      "sel": "li[data-item=\"sketch-24\"]"
+    },
+    {
+      "do": "reload"
+    },
+    {
+      "do": "canvas",
+      "x": 0.749,
+      "y": 0.287,
+      "double": false
+    },
+    {
+      "do": "undo-redo"
+    },
+    {
+      "do": "key",
+      "key": "Escape"
+    },
+    {
+      "do": "click",
+      "sel": "#command-search-button"
+    },
+    {
+      "do": "undo-redo"
+    },
+    {
+      "do": "canvas",
+      "x": 0.228,
+      "y": 0.848,
+      "double": true
+    },
+    {
+      "do": "open",
+      "edit": "marker",
+      "at": 798
+    },
+    {
+      "do": "click",
+      "sel": "#modify-menu"
+    },
+    {
+      "do": "canvas",
+      "x": 0.752,
+      "y": 0.561,
+      "double": false
+    },
+    {
+      "do": "type",
+      "sel": "#height",
+      "text": "12",
+      "finish": "none"
+    },
+    {
+      "do": "menu",
+      "sel": "span[data-node=\"sketches/sketch-31\"]"
+    },
+    {
+      "do": "key",
+      "key": "?"
+    },
+    {
+      "do": "drag",
+      "x": 0.626,
+      "y": 0.123,
+      "x2": 0.915,
+      "y2": 0.449,
+      "button": "left",
+      "shift": false
+    },
+    {
+      "do": "canvas",
+      "x": 0.873,
+      "y": 0.633,
+      "double": false
+    },
+    {
+      "do": "type",
+      "sel": "#project-name",
+      "text": "-Infinity",
+      "finish": "none"
+    },
+    {
+      "do": "click",
+      "sel": "button:text-is(\"⋯\")"
+    },
+    {
+      "do": "unstick"
+    },
+    {
+      "do": "type",
+      "sel": "#width",
+      "text": "-0",
+      "finish": "Enter"
+    },
+    {
+      "do": "select-bodies"
+    },
+    {
+      "do": "key",
+      "key": "Control+y"
+    },
+    {
+      "do": "undo-redo"
+    },
+    {
+      "do": "select-bodies"
+    },
+    {
+      "do": "key",
+      "key": "Control+y"
+    },
+    {
+      "do": "type",
+      "sel": "#width",
+      "text": "1/2",
+      "finish": "none"
+    },
+    {
+      "do": "click",
+      "sel": "#file-menu"
+    },
+    {
+      "do": "hover",
+      "x": 0.153,
+      "y": 0.366
+    },
+    {
+      "do": "drag",
+      "x": 0.414,
+      "y": 0.051,
+      "x2": 0.867,
+      "y2": 0.623,
+      "button": "right",
+      "shift": false
+    },
+    {
+      "do": "click",
+      "sel": "#file-menu"
+    },
+    {
+      "do": "reload"
+    },
+    {
+      "do": "click",
+      "sel": "#modify-menu"
+    },
+    {
+      "do": "click",
+      "sel": "button[data-view=\"fit\"]"
+    },
+    {
+      "do": "click",
+      "sel": "#tool-export_stl"
+    },
+    {
+      "do": "key",
+      "key": "Delete"
+    },
+    {
+      "do": "canvas",
+      "x": 0.578,
+      "y": 0.335,
+      "double": false
+    },
+    {
+      "do": "click",
+      "sel": "li[data-item=\"feature-58\"]"
+    },
+    {
+      "do": "type",
+      "sel": "#project-name",
+      "text": "3e2",
+      "finish": "Enter"
+    },
+    {
+      "do": "type",
+      "sel": "#width",
+      "text": "12",
+      "finish": "Tab"
+    },
+    {
+      "do": "canvas",
+      "x": 0.292,
+      "y": 0.798,
+      "double": false
+    },
+    {
+      "do": "click",
+      "sel": "#extrude"
+    },
+    {
+      "do": "unstick"
+    },
+    {
+      "do": "key",
+      "key": "Escape"
+    },
+    {
+      "do": "click",
+      "sel": "li[data-item=\"feature-55\"]"
+    },
+    {
+      "do": "click",
+      "sel": "#file-menu"
+    },
+    {
+      "do": "undo-redo"
+    },
+    {
+      "do": "double",
+      "sel": "li[data-item=\"sketch-27\"]"
+    },
+    {
+      "do": "click",
+      "sel": "button[data-node=\"body-4\"]"
+    },
+    {
+      "do": "drag",
+      "x": 0.73,
+      "y": 0.21,
+      "x2": 0.574,
+      "y2": 0.796,
+      "button": "right",
+      "shift": true
+    },
+    {
+      "do": "canvas",
+      "x": 0.878,
+      "y": 0.492,
+      "double": false
+    },
+    {
+      "do": "click",
+      "sel": "button[data-node=\"body-4\"]"
+    },
+    {
+      "do": "canvas",
+      "x": 0.078,
+      "y": 0.548,
+      "double": true
+    },
+    {
+      "do": "menu",
+      "sel": "li[data-item=\"sketch-27\"]"
+    },
+    {
+      "do": "click",
+      "sel": "#row-menu-rename"
+    },
+    {
+      "do": "click",
+      "sel": "#rename-save"
+    },
+    {
+      "do": "canvas",
+      "x": 0.825,
+      "y": 0.629,
+      "double": false
+    },
+    {
+      "do": "click",
+      "sel": "#modify-menu"
+    },
+    {
+      "do": "type",
+      "sel": "#edit-height",
+      "text": "3e2",
+      "finish": "Escape"
+    },
+    {
+      "do": "click",
+      "sel": "#file-menu"
+    },
+    {
+      "do": "canvas",
+      "x": 0.575,
+      "y": 0.253,
+      "double": false
+    },
+    {
+      "do": "select-bodies"
+    },
+    {
+      "do": "open",
+      "edit": "truncate",
+      "at": 310
+    },
+    {
+      "do": "double",
+      "sel": "span[data-node=\"sketches/sketch-51\"]"
+    },
+    {
+      "do": "type",
+      "sel": "#project-name",
+      "text": "abc",
+      "finish": "Tab"
+    },
+    {
+      "do": "wheel",
+      "x": 0.635,
+      "y": 0.831,
+      "dy": 100
+    },
+    {
+      "do": "click",
+      "sel": "li[data-item=\"feature-6\"]"
+    },
+    {
+      "do": "click",
+      "sel": "#extrude"
+    },
+    {
+      "do": "round-trip"
+    },
+    {
+      "do": "click",
+      "sel": "#extrude"
+    },
+    {
+      "do": "click",
+      "sel": "li[data-item=\"feature-25\"]"
+    },
+    {
+      "do": "key",
+      "key": "?"
+    },
+    {
+      "do": "unstick"
+    },
+    {
+      "do": "click",
+      "sel": "#modify-menu"
+    },
+    {
+      "do": "key",
+      "key": "Escape"
+    },
+    {
+      "do": "hover",
+      "x": 0.682,
+      "y": 0.781
+    },
+    {
+      "do": "open",
+      "edit": "suppress",
+      "at": 553
+    },
+    {
+      "do": "hover",
+      "x": 0.657,
+      "y": 0.289
+    },
+    {
+      "do": "key",
+      "key": "l"
+    },
+    {
+      "do": "open",
+      "edit": "add-solid",
+      "at": 354
+    },
+    {
+      "do": "menu",
+      "sel": "span[data-node=\"sketches/sketch-3\"]"
+    },
+    {
+      "do": "undo-redo"
+    },
+    {
+      "do": "unstick"
+    },
+    {
+      "do": "type",
+      "sel": "#project-name",
+      "text": "1/2",
+      "finish": "none"
+    },
+    {
+      "do": "double",
+      "sel": "li[data-item=\"sketch-27\"]"
+    },
+    {
+      "do": "type",
+      "sel": "#height",
+      "text": "3e2",
+      "finish": "none"
+    },
+    {
+      "do": "menu",
+      "sel": "span[data-node=\"sketches/sketch-24\"]"
+    },
+    {
+      "do": "canvas",
+      "x": 0.07,
+      "y": 0.18,
+      "double": false
+    },
+    {
+      "do": "type",
+      "sel": "#height",
+      "text": "1e-9",
+      "finish": "Escape"
+    },
+    {
+      "do": "open",
+      "edit": "add-solid",
+      "at": 844
+    },
+    {
+      "do": "click",
+      "sel": "#file-menu"
+    },
+    {
+      "do": "open",
+      "edit": "marker",
+      "at": 309
+    },
+    {
+      "do": "menu",
+      "sel": "span[data-node=\"sketches/sketch-3\"]"
+    },
+    {
+      "do": "click",
+      "sel": "#row-menu-edit-sketch"
+    },
+    {
+      "do": "canvas",
+      "x": 0.161,
+      "y": 0.134,
+      "double": false
+    },
+    {
+      "do": "click",
+      "sel": "#sketch-tool-centre"
+    },
+    {
+      "do": "key",
+      "key": "Escape"
+    },
+    {
+      "do": "canvas",
+      "x": 0.486,
+      "y": 0.615,
+      "double": false
+    },
+    {
+      "do": "hover",
+      "x": 0.069,
+      "y": 0.334
+    },
+    {
+      "do": "type",
+      "sel": "#sketch-grid",
+      "text": "--3",
+      "finish": "Tab"
+    },
+    {
+      "do": "canvas",
+      "x": 0.468,
+      "y": 0.461,
+      "double": false
+    },
+    {
+      "do": "hover",
+      "x": 0.118,
+      "y": 0.557
+    },
+    {
+      "do": "open",
+      "edit": "marker",
+      "at": 9
+    },
+    {
+      "do": "combine",
+      "a": 0.4341005745809525,
+      "b": 0.20874792151153088,
+      "op": "cut",
+      "keep": true,
+      "ok": true
+    },
+    {
+      "do": "click",
+      "sel": "button[data-node=\"body-5\"]"
+    },
+    {
+      "do": "select-bodies"
+    },
+    {
+      "do": "select-bodies"
+    },
+    {
+      "do": "select-bodies"
+    },
+    {
+      "do": "select-bodies"
+    },
+    {
+      "do": "type",
+      "sel": "#depth",
+      "text": "0",
+      "finish": "Enter"
+    },
+    {
+      "do": "reload"
+    },
+    {
+      "do": "key",
+      "key": "p"
+    },
+    {
+      "do": "click",
+      "sel": "summary:text-is(\"Sketches\")"
+    },
+    {
+      "do": "canvas",
+      "x": 0.606,
+      "y": 0.221,
+      "double": false
+    },
+    {
+      "do": "type",
+      "sel": "#project-name",
+      "text": "-5",
+      "finish": "Enter"
+    },
+    {
+      "do": "click",
+      "sel": "li[data-item=\"feature-59\"]"
+    },
+    {
+      "do": "drag",
+      "x": 0.597,
+      "y": 0.95,
+      "x2": 0.263,
+      "y2": 0.407,
+      "button": "middle",
+      "shift": false
+    },
+    {
+      "do": "type",
+      "sel": "#project-name",
+      "text": "1e308",
+      "finish": "none"
+    },
+    {
+      "do": "type",
+      "sel": "#depth",
+      "text": "1e",
+      "finish": "Escape"
+    },
+    {
+      "do": "click",
+      "sel": "#command-search-button"
+    },
+    {
+      "do": "canvas",
+      "x": 0.421,
+      "y": 0.85,
+      "double": true
+    },
+    {
+      "do": "key",
+      "key": "Tab"
+    },
+    {
+      "do": "key",
+      "key": "Control+y"
+    },
+    {
+      "do": "click",
+      "sel": "#file-menu"
+    },
+    {
+      "do": "select-bodies"
+    },
+    {
+      "do": "open",
+      "edit": "add-solid",
+      "at": 892
+    },
+    {
+      "do": "combine",
+      "a": 0.4469024259597063,
+      "b": 0.15487926360219717,
+      "op": "cut",
+      "keep": false,
+      "ok": true
+    },
+    {
+      "do": "click",
+      "sel": "#combine-ok"
+    },
+    {
+      "do": "click",
+      "sel": "#combine-cancel"
+    },
+    {
+      "do": "click",
+      "sel": "#create-sketch"
+    },
+    {
+      "do": "canvas",
+      "x": 0.291,
+      "y": 0.764,
+      "double": false
+    },
+    {
+      "do": "click",
+      "sel": "#sketch-plane-XZ"
+    },
+    {
+      "do": "click",
+      "sel": "button[data-node=\"body-5\"]"
+    },
+    {
+      "do": "click",
+      "sel": "#sketch-grid-snap"
+    },
+    {
+      "do": "canvas",
+      "x": 0.61,
+      "y": 0.798,
+      "double": false
+    },
+    {
+      "do": "type",
+      "sel": "#sketch-grid",
+      "text": "-5",
+      "finish": "Tab"
+    },
+    {
+      "do": "click",
+      "sel": "button[data-node=\"body-4\"]"
+    },
+    {
+      "do": "resize",
+      "size": [
+        1280,
+        800
+      ]
+    },
+    {
+      "do": "combine",
+      "a": 0.921146719250828,
+      "b": 0.18358484539203346,
+      "op": "intersect",
+      "keep": true,
+      "ok": true
+    },
+    {
+      "do": "type",
+      "sel": "#sketch-grid",
+      "text": "1,5",
+      "finish": "none"
+    },
+    {
+      "do": "click",
+      "sel": "#sketch-grid-snap"
+    },
+    {
+      "do": "canvas",
+      "x": 0.259,
+      "y": 0.503,
+      "double": false
+    },
+    {
+      "do": "canvas",
+      "x": 0.925,
+      "y": 0.875,
+      "double": false
+    },
+    {
+      "do": "click",
+      "sel": "li[data-item=\"feature-62\"]"
+    },
+    {
+      "do": "click",
+      "sel": "#extrude-cancel"
+    },
+    {
+      "do": "undo-redo"
+    },
+    {
+      "do": "click",
+      "sel": "li[data-item=\"sketch-31\"]"
+    },
+    {
+      "do": "click",
+      "sel": "#modify-menu"
+    },
+    {
+      "do": "click",
+      "sel": "#modify-menu-mirror-xy"
+    },
+    {
+      "do": "select-bodies"
+    },
+    {
+      "do": "click",
+      "sel": "#create-sketch"
+    },
+    {
+      "do": "canvas",
+      "x": 0.729,
+      "y": 0.855,
+      "double": false
+    },
+    {
+      "do": "menu",
+      "sel": "li[data-item=\"sketch-56\"]"
+    },
+    {
+      "do": "click",
+      "sel": "#row-menu-rename"
+    },
+    {
+      "do": "resize",
+      "size": [
+        375,
+        740
+      ]
+    },
+    {
+      "do": "select-bodies"
+    },
+    {
+      "do": "canvas",
+      "x": 0.81,
+      "y": 0.091,
+      "double": false
+    },
+    {
+      "do": "select-bodies"
+    },
+    {
+      "do": "click",
+      "sel": "#file-menu"
+    },
+    {
+      "do": "open",
+      "edit": "suppress",
+      "at": 313
+    },
+    {
+      "do": "wheel",
+      "x": 0.732,
+      "y": 0.771,
+      "dy": 100
+    },
+    {
+      "do": "canvas",
+      "x": 0.921,
+      "y": 0.736,
+      "double": false
+    },
+    {
+      "do": "hover",
+      "x": 0.646,
+      "y": 0.31
+    },
+    {
+      "do": "drag",
+      "x": 0.622,
+      "y": 0.461,
+      "x2": 0.822,
+      "y2": 0.655,
+      "button": "right",
+      "shift": false
+    },
+    {
+      "do": "undo-redo"
+    },
+    {
+      "do": "click",
+      "sel": "button[data-nav=\"orbit\"]"
+    },
+    {
+      "do": "canvas",
+      "x": 0.374,
+      "y": 0.833,
+      "double": false
+    },
+    {
+      "do": "open",
+      "edit": "bad-number",
+      "at": 530
+    },
+    {
+      "do": "canvas",
+      "x": 0.668,
+      "y": 0.16,
+      "double": false
+    },
+    {
+      "do": "click",
+      "sel": "button[data-nav=\"pan\"]"
+    },
+    {
+      "do": "canvas",
+      "x": 0.495,
+      "y": 0.277,
+      "double": false
+    },
+    {
+      "do": "round-trip"
+    },
+    {
+      "do": "select-bodies"
+    },
+    {
+      "do": "wheel",
+      "x": 0.28,
+      "y": 0.853,
+      "dy": 100
+    },
+    {
+      "do": "open",
+      "edit": "add-solid",
+      "at": 636
+    },
+    {
+      "do": "click",
+      "sel": "#file-menu"
+    },
+    {
+      "do": "open",
+      "edit": "no-marker",
+      "at": 705
+    },
+    {
+      "do": "click",
+      "sel": "#file-projects"
+    },
+    {
+      "do": "click",
+      "sel": "button:text-is(\"Delete\")"
+    },
+    {
+      "do": "round-trip"
+    },
+    {
+      "do": "wheel",
+      "x": 0.519,
+      "y": 0.849,
+      "dy": 100
+    },
+    {
+      "do": "click",
+      "sel": "#projects-close"
+    },
+    {
+      "do": "hover",
+      "x": 0.381,
+      "y": 0.345
+    },
+    {
+      "do": "open",
+      "edit": "no-marker",
+      "at": 646
+    },
+    {
+      "do": "canvas",
+      "x": 0.674,
+      "y": 0.208,
+      "double": false
+    },
+    {
+      "do": "canvas",
+      "x": 0.265,
+      "y": 0.507,
+      "double": false
+    },
+    {
+      "do": "unstick"
+    }
+  ]
+}

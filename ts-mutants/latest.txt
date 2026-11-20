@@ -1,321 +1,135 @@
-tested commit 024a60e on main, 2026-11-19 19:46 UTC (https://github.com/SpindleLabs-app/SpindleLabs/actions/runs/44549889221)
+tested commit f21c122 on main, 2026-11-20 21:08 UTC (https://github.com/SpindleLabs-app/SpindleLabs/actions/runs/44758875463)
+All files   |  97.11 |   97.11 |      627 |        11 |         19 |        0 |        0 |
+ feature.ts | 100.00 |  100.00 |       23 |         0 |          0 |        0 |        0 |
+ history.ts |  96.30 |   96.30 |      380 |        10 |         15 |        0 |        0 |
+ project.ts |  98.25 |   98.25 |      224 |         1 |          4 |        0 |        0 |
 core: 19 survivors, all explained: true
-design: no report (the job stopped before the check)
-UNEXPLAINED survivor at packages/storage/src/autosave.ts:221: packages/storage/src/autosave.ts | BlockStatement | { startedAt = at; started.push(at); if (started.length > 8) started.shift(); } => {}
-UNEXPLAINED survivor at packages/storage/src/autosave.ts:224: packages/storage/src/autosave.ts | ConditionalExpression | started.length > 8 => false
-UNEXPLAINED survivor at packages/storage/src/autosave.ts:224: packages/storage/src/autosave.ts | ConditionalExpression | started.length > 8 => true
-UNEXPLAINED survivor at packages/storage/src/autosave.ts:224: packages/storage/src/autosave.ts | EqualityOperator | started.length > 8 => started.length >= 8
-UNEXPLAINED survivor at packages/storage/src/autosave.ts:224: packages/storage/src/autosave.ts | EqualityOperator | started.length > 8 => started.length <= 8
-UNEXPLAINED survivor at packages/storage/src/autosave.ts:602: packages/storage/src/autosave.ts | ConditionalExpression | base === undefined => true
-UNEXPLAINED survivor at packages/storage/src/autosave.ts:602: packages/storage/src/autosave.ts | ConditionalExpression | base === undefined => false
-UNEXPLAINED survivor at packages/storage/src/autosave.ts:602: packages/storage/src/autosave.ts | EqualityOperator | base === undefined => base !== undefined
-UNEXPLAINED survivor at packages/storage/src/autosave.ts:602: packages/storage/src/autosave.ts | ArrayDeclaration | [] => ["Stryker was here"]
-UNEXPLAINED survivor at packages/storage/src/autosave.ts:602: packages/storage/src/autosave.ts | ArrayDeclaration | [base] => []
-UNEXPLAINED survivor at packages/storage/src/autosave.ts:602: packages/storage/src/autosave.ts | ConditionalExpression | writtenAt === null => true
-UNEXPLAINED survivor at packages/storage/src/autosave.ts:602: packages/storage/src/autosave.ts | ArrayDeclaration | [writtenAt] => []
-UNEXPLAINED survivor at packages/storage/src/store.ts:277: packages/storage/src/store.ts | EqualityOperator | start < candidates.length => start <= candidates.length
-UNEXPLAINED survivor at packages/storage/src/store.ts:283: packages/storage/src/store.ts | BlockStatement | { return null; // can't be read: not a copy of anything } => {}
-UNEXPLAINED survivor at packages/storage/src/store.ts:290: packages/storage/src/store.ts | ConditionalExpression | summary.name === p.name => true
-UNEXPLAINED survivor at packages/storage/src/unsaved.ts:56: packages/storage/src/unsaved.ts | StringLiteral | "panoshape.unsaved-unreadable/" => ""
-UNEXPLAINED survivor at packages/storage/src/unsaved.ts:305: packages/storage/src/unsaved.ts | EqualityOperator | i < journal.length => i <= journal.length
-UNEXPLAINED survivor at packages/storage/src/unsaved.ts:331: packages/storage/src/unsaved.ts | EqualityOperator | i < journal.length => i <= journal.length
-UNEXPLAINED survivor at packages/storage/src/unsaved.ts:303: packages/storage/src/unsaved.ts | ConditionalExpression | !journal => false
-UNEXPLAINED survivor at packages/storage/src/unsaved.ts:243: packages/storage/src/unsaved.ts | OptionalChaining | entry.written?.getTime => entry.written.getTime
-UNEXPLAINED survivor at packages/storage/src/unsaved.ts:307: packages/storage/src/unsaved.ts | ConditionalExpression | k === null || !k.startsWith(UNSAVED_PREFIX) || k.length === UNSAVED_PREFIX.length => false
-UNEXPLAINED survivor at packages/storage/src/unsaved.ts:307: packages/storage/src/unsaved.ts | LogicalOperator | k === null || !k.startsWith(UNSAVED_PREFIX) || k.length === UNSAVED_PREFIX.length => (k === null || !k.startsWith(UNSAVED_PREFIX)) && k.length === UNSAVED_PREFIX.length
-UNEXPLAINED survivor at packages/storage/src/unsaved.ts:307: packages/storage/src/unsaved.ts | LogicalOperator | k === null || !k.startsWith(UNSAVED_PREFIX) => k === null && !k.startsWith(UNSAVED_PREFIX)
-UNEXPLAINED survivor at packages/storage/src/unsaved.ts:307: packages/storage/src/unsaved.ts | ConditionalExpression | k === null || !k.startsWith(UNSAVED_PREFIX) => false
-UNEXPLAINED survivor at packages/storage/src/unsaved.ts:307: packages/storage/src/unsaved.ts | ConditionalExpression | k === null => false
-UNEXPLAINED survivor at packages/storage/src/unsaved.ts:307: packages/storage/src/unsaved.ts | ConditionalExpression | k.length === UNSAVED_PREFIX.length => false
-UNEXPLAINED survivor at packages/storage/src/unsaved.ts:309: packages/storage/src/unsaved.ts | ConditionalExpression | raw === null => false
-UNEXPLAINED survivor at packages/storage/src/unsaved.ts:312: packages/storage/src/unsaved.ts | StringLiteral | "" => "Stryker was here!"
-UNEXPLAINED survivor at packages/storage/src/unsaved.ts:315: packages/storage/src/unsaved.ts | ConditionalExpression | typeof n === "string" => true
-UNEXPLAINED survivor at packages/storage/src/unsaved.ts:329: packages/storage/src/unsaved.ts | ArrayDeclaration | [] => ["Stryker was here"]
-UNEXPLAINED survivor at packages/storage/src/unsaved.ts:333: packages/storage/src/unsaved.ts | ConditionalExpression | k !== null => true
-UNEXPLAINED survivor at packages/storage/src/unsaved.ts:343: packages/storage/src/unsaved.ts | ConditionalExpression | !key.startsWith(UNREADABLE_PREFIX) => false
-UNEXPLAINED survivor at packages/storage/src/unsaved.ts:344: packages/storage/src/unsaved.ts | Regex | /^(.+)\/\d{1,16}$/ => /(.+)\/\d{1,16}$/
-UNEXPLAINED survivor at packages/storage/src/unsaved.ts:344: packages/storage/src/unsaved.ts | Regex | /^(.+)\/\d{1,16}$/ => /^(.+)\/\d{1,16}/
-UNEXPLAINED survivor at packages/storage/src/unsaved.ts:345: packages/storage/src/unsaved.ts | ConditionalExpression | m === null => false
-UNEXPLAINED survivor at packages/storage/src/unsaved.ts:352: packages/storage/src/unsaved.ts | ConditionalExpression | typeof v === "object" && v !== null && !Array.isArray(v) => true
-UNEXPLAINED survivor at packages/storage/src/unsaved.ts:352: packages/storage/src/unsaved.ts | LogicalOperator | typeof v === "object" && v !== null && !Array.isArray(v) => typeof v === "object" && v !== null || !Array.isArray(v)
-UNEXPLAINED survivor at packages/storage/src/unsaved.ts:352: packages/storage/src/unsaved.ts | ConditionalExpression | typeof v === "object" && v !== null => true
-UNEXPLAINED survivor at packages/storage/src/unsaved.ts:352: packages/storage/src/unsaved.ts | LogicalOperator | typeof v === "object" && v !== null => typeof v === "object" || v !== null
-UNEXPLAINED survivor at packages/storage/src/unsaved.ts:352: packages/storage/src/unsaved.ts | ConditionalExpression | typeof v === "object" => true
-UNEXPLAINED survivor at packages/storage/src/unsaved.ts:352: packages/storage/src/unsaved.ts | ConditionalExpression | v !== null => true
-UNEXPLAINED survivor at packages/storage/src/unsaved.ts:378: packages/storage/src/unsaved.ts | BlockStatement | { return false; } => {}
-storage: 136 survivors, all explained: false
-42 problem(s): kill each survivor with a test, or explain in explained.json why no caller can tell
-account: 26 survivors, all explained: true
+All files    |  96.35 |   96.35 |     3799 |         3 |        144 |        0 |        0 |
+ document.ts |  96.35 |   96.35 |     3799 |         3 |        144 |        0 |        0 |
+UNEXPLAINED survivor at workspaces/design/src/document.ts:2079: workspaces/design/src/document.ts | ArrayDeclaration | [] => ["Stryker was here"]
+UNEXPLAINED survivor at workspaces/design/src/document.ts:2085: workspaces/design/src/document.ts | ArrayDeclaration | [] => ["Stryker was here"]
+UNEXPLAINED survivor at workspaces/design/src/document.ts:2118: workspaces/design/src/document.ts | ArrayDeclaration | [] => ["Stryker was here"]
+UNEXPLAINED survivor at workspaces/design/src/document.ts:2126: workspaces/design/src/document.ts | ArrayDeclaration | [] => ["Stryker was here"]
+UNEXPLAINED survivor at workspaces/design/src/document.ts:2135: workspaces/design/src/document.ts | ArrayDeclaration | [] => ["Stryker was here"]
+UNEXPLAINED survivor at workspaces/design/src/document.ts:2178: workspaces/design/src/document.ts | ArrayDeclaration | [] => ["Stryker was here"]
+UNEXPLAINED survivor at workspaces/design/src/document.ts:2178: workspaces/design/src/document.ts | ArrayDeclaration | [] => ["Stryker was here"]
+UNEXPLAINED survivor at workspaces/design/src/document.ts:2179: workspaces/design/src/document.ts | ArrayDeclaration | [] => ["Stryker was here"]
+UNEXPLAINED survivor at workspaces/design/src/document.ts:2222: workspaces/design/src/document.ts | ArrayDeclaration | [] => ["Stryker was here"]
+UNEXPLAINED survivor at workspaces/design/src/document.ts:1858: workspaces/design/src/document.ts | ConditionalExpression | typeof id === "string" => true
+UNEXPLAINED survivor at workspaces/design/src/document.ts:1892: workspaces/design/src/document.ts | ConditionalExpression | typeof id === "string" => true
+UNEXPLAINED survivor at workspaces/design/src/document.ts:1694: workspaces/design/src/document.ts | EqualityOperator | there.at > byId.get(f.id)!.at => there.at >= byId.get(f.id)!.at
+UNEXPLAINED survivor at workspaces/design/src/document.ts:1352: workspaces/design/src/document.ts | ConditionalExpression | there.at > byId.get(f.id)!.at || !isConstructItem(there.item) => false
+UNEXPLAINED survivor at workspaces/design/src/document.ts:1352: workspaces/design/src/document.ts | LogicalOperator | there.at > byId.get(f.id)!.at || !isConstructItem(there.item) => there.at > byId.get(f.id)!.at && !isConstructItem(there.item)
+UNEXPLAINED survivor at workspaces/design/src/document.ts:1352: workspaces/design/src/document.ts | ConditionalExpression | there.at > byId.get(f.id)!.at => false
+UNEXPLAINED survivor at workspaces/design/src/document.ts:1724: workspaces/design/src/document.ts | OptionalChaining | CONSTRUCT_KINDS[there.item.intent.parameters.make as ConstructKind]?.makes => CONSTRUCT_KINDS[there.item.intent.parameters.make as ConstructKind].makes
+UNEXPLAINED survivor at workspaces/design/src/document.ts:1871: workspaces/design/src/document.ts | OptionalChaining | CONSTRUCT_KINDS[there.item.intent.parameters.make as ConstructKind]?.makes => CONSTRUCT_KINDS[there.item.intent.parameters.make as ConstructKind].makes
+UNEXPLAINED survivor at workspaces/design/src/document.ts:1369: workspaces/design/src/document.ts | ConditionalExpression | isCombineItem(item) || isShellItem(item) => true
+UNEXPLAINED survivor at workspaces/design/src/document.ts:1893: workspaces/design/src/document.ts | ConditionalExpression | maker === null => false
+UNEXPLAINED survivor at workspaces/design/src/document.ts:1911: workspaces/design/src/document.ts | ConditionalExpression | maker === null => false
+UNEXPLAINED survivor at workspaces/design/src/document.ts:1653: workspaces/design/src/document.ts | StringLiteral | "Intersect " => ""
+UNEXPLAINED survivor at workspaces/design/src/document.ts:1871: workspaces/design/src/document.ts | EqualityOperator | there.at >= byId.get(f.id)!.at => there.at > byId.get(f.id)!.at
+UNEXPLAINED survivor at workspaces/design/src/document.ts:1895: workspaces/design/src/document.ts | EqualityOperator | there.at >= byId.get(f.id)!.at => there.at > byId.get(f.id)!.at
+UNEXPLAINED survivor at workspaces/design/src/document.ts:1854: workspaces/design/src/document.ts | StringLiteral | "bodies" => ""
+UNEXPLAINED survivor at workspaces/design/src/document.ts:1854: workspaces/design/src/document.ts | StringLiteral | `${at} names` => ``
+UNEXPLAINED survivor at workspaces/design/src/document.ts:1897: workspaces/design/src/document.ts | StringLiteral | `${at} names` => ``
+UNEXPLAINED survivor at workspaces/design/src/document.ts:1860: workspaces/design/src/document.ts | ConditionalExpression | maker !== null => true
+UNEXPLAINED survivor at workspaces/design/src/document.ts:1861: workspaces/design/src/document.ts | LogicalOperator | there === undefined || there.at >= byId.get(f.id)!.at || !isBodyOf(d, byId, id as string) => (there === undefined || there.at >= byId.get(f.id)!.at) && !isBodyOf(d, byId, id as string)
+UNEXPLAINED survivor at workspaces/design/src/document.ts:1895: workspaces/design/src/document.ts | LogicalOperator | there === undefined || there.at >= byId.get(f.id)!.at || !isBodyOf(d, byId, id as string) => (there === undefined || there.at >= byId.get(f.id)!.at) && !isBodyOf(d, byId, id as string)
+UNEXPLAINED survivor at workspaces/design/src/document.ts:1861: workspaces/design/src/document.ts | LogicalOperator | there === undefined || there.at >= byId.get(f.id)!.at => there === undefined && there.at >= byId.get(f.id)!.at
+UNEXPLAINED survivor at workspaces/design/src/document.ts:1861: workspaces/design/src/document.ts | ConditionalExpression | there === undefined || there.at >= byId.get(f.id)!.at => false
+UNEXPLAINED survivor at workspaces/design/src/document.ts:1895: workspaces/design/src/document.ts | ConditionalExpression | there === undefined || there.at >= byId.get(f.id)!.at => false
+UNEXPLAINED survivor at workspaces/design/src/document.ts:1861: workspaces/design/src/document.ts | ConditionalExpression | there === undefined => false
+UNEXPLAINED survivor at workspaces/design/src/document.ts:1861: workspaces/design/src/document.ts | ConditionalExpression | there.at >= byId.get(f.id)!.at => false
+UNEXPLAINED survivor at workspaces/design/src/document.ts:1895: workspaces/design/src/document.ts | ConditionalExpression | there.at >= byId.get(f.id)!.at => false
+UNEXPLAINED survivor at workspaces/design/src/document.ts:1864: workspaces/design/src/document.ts | ConditionalExpression | !makers.includes(maker!) => true
+UNEXPLAINED survivor at workspaces/design/src/document.ts:1868: workspaces/design/src/document.ts | ConditionalExpression | p.kind === "circular" => true
+UNEXPLAINED survivor at workspaces/design/src/document.ts:1869: workspaces/design/src/document.ts | ConditionalExpression | axis !== null => true
+UNEXPLAINED survivor at workspaces/design/src/document.ts:1875: workspaces/design/src/document.ts | MethodExpression | f.dependsOn.some((x, i) => x !== want[i]) => f.dependsOn.every((x, i) => x !== want[i])
+UNEXPLAINED survivor at workspaces/design/src/document.ts:1876: workspaces/design/src/document.ts | StringLiteral | ", " => ""
+UNEXPLAINED survivor at workspaces/design/src/document.ts:1876: workspaces/design/src/document.ts | StringLiteral | ", " => ""
+UNEXPLAINED survivor at workspaces/design/src/document.ts:1897: workspaces/design/src/document.ts | StringLiteral | "open faces" => ""
+UNEXPLAINED survivor at workspaces/design/src/document.ts:1900: workspaces/design/src/document.ts | LogicalOperator | typeof face !== "string" || !isFacePlane(face) || faceFeature(face) === null => (typeof face !== "string" || !isFacePlane(face)) && faceFeature(face) === null
+UNEXPLAINED survivor at workspaces/design/src/document.ts:1900: workspaces/design/src/document.ts | ConditionalExpression | typeof face !== "string" || !isFacePlane(face) => false
+UNEXPLAINED survivor at workspaces/design/src/document.ts:1900: workspaces/design/src/document.ts | LogicalOperator | typeof face !== "string" || !isFacePlane(face) => typeof face !== "string" && !isFacePlane(face)
+UNEXPLAINED survivor at workspaces/design/src/document.ts:1900: workspaces/design/src/document.ts | ConditionalExpression | typeof face !== "string" => false
+UNEXPLAINED survivor at workspaces/design/src/document.ts:1900: workspaces/design/src/document.ts | ConditionalExpression | faceFeature(face) === null => false
+UNEXPLAINED survivor at workspaces/design/src/document.ts:1905: workspaces/design/src/document.ts | MethodExpression | problem.slice("its ".length) => problem
+UNEXPLAINED survivor at workspaces/design/src/document.ts:1905: workspaces/design/src/document.ts | StringLiteral | "its " => ""
+UNEXPLAINED survivor at workspaces/design/src/document.ts:1906: workspaces/design/src/document.ts | ConditionalExpression | f.dependsOn.length !== 1 => false
+UNEXPLAINED survivor at workspaces/design/src/document.ts:2177: workspaces/design/src/document.ts | ConditionalExpression | isRecord(f.intent) && isRecord(f.intent.parameters) => true
+UNEXPLAINED survivor at workspaces/design/src/document.ts:2177: workspaces/design/src/document.ts | LogicalOperator | isRecord(f.intent) && isRecord(f.intent.parameters) => isRecord(f.intent) || isRecord(f.intent.parameters)
+UNEXPLAINED survivor at workspaces/design/src/document.ts:2178: workspaces/design/src/document.ts | MethodExpression | [p.target, p.body, ...(Array.isArray(p.tools) ? p.tools : []), ...(Array.isArray(p.bodies) ? p.bodies : [])].filter((b): b is string => typeof b === "string") => [p.target, p.body, ...(Array.isArray(p.tools) ? p.tools : []), ...(Array.isArray(p.bodies) ? p.bodies : [])]
+UNEXPLAINED survivor at workspaces/design/src/document.ts:2178: workspaces/design/src/document.ts | ConditionalExpression | typeof b === "string" => true
+UNEXPLAINED survivor at workspaces/design/src/document.ts:2179: workspaces/design/src/document.ts | ConditionalExpression | isRecord(f.provenance) && Array.isArray(f.provenance.from) => true
+UNEXPLAINED survivor at workspaces/design/src/document.ts:2179: workspaces/design/src/document.ts | LogicalOperator | isRecord(f.provenance) && Array.isArray(f.provenance.from) => isRecord(f.provenance) || Array.isArray(f.provenance.from)
+UNEXPLAINED survivor at workspaces/design/src/document.ts:2181: workspaces/design/src/document.ts | ConditionalExpression | renamed(b) !== b => true
+UNEXPLAINED survivor at workspaces/design/src/document.ts:2183: workspaces/design/src/document.ts | ConditionalExpression | !isRecord(label) || typeof label.label !== "string" => false
+UNEXPLAINED survivor at workspaces/design/src/document.ts:2183: workspaces/design/src/document.ts | LogicalOperator | !isRecord(label) || typeof label.label !== "string" => !isRecord(label) && typeof label.label !== "string"
+UNEXPLAINED survivor at workspaces/design/src/document.ts:2183: workspaces/design/src/document.ts | ConditionalExpression | typeof label.label !== "string" => false
+UNEXPLAINED survivor at workspaces/design/src/document.ts:2185: workspaces/design/src/document.ts | LogicalOperator | named.filter((b) => bodyItem(b) === join).length !== 1 || out.split(words).length !== 2 => named.filter(b => bodyItem(b) === join).length !== 1 && out.split(words).length !== 2
+UNEXPLAINED survivor at workspaces/design/src/document.ts:2185: workspaces/design/src/document.ts | ConditionalExpression | named.filter((b) => bodyItem(b) === join).length !== 1 => false
+UNEXPLAINED survivor at workspaces/design/src/document.ts:2185: workspaces/design/src/document.ts | ConditionalExpression | out.split(words).length !== 2 => false
+UNEXPLAINED survivor at workspaces/design/src/document.ts:2472: workspaces/design/src/document.ts | ConditionalExpression | typeof f.intent.parameters.plane === "string" => true
+design: 144 survivors, all explained: false
+64 problem(s): kill each survivor with a test, or explain in explained.json why no caller can tell
+All files     |  92.33 |   92.33 |     1181 |        46 |        102 |        0 |        0 |
+ autosave.ts  |  88.32 |   88.32 |      426 |         5 |         57 |        0 |        0 |
+ key-value.ts | 100.00 |  100.00 |       13 |         2 |          0 |        0 |        0 |
+ reopen.ts    |  93.46 |   93.46 |       77 |        23 |          7 |        0 |        0 |
+ store.ts     |  93.79 |   93.79 |      293 |         9 |         20 |        0 |        0 |
+ unsaved.ts   |  95.47 |   95.47 |      372 |         7 |         18 |        0 |        0 |
+storage: 102 survivors, all explained: true
+All files   |  97.62 |   97.62 |     1098 |         8 |         27 |        0 |        0 |
+ auth.ts    |  97.16 |   97.16 |      644 |         7 |         19 |        0 |        0 |
+ config.ts  | 100.00 |  100.00 |       99 |         0 |          0 |        0 |        0 |
+ data.ts    |  97.32 |   97.32 |      218 |         0 |          6 |        0 |        0 |
+ pkce.ts    |  95.45 |   95.45 |       21 |         0 |          1 |        0 |        0 |
+ session.ts |  99.09 |   99.09 |      108 |         1 |          1 |        0 |        0 |
+ words.ts   | 100.00 |  100.00 |        8 |         0 |          0 |        0 |        0 |
+UNEXPLAINED survivor at packages/account/src/auth.ts:188: packages/account/src/auth.ts | ArrowFunction | (ms: number) => AbortSignal.timeout(ms) => () => undefined
+account: 27 survivors, all explained: false
+1 problem(s): kill each survivor with a test, or explain in explained.json why no caller can tell
+ links.ts        | 100.00 |  100.00 |       35 |         0 |          0 |        0 |        0 |
+ machines.ts     | 100.00 |  100.00 |        2 |         0 |          0 |        0 |        0 |
+ material.ts     |  99.55 |   99.55 |      219 |         0 |          1 |        0 |        0 |
+ ownership.ts    |  99.47 |   99.47 |      186 |         0 |          1 |        0 |        0 |
+ parameters.ts   | 100.00 |  100.00 |        2 |         0 |          0 |        0 |        0 |
+ references.ts   | 100.00 |  100.00 |        2 |         0 |          0 |        0 |        0 |
+ search.ts       | 100.00 |  100.00 |        2 |         0 |          0 |        0 |        0 |
+ session.ts      | 100.00 |  100.00 |       46 |         0 |          0 |        0 |        0 |
+ shortcuts.ts    |  96.42 |   96.42 |      323 |         0 |         12 |        0 |        0 |
 model: 52 survivors, all explained: true
+All files |  98.21 |   98.21 |      273 |         2 |          5 |        0 |        0 |
+ svg.ts   |  98.21 |   98.21 |      273 |         2 |          5 |        0 |        0 |
 svg: 5 survivors, all explained: true
-UNEXPLAINED survivor at packages/viewport/src/pane.ts:47: packages/viewport/src/pane.ts | ConditionalExpression | picking === undefined => false
-UNEXPLAINED survivor at packages/viewport/src/pane.ts:58: packages/viewport/src/pane.ts | ArrowFunction | (colours: readonly number[] | null) => scene.showColourMap?.(colours) => () => undefined
-UNEXPLAINED survivor at packages/viewport/src/pane.ts:58: packages/viewport/src/pane.ts | OptionalChaining | scene.showColourMap?.(colours) => scene.showColourMap(colours)
-UNEXPLAINED survivor at packages/viewport/src/pane.ts:61: packages/viewport/src/pane.ts | ObjectLiteral | { fitKeepAngle: () => view.fitKeepAngle!() } => {}
-UNEXPLAINED survivor at packages/viewport/src/pane.ts:61: packages/viewport/src/pane.ts | ArrowFunction | () => view.fitKeepAngle!() => () => undefined
-UNEXPLAINED survivor at packages/viewport/src/pane.ts:121: packages/viewport/src/pane.ts | ConditionalExpression | said => true
-UNEXPLAINED survivor at packages/viewport/src/picking.ts:214: packages/viewport/src/picking.ts | ConditionalExpression | rays[0][0]?.at === 0 => true
-UNEXPLAINED survivor at packages/viewport/src/picking.ts:214: packages/viewport/src/picking.ts | ConditionalExpression | rays[0][0]?.at === 0 => false
-UNEXPLAINED survivor at packages/viewport/src/picking.ts:214: packages/viewport/src/picking.ts | EqualityOperator | rays[0][0]?.at === 0 => rays[0][0]?.at !== 0
-UNEXPLAINED survivor at packages/viewport/src/picking.ts:214: packages/viewport/src/picking.ts | OptionalChaining | rays[0][0]?.at => rays[0][0].at
-UNEXPLAINED survivor at packages/viewport/src/picking.ts:226: packages/viewport/src/picking.ts | EqualityOperator | at > FACE_TAP_PX => at >= FACE_TAP_PX
-UNEXPLAINED survivor at packages/viewport/src/picking.ts:227: packages/viewport/src/picking.ts | ConditionalExpression | nearest === null || at < nearest.at => true
-UNEXPLAINED survivor at packages/viewport/src/picking.ts:227: packages/viewport/src/picking.ts | ConditionalExpression | at < nearest.at => false
-UNEXPLAINED survivor at packages/viewport/src/picking.ts:227: packages/viewport/src/picking.ts | EqualityOperator | at < nearest.at => at <= nearest.at
-UNEXPLAINED survivor at packages/viewport/src/picking.ts:227: packages/viewport/src/picking.ts | EqualityOperator | at < nearest.at => at >= nearest.at
-UNEXPLAINED survivor at packages/viewport/src/picking.ts:229: packages/viewport/src/picking.ts | ConditionalExpression | end + 1 < ray.length => true
-UNEXPLAINED survivor at packages/viewport/src/picking.ts:229: packages/viewport/src/picking.ts | EqualityOperator | end + 1 < ray.length => end + 1 <= ray.length
-UNEXPLAINED survivor at packages/viewport/src/picking.ts:229: packages/viewport/src/picking.ts | ArithmeticOperator | end + 1 => end - 1
-UNEXPLAINED survivor at packages/viewport/src/picking.ts:235: packages/viewport/src/picking.ts | ConditionalExpression | backEnd + 1 < back.length && back[0].face === face => true
-UNEXPLAINED survivor at packages/viewport/src/picking.ts:235: packages/viewport/src/picking.ts | AssignmentOperator | crossed &&= backEnd + 1 < back.length && back[0].face === face => crossed ||= backEnd + 1 < back.length && back[0].face === face
-UNEXPLAINED survivor at packages/viewport/src/picking.ts:235: packages/viewport/src/picking.ts | ConditionalExpression | backEnd + 1 < back.length && back[0].face === face => false
-UNEXPLAINED survivor at packages/viewport/src/picking.ts:235: packages/viewport/src/picking.ts | LogicalOperator | backEnd + 1 < back.length && back[0].face === face => backEnd + 1 < back.length || back[0].face === face
-UNEXPLAINED survivor at packages/viewport/src/picking.ts:235: packages/viewport/src/picking.ts | EqualityOperator | backEnd + 1 < back.length => backEnd + 1 <= back.length
-UNEXPLAINED survivor at packages/viewport/src/picking.ts:235: packages/viewport/src/picking.ts | ConditionalExpression | backEnd + 1 < back.length => true
-UNEXPLAINED survivor at packages/viewport/src/picking.ts:235: packages/viewport/src/picking.ts | EqualityOperator | backEnd + 1 < back.length => backEnd + 1 >= back.length
-UNEXPLAINED survivor at packages/viewport/src/picking.ts:235: packages/viewport/src/picking.ts | ArithmeticOperator | backEnd + 1 => backEnd - 1
-UNEXPLAINED survivor at packages/viewport/src/picking.ts:235: packages/viewport/src/picking.ts | ConditionalExpression | back[0].face === face => true
-UNEXPLAINED survivor at packages/viewport/src/picking.ts:235: packages/viewport/src/picking.ts | EqualityOperator | back[0].face === face => back[0].face !== face
-UNEXPLAINED survivor at packages/viewport/src/picking.ts:236: packages/viewport/src/picking.ts | ArithmeticOperator | ray[end].at + back[backEnd].at + 1 => ray[end].at + back[backEnd].at - 1
-UNEXPLAINED survivor at packages/viewport/src/picking.ts:236: packages/viewport/src/picking.ts | ArithmeticOperator | ray[end].at + back[backEnd].at => ray[end].at - back[backEnd].at
-UNEXPLAINED survivor at packages/viewport/src/picking.ts:238: packages/viewport/src/picking.ts | ConditionalExpression | thin === null || at < thin.at => true
-UNEXPLAINED survivor at packages/viewport/src/picking.ts:238: packages/viewport/src/picking.ts | ConditionalExpression | at < thin.at => false
-UNEXPLAINED survivor at packages/viewport/src/picking.ts:238: packages/viewport/src/picking.ts | EqualityOperator | at < thin.at => at <= thin.at
-UNEXPLAINED survivor at packages/viewport/src/picking.ts:238: packages/viewport/src/picking.ts | EqualityOperator | at < thin.at => at >= thin.at
-UNEXPLAINED survivor at packages/viewport/src/picking.ts:257: packages/viewport/src/picking.ts | ConditionalExpression | at === 0 => false
-viewport: 75 survivors, all explained: false
-35 problem(s): kill each survivor with a test, or explain in explained.json why no caller can tell
+All files       |  96.76 |   96.76 |     1277 |         9 |         43 |        0 |        0 |
+ framing.ts     |  99.09 |   99.09 |      211 |         7 |          2 |        0 |        0 |
+ highlight.ts   | 100.00 |  100.00 |       26 |         0 |          0 |        0 |        0 |
+ image-sheet.ts | 100.00 |  100.00 |       40 |         0 |          0 |        0 |        0 |
+ navigation.ts  | 100.00 |  100.00 |      131 |         0 |          0 |        0 |        0 |
+ pane.ts        |  97.59 |   97.59 |       81 |         0 |          2 |        0 |        0 |
+ picking.ts     |  96.12 |   96.12 |      296 |         1 |         12 |        0 |        0 |
+ sketch-view.ts |  92.92 |   92.92 |      222 |         1 |         17 |        0 |        0 |
+ views.ts       |  96.43 |   96.43 |      270 |         0 |         10 |        0 |        0 |
+viewport: 43 survivors, all explained: true
+ features.ts    | 100.00 |  100.00 |       50 |         0 |          0 |        0 |        0 |
+ hosted.ts      |  98.95 |   98.95 |      473 |         0 |          5 |        0 |        0 |
+ http.ts        |  97.20 |   97.20 |       89 |        15 |          3 |        0 |        0 |
+ keys.ts        | 100.00 |  100.00 |       51 |         0 |          0 |        0 |        0 |
+ local.ts       |  98.03 |   98.03 |      249 |         0 |          5 |        0 |        0 |
+ ollama.ts      |  97.70 |   97.70 |      170 |         0 |          4 |        0 |        0 |
+ prompt.ts      | 100.00 |  100.00 |       48 |         0 |          0 |        0 |        0 |
+ providers.ts   |  98.50 |   98.50 |      197 |         0 |          3 |        0 |        0 |
+ specialists.ts | 100.00 |  100.00 |       35 |         0 |          0 |        0 |        0 |
 ai: 23 survivors, all explained: true
+All files                |  89.94 |   89.94 |     1307 |        52 |        152 |        0 |        0 |
+ boolean-naming-model.ts |  89.94 |   89.94 |     1307 |        52 |        152 |        0 |        0 |
 naming: 152 survivors, all explained: true
+All files         |  93.90 |   93.90 |      856 |         6 |         56 |        0 |        0 |
+ boolean-names.ts |  93.90 |   93.90 |      856 |         6 |         56 |        0 |        0 |
 combine: 56 survivors, all explained: true
-explained.json lists a mutant that no longer survives (remove it): packages/print/src/overhang.ts | EqualityOperator | stl.length >= 84 => stl.length > 84
-explained.json lists a mutant that no longer survives (remove it): packages/print/src/overhang.ts | EqualityOperator | angle <= 90 => angle < 90
-explained.json lists a mutant that no longer survives (remove it): packages/print/src/overhang.ts | ConditionalExpression | !Number.isFinite(floor) => false
-explained.json lists a mutant that no longer survives (remove it): packages/print/src/overhang.ts | ConditionalExpression | !c.every(Number.isFinite) => false
-explained.json lists a mutant that no longer survives (remove it): packages/print/src/overhang.ts | MethodExpression | c.every(Number.isFinite) => c.some(Number.isFinite)
-explained.json lists a mutant that no longer survives (remove it): packages/print/src/overhang.ts | EqualityOperator | Math.max(c[2], c[5], c[8]) - floor <= ON_PLATE_MM => Math.max(c[2], c[5], c[8]) - floor < ON_PLATE_MM
-explained.json lists a mutant that no longer survives (remove it): packages/print/src/overhang.ts | ConditionalExpression | len > 0 => true
-explained.json lists a mutant that no longer survives (remove it): packages/print/src/overhang.ts | ConditionalExpression | !(len > 0) => false
-explained.json lists a mutant that no longer survives (remove it): packages/print/src/overhang.ts | EqualityOperator | len > 0 => len >= 0
-explained.json lists a mutant that no longer survives (remove it): packages/print/src/print-check.ts | ArrayDeclaration | [] => ["Stryker was here"]
-explained.json lists a mutant that no longer survives (remove it): packages/print/src/print-check.ts | ArrayDeclaration | [] => ["Stryker was here"]
-explained.json lists a mutant that no longer survives (remove it): packages/print/src/print-check.ts | EqualityOperator | t < n => t <= n
-explained.json lists a mutant that no longer survives (remove it): packages/print/src/print-check.ts | EqualityOperator | t < n => t <= n
-explained.json lists a mutant that no longer survives (remove it): packages/print/src/print-check.ts | EqualityOperator | t < n => t <= n
-explained.json lists a mutant that no longer survives (remove it): packages/print/src/print-check.ts | EqualityOperator | k < 3 => k <= 3
-explained.json lists a mutant that no longer survives (remove it): packages/print/src/print-check.ts | EqualityOperator | k < 3 => k <= 3
-explained.json lists a mutant that no longer survives (remove it): packages/print/src/print-check.ts | EqualityOperator | a < 3 => a <= 3
-explained.json lists a mutant that no longer survives (remove it): packages/print/src/print-check.ts | EqualityOperator | a < 3 => a <= 3
-explained.json lists a mutant that no longer survives (remove it): packages/print/src/print-check.ts | EqualityOperator | a < 3 => a <= 3
-explained.json lists a mutant that no longer survives (remove it): packages/print/src/print-check.ts | EqualityOperator | a < 3 => a <= 3
-explained.json lists a mutant that no longer survives (remove it): packages/print/src/print-check.ts | ConditionalExpression | t < n => false
-explained.json lists a mutant that no longer survives (remove it): packages/print/src/print-check.ts | ConditionalExpression | a < 3 => false
-explained.json lists a mutant that no longer survives (remove it): packages/print/src/print-check.ts | ConditionalExpression | a < 3 => false
-explained.json lists a mutant that no longer survives (remove it): packages/print/src/print-check.ts | EqualityOperator | a < 3 => a >= 3
-explained.json lists a mutant that no longer survives (remove it): packages/print/src/print-check.ts | EqualityOperator | a < 3 => a >= 3
-explained.json lists a mutant that no longer survives (remove it): packages/print/src/print-check.ts | ArithmeticOperator | 3 * t + a => 3 * t - a
-explained.json lists a mutant that no longer survives (remove it): packages/print/src/print-check.ts | ArithmeticOperator | 3 * t => 3 / t
-explained.json lists a mutant that no longer survives (remove it): packages/print/src/print-check.ts | ArithmeticOperator | (this.tri[9 * t + a] + this.tri[9 * t + 3 + a] + this.tri[9 * t + 6 + a]) / 3 => (this.tri[9 * t + a] + this.tri[9 * t + 3 + a] + this.tri[9 * t + 6 + a]) * 3
-explained.json lists a mutant that no longer survives (remove it): packages/print/src/print-check.ts | ArithmeticOperator | this.tri[9 * t + a] + this.tri[9 * t + 3 + a] + this.tri[9 * t + 6 + a] => this.tri[9 * t + a] + this.tri[9 * t + 3 + a] - this.tri[9 * t + 6 + a]
-explained.json lists a mutant that no longer survives (remove it): packages/print/src/print-check.ts | ArithmeticOperator | this.tri[9 * t + a] + this.tri[9 * t + 3 + a] => this.tri[9 * t + a] - this.tri[9 * t + 3 + a]
-explained.json lists a mutant that no longer survives (remove it): packages/print/src/print-check.ts | ArithmeticOperator | 9 * t + a => 9 * t - a
-explained.json lists a mutant that no longer survives (remove it): packages/print/src/print-check.ts | ArithmeticOperator | 9 * t => 9 / t
-explained.json lists a mutant that no longer survives (remove it): packages/print/src/print-check.ts | ArithmeticOperator | 9 * t => 9 / t
-explained.json lists a mutant that no longer survives (remove it): packages/print/src/print-check.ts | ArithmeticOperator | 9 * t => 9 / t
-explained.json lists a mutant that no longer survives (remove it): packages/print/src/print-check.ts | ArithmeticOperator | 9 * t + 3 + a => 9 * t + 3 - a
-explained.json lists a mutant that no longer survives (remove it): packages/print/src/print-check.ts | ArithmeticOperator | 9 * t + 3 => 9 * t - 3
-explained.json lists a mutant that no longer survives (remove it): packages/print/src/print-check.ts | ArithmeticOperator | 9 * t + 6 + a => 9 * t + 6 - a
-explained.json lists a mutant that no longer survives (remove it): packages/print/src/print-check.ts | ArithmeticOperator | 9 * t + 6 => 9 * t - 6
-explained.json lists a mutant that no longer survives (remove it): packages/print/src/print-check.ts | ConditionalExpression | n === 0 => false
-explained.json lists a mutant that no longer survives (remove it): packages/print/src/print-check.ts | ArrayDeclaration | [0, 0, 0] => []
-explained.json lists a mutant that no longer survives (remove it): packages/print/src/print-check.ts | ArrayDeclaration | [0, 0, 0] => []
-explained.json lists a mutant that no longer survives (remove it): packages/print/src/print-check.ts | ArrayDeclaration | [0, 0, 0] => []
-explained.json lists a mutant that no longer survives (remove it): packages/print/src/print-check.ts | UnaryOperator | -1 => +1
-explained.json lists a mutant that no longer survives (remove it): packages/print/src/print-check.ts | UnaryOperator | -1 => +1
-explained.json lists a mutant that no longer survives (remove it): packages/print/src/print-check.ts | UnaryOperator | -Infinity => +Infinity
-explained.json lists a mutant that no longer survives (remove it): packages/print/src/print-check.ts | UnaryOperator | -Infinity => +Infinity
-explained.json lists a mutant that no longer survives (remove it): packages/print/src/print-check.ts | UnaryOperator | -Infinity => +Infinity
-explained.json lists a mutant that no longer survives (remove it): packages/print/src/print-check.ts | UnaryOperator | -Infinity => +Infinity
-explained.json lists a mutant that no longer survives (remove it): packages/print/src/print-check.ts | UnaryOperator | -Infinity => +Infinity
-explained.json lists a mutant that no longer survives (remove it): packages/print/src/print-check.ts | EqualityOperator | i < e => i <= e
-explained.json lists a mutant that no longer survives (remove it): packages/print/src/print-check.ts | EqualityOperator | v < lo[a] => v <= lo[a]
-explained.json lists a mutant that no longer survives (remove it): packages/print/src/print-check.ts | ConditionalExpression | e - s <= 4 => true
-explained.json lists a mutant that no longer survives (remove it): packages/print/src/print-check.ts | EqualityOperator | v > hi[a] => v >= hi[a]
-explained.json lists a mutant that no longer survives (remove it): packages/print/src/print-check.ts | EqualityOperator | e - s <= 4 => e - s < 4
-explained.json lists a mutant that no longer survives (remove it): packages/print/src/print-check.ts | ConditionalExpression | hi[a] - lo[a] > hi[axis] - lo[axis] => true
-explained.json lists a mutant that no longer survives (remove it): packages/print/src/print-check.ts | ConditionalExpression | hi[a] - lo[a] > hi[axis] - lo[axis] => false
-explained.json lists a mutant that no longer survives (remove it): packages/print/src/print-check.ts | EqualityOperator | hi[a] - lo[a] > hi[axis] - lo[axis] => hi[a] - lo[a] >= hi[axis] - lo[axis]
-explained.json lists a mutant that no longer survives (remove it): packages/print/src/print-check.ts | EqualityOperator | hi[a] - lo[a] > hi[axis] - lo[axis] => hi[a] - lo[a] <= hi[axis] - lo[axis]
-explained.json lists a mutant that no longer survives (remove it): packages/print/src/print-check.ts | ArithmeticOperator | hi[a] - lo[a] => hi[a] + lo[a]
-explained.json lists a mutant that no longer survives (remove it): packages/print/src/print-check.ts | ArithmeticOperator | hi[axis] - lo[axis] => hi[axis] + lo[axis]
-explained.json lists a mutant that no longer survives (remove it): packages/print/src/print-check.ts | MethodExpression | Array.from(this.order.subarray(s, e)).sort((p, q) => centre[3 * p + axis] - centre[3 * q + axis]) => Array.from(this.order.subarray(s, e))
-explained.json lists a mutant that no longer survives (remove it): packages/print/src/print-check.ts | ArrowFunction | (p, q) => centre[3 * p + axis] - centre[3 * q + axis] => () => undefined
-explained.json lists a mutant that no longer survives (remove it): packages/print/src/print-check.ts | ArithmeticOperator | centre[3 * p + axis] - centre[3 * q + axis] => centre[3 * p + axis] + centre[3 * q + axis]
-explained.json lists a mutant that no longer survives (remove it): packages/print/src/print-check.ts | ArithmeticOperator | 3 * p + axis => 3 * p - axis
-explained.json lists a mutant that no longer survives (remove it): packages/print/src/print-check.ts | ArithmeticOperator | 3 * p => 3 / p
-explained.json lists a mutant that no longer survives (remove it): packages/print/src/print-check.ts | ArithmeticOperator | 3 * q + axis => 3 * q - axis
-explained.json lists a mutant that no longer survives (remove it): packages/print/src/print-check.ts | ArithmeticOperator | 3 * q => 3 / q
-explained.json lists a mutant that no longer survives (remove it): packages/print/src/print-check.ts | ConditionalExpression | this.count === 0 => false
-explained.json lists a mutant that no longer survives (remove it): packages/print/src/print-check.ts | ConditionalExpression | this.count === 0 => false
-explained.json lists a mutant that no longer survives (remove it): packages/print/src/print-check.ts | ConditionalExpression | Number.isNaN(ta) || Number.isNaN(tb) => false
-explained.json lists a mutant that no longer survives (remove it): packages/print/src/print-check.ts | ConditionalExpression | Number.isNaN(ta) || Number.isNaN(tb) => false
-explained.json lists a mutant that no longer survives (remove it): packages/print/src/print-check.ts | ConditionalExpression | Number.isNaN(ta) || Number.isNaN(tb) => false
-explained.json lists a mutant that no longer survives (remove it): packages/print/src/print-check.ts | LogicalOperator | Number.isNaN(ta) || Number.isNaN(tb) => Number.isNaN(ta) && Number.isNaN(tb)
-explained.json lists a mutant that no longer survives (remove it): packages/print/src/print-check.ts | LogicalOperator | Number.isNaN(ta) || Number.isNaN(tb) => Number.isNaN(ta) && Number.isNaN(tb)
-explained.json lists a mutant that no longer survives (remove it): packages/print/src/print-check.ts | LogicalOperator | Number.isNaN(ta) || Number.isNaN(tb) => Number.isNaN(ta) && Number.isNaN(tb)
-explained.json lists a mutant that no longer survives (remove it): packages/print/src/print-check.ts | BlockStatement | { if (ox < lo[b] - 1e-9 || ox > hi[b] + 1e-9) continue; } => {}
-explained.json lists a mutant that no longer survives (remove it): packages/print/src/print-check.ts | ConditionalExpression | ox < lo[b] - 1e-9 || ox > hi[b] + 1e-9 => true
-explained.json lists a mutant that no longer survives (remove it): packages/print/src/print-check.ts | ConditionalExpression | ox < lo[b] - 1e-9 || ox > hi[b] + 1e-9 => false
-explained.json lists a mutant that no longer survives (remove it): packages/print/src/print-check.ts | LogicalOperator | ox < lo[b] - 1e-9 || ox > hi[b] + 1e-9 => ox < lo[b] - 1e-9 && ox > hi[b] + 1e-9
-explained.json lists a mutant that no longer survives (remove it): packages/print/src/print-check.ts | ConditionalExpression | ox < lo[b] - 1e-9 => false
-explained.json lists a mutant that no longer survives (remove it): packages/print/src/print-check.ts | EqualityOperator | ox < lo[b] - 1e-9 => ox <= lo[b] - 1e-9
-explained.json lists a mutant that no longer survives (remove it): packages/print/src/print-check.ts | EqualityOperator | ox < lo[b] - 1e-9 => ox >= lo[b] - 1e-9
-explained.json lists a mutant that no longer survives (remove it): packages/print/src/print-check.ts | ArithmeticOperator | lo[b] - 1e-9 => lo[b] + 1e-9
-explained.json lists a mutant that no longer survives (remove it): packages/print/src/print-check.ts | ConditionalExpression | ox > hi[b] + 1e-9 => false
-explained.json lists a mutant that no longer survives (remove it): packages/print/src/print-check.ts | EqualityOperator | ox > hi[b] + 1e-9 => ox >= hi[b] + 1e-9
-explained.json lists a mutant that no longer survives (remove it): packages/print/src/print-check.ts | EqualityOperator | ox > hi[b] + 1e-9 => ox <= hi[b] + 1e-9
-explained.json lists a mutant that no longer survives (remove it): packages/print/src/print-check.ts | ArithmeticOperator | hi[b] + 1e-9 => hi[b] - 1e-9
-explained.json lists a mutant that no longer survives (remove it): packages/print/src/print-check.ts | BlockStatement | { t0 = Math.max(t0, Math.min(ta, tb)); t1 = Math.min(t1, Math.max(ta, tb)); } => {}
-explained.json lists a mutant that no longer survives (remove it): packages/print/src/print-check.ts | BlockStatement | { t0 = Math.max(t0, Math.min(ta, tb)); t1 = Math.min(t1, Math.max(ta, tb)); } => {}
-explained.json lists a mutant that no longer survives (remove it): packages/print/src/print-check.ts | BlockStatement | { t0 = Math.max(t0, Math.min(ta, tb)); t1 = Math.min(t1, Math.max(ta, tb)); } => {}
-explained.json lists a mutant that no longer survives (remove it): packages/print/src/print-check.ts | MethodExpression | Math.max(t0, Math.min(ta, tb)) => Math.min(t0, Math.min(ta, tb))
-explained.json lists a mutant that no longer survives (remove it): packages/print/src/print-check.ts | MethodExpression | Math.max(t0, Math.min(ta, tb)) => Math.min(t0, Math.min(ta, tb))
-explained.json lists a mutant that no longer survives (remove it): packages/print/src/print-check.ts | MethodExpression | Math.max(t0, Math.min(ta, tb)) => Math.min(t0, Math.min(ta, tb))
-explained.json lists a mutant that no longer survives (remove it): packages/print/src/print-check.ts | MethodExpression | Math.min(t1, Math.max(ta, tb)) => Math.max(t1, Math.max(ta, tb))
-explained.json lists a mutant that no longer survives (remove it): packages/print/src/print-check.ts | MethodExpression | Math.min(t1, Math.max(ta, tb)) => Math.max(t1, Math.max(ta, tb))
-explained.json lists a mutant that no longer survives (remove it): packages/print/src/print-check.ts | MethodExpression | Math.min(t1, Math.max(ta, tb)) => Math.max(t1, Math.max(ta, tb))
-explained.json lists a mutant that no longer survives (remove it): packages/print/src/print-check.ts | BlockStatement | { if (oy < lo[b + 1] - 1e-9 || oy > hi[b + 1] + 1e-9) continue; } => {}
-explained.json lists a mutant that no longer survives (remove it): packages/print/src/print-check.ts | ConditionalExpression | oy < lo[b + 1] - 1e-9 || oy > hi[b + 1] + 1e-9 => true
-explained.json lists a mutant that no longer survives (remove it): packages/print/src/print-check.ts | ConditionalExpression | oy < lo[b + 1] - 1e-9 || oy > hi[b + 1] + 1e-9 => false
-explained.json lists a mutant that no longer survives (remove it): packages/print/src/print-check.ts | LogicalOperator | oy < lo[b + 1] - 1e-9 || oy > hi[b + 1] + 1e-9 => oy < lo[b + 1] - 1e-9 && oy > hi[b + 1] + 1e-9
-explained.json lists a mutant that no longer survives (remove it): packages/print/src/print-check.ts | ConditionalExpression | oy < lo[b + 1] - 1e-9 => false
-explained.json lists a mutant that no longer survives (remove it): packages/print/src/print-check.ts | EqualityOperator | oy < lo[b + 1] - 1e-9 => oy <= lo[b + 1] - 1e-9
-explained.json lists a mutant that no longer survives (remove it): packages/print/src/print-check.ts | EqualityOperator | oy < lo[b + 1] - 1e-9 => oy >= lo[b + 1] - 1e-9
-explained.json lists a mutant that no longer survives (remove it): packages/print/src/print-check.ts | ArithmeticOperator | lo[b + 1] - 1e-9 => lo[b + 1] + 1e-9
-explained.json lists a mutant that no longer survives (remove it): packages/print/src/print-check.ts | ArithmeticOperator | b + 1 => b - 1
-explained.json lists a mutant that no longer survives (remove it): packages/print/src/print-check.ts | ArithmeticOperator | b + 1 => b - 1
-explained.json lists a mutant that no longer survives (remove it): packages/print/src/print-check.ts | ConditionalExpression | oy > hi[b + 1] + 1e-9 => false
-explained.json lists a mutant that no longer survives (remove it): packages/print/src/print-check.ts | EqualityOperator | oy > hi[b + 1] + 1e-9 => oy >= hi[b + 1] + 1e-9
-explained.json lists a mutant that no longer survives (remove it): packages/print/src/print-check.ts | EqualityOperator | oy > hi[b + 1] + 1e-9 => oy <= hi[b + 1] + 1e-9
-explained.json lists a mutant that no longer survives (remove it): packages/print/src/print-check.ts | ArithmeticOperator | hi[b + 1] + 1e-9 => hi[b + 1] - 1e-9
-explained.json lists a mutant that no longer survives (remove it): packages/print/src/print-check.ts | BlockStatement | { if (oz < lo[b + 2] - 1e-9 || oz > hi[b + 2] + 1e-9) continue; } => {}
-explained.json lists a mutant that no longer survives (remove it): packages/print/src/print-check.ts | ConditionalExpression | oz < lo[b + 2] - 1e-9 || oz > hi[b + 2] + 1e-9 => true
-explained.json lists a mutant that no longer survives (remove it): packages/print/src/print-check.ts | ConditionalExpression | oz < lo[b + 2] - 1e-9 || oz > hi[b + 2] + 1e-9 => false
-explained.json lists a mutant that no longer survives (remove it): packages/print/src/print-check.ts | LogicalOperator | oz < lo[b + 2] - 1e-9 || oz > hi[b + 2] + 1e-9 => oz < lo[b + 2] - 1e-9 && oz > hi[b + 2] + 1e-9
-explained.json lists a mutant that no longer survives (remove it): packages/print/src/print-check.ts | ConditionalExpression | oz < lo[b + 2] - 1e-9 => false
-explained.json lists a mutant that no longer survives (remove it): packages/print/src/print-check.ts | EqualityOperator | oz < lo[b + 2] - 1e-9 => oz <= lo[b + 2] - 1e-9
-explained.json lists a mutant that no longer survives (remove it): packages/print/src/print-check.ts | EqualityOperator | oz < lo[b + 2] - 1e-9 => oz >= lo[b + 2] - 1e-9
-explained.json lists a mutant that no longer survives (remove it): packages/print/src/print-check.ts | ArithmeticOperator | lo[b + 2] - 1e-9 => lo[b + 2] + 1e-9
-explained.json lists a mutant that no longer survives (remove it): packages/print/src/print-check.ts | ArithmeticOperator | b + 2 => b - 2
-explained.json lists a mutant that no longer survives (remove it): packages/print/src/print-check.ts | ArithmeticOperator | b + 2 => b - 2
-explained.json lists a mutant that no longer survives (remove it): packages/print/src/print-check.ts | ConditionalExpression | oz > hi[b + 2] + 1e-9 => false
-explained.json lists a mutant that no longer survives (remove it): packages/print/src/print-check.ts | EqualityOperator | oz > hi[b + 2] + 1e-9 => oz >= hi[b + 2] + 1e-9
-explained.json lists a mutant that no longer survives (remove it): packages/print/src/print-check.ts | EqualityOperator | oz > hi[b + 2] + 1e-9 => oz <= hi[b + 2] + 1e-9
-explained.json lists a mutant that no longer survives (remove it): packages/print/src/print-check.ts | ArithmeticOperator | hi[b + 2] + 1e-9 => hi[b + 2] - 1e-9
-explained.json lists a mutant that no longer survives (remove it): packages/print/src/print-check.ts | ConditionalExpression | t0 > t1 => false
-explained.json lists a mutant that no longer survives (remove it): packages/print/src/print-check.ts | EqualityOperator | t0 > t1 => t0 >= t1
-explained.json lists a mutant that no longer survives (remove it): packages/print/src/print-check.ts | ConditionalExpression | left[node] < 0 => true
-explained.json lists a mutant that no longer survives (remove it): packages/print/src/print-check.ts | EqualityOperator | left[node] < 0 => left[node] <= 0
-explained.json lists a mutant that no longer survives (remove it): packages/print/src/print-check.ts | EqualityOperator | Math.abs(det) >= 1e-18 => Math.abs(det) > 1e-18
-explained.json lists a mutant that no longer survives (remove it): packages/print/src/print-check.ts | ConditionalExpression | u > 1 => false
-explained.json lists a mutant that no longer survives (remove it): packages/print/src/print-check.ts | EqualityOperator | t < best.t => t <= best.t
-explained.json lists a mutant that no longer survives (remove it): packages/print/src/print-check.ts | ConditionalExpression | o[0] > b.hi[0] => false
-explained.json lists a mutant that no longer survives (remove it): packages/print/src/print-check.ts | EqualityOperator | o[0] > b.hi[0] => o[0] >= b.hi[0]
-explained.json lists a mutant that no longer survives (remove it): packages/print/src/print-check.ts | ConditionalExpression | o[1] > b.hi[1] => false
-explained.json lists a mutant that no longer survives (remove it): packages/print/src/print-check.ts | EqualityOperator | o[1] > b.hi[1] => o[1] >= b.hi[1]
-explained.json lists a mutant that no longer survives (remove it): packages/print/src/print-check.ts | ConditionalExpression | o[2] > b.hi[2] => false
-explained.json lists a mutant that no longer survives (remove it): packages/print/src/print-check.ts | EqualityOperator | o[2] > b.hi[2] => o[2] >= b.hi[2]
-explained.json lists a mutant that no longer survives (remove it): packages/print/src/print-check.ts | ConditionalExpression | !(len > 0) || !Number.isFinite(len) => false
-explained.json lists a mutant that no longer survives (remove it): packages/print/src/print-check.ts | LogicalOperator | !(len > 0) || !Number.isFinite(len) => !(len > 0) && !Number.isFinite(len)
-explained.json lists a mutant that no longer survives (remove it): packages/print/src/print-check.ts | ConditionalExpression | len > 0 => true
-explained.json lists a mutant that no longer survives (remove it): packages/print/src/print-check.ts | EqualityOperator | len > 0 => len >= 0
-explained.json lists a mutant that no longer survives (remove it): packages/print/src/print-check.ts | ArithmeticOperator | d[0] / l => d[0] * l
-explained.json lists a mutant that no longer survives (remove it): packages/print/src/print-check.ts | ArithmeticOperator | d[1] / l => d[1] * l
-explained.json lists a mutant that no longer survives (remove it): packages/print/src/print-check.ts | ArithmeticOperator | d[2] / l => d[2] * l
-explained.json lists a mutant that no longer survives (remove it): packages/print/src/print-check.ts | EqualityOperator | i < s.tri.length => i <= s.tri.length
-explained.json lists a mutant that no longer survives (remove it): packages/print/src/print-check.ts | EqualityOperator | s.tri[i] < floor => s.tri[i] <= floor
-explained.json lists a mutant that no longer survives (remove it): packages/print/src/print-check.ts | ConditionalExpression | !Number.isFinite(floor) => false
-explained.json lists a mutant that no longer survives (remove it): packages/print/src/print-check.ts | EqualityOperator | t < solid.count => t <= solid.count
-explained.json lists a mutant that no longer survives (remove it): packages/print/src/print-check.ts | ConditionalExpression | !corners.flat().every(Number.isFinite) => false
-explained.json lists a mutant that no longer survives (remove it): packages/print/src/print-check.ts | MethodExpression | corners.flat().every(Number.isFinite) => corners.flat().some(Number.isFinite)
-explained.json lists a mutant that no longer survives (remove it): packages/print/src/print-check.ts | ObjectLiteral | { kind: "fine" as const, span: 0 } => {}
-explained.json lists a mutant that no longer survives (remove it): packages/print/src/print-check.ts | StringLiteral | "sag" => ""
-explained.json lists a mutant that no longer survives (remove it): packages/print/src/print-check.ts | EqualityOperator | i < n => i <= n
-explained.json lists a mutant that no longer survives (remove it): packages/print/src/print-check.ts | ConditionalExpression | n <= 4 => false
-explained.json lists a mutant that no longer survives (remove it): packages/print/src/print-check.ts | EqualityOperator | n <= 4 => n < 4
-explained.json lists a mutant that no longer survives (remove it): packages/print/src/print-check.ts | ConditionalExpression | !Number.isFinite(hit.t) || hit.tri < 0 => false
-explained.json lists a mutant that no longer survives (remove it): packages/print/src/print-check.ts | LogicalOperator | !Number.isFinite(hit.t) || hit.tri < 0 => !Number.isFinite(hit.t) && hit.tri < 0
-explained.json lists a mutant that no longer survives (remove it): packages/print/src/print-check.ts | ConditionalExpression | hit.tri < 0 => false
-explained.json lists a mutant that no longer survives (remove it): packages/print/src/print-check.ts | EqualityOperator | m[0] * d[0] + m[1] * d[1] + m[2] * d[2] > 0 => m[0] * d[0] + m[1] * d[1] + m[2] * d[2] >= 0
-explained.json lists a mutant that no longer survives (remove it): packages/print/src/print-check.ts | ObjectLiteral | { kind: "fine", span: 0 } => {}
-explained.json lists a mutant that no longer survives (remove it): packages/print/src/print-check.ts | StringLiteral | "fine" => ""
-explained.json lists a mutant that no longer survives (remove it): packages/print/src/print-check.ts | StringLiteral | "fine" => ""
-explained.json lists a mutant that no longer survives (remove it): packages/print/src/print-check.ts | EqualityOperator | k < BRIDGE_DIRECTIONS => k <= BRIDGE_DIRECTIONS
-explained.json lists a mutant that no longer survives (remove it): packages/print/src/print-check.ts | MethodExpression | Math.min(reach, best) => Math.max(reach, best)
-explained.json lists a mutant that no longer survives (remove it): packages/print/src/print-check.ts | ConditionalExpression | best <= rules.bridgeLimit => false
-explained.json lists a mutant that no longer survives (remove it): packages/print/src/print-check.ts | EqualityOperator | best <= rules.bridgeLimit => best < rules.bridgeLimit
-explained.json lists a mutant that no longer survives (remove it): packages/print/src/print-check.ts | ObjectLiteral | { kind: "fine", span: best } => {}
-explained.json lists a mutant that no longer survives (remove it): packages/print/src/print-check.ts | EqualityOperator | s <= reach + 1e-9 => s < reach + 1e-9
-explained.json lists a mutant that no longer survives (remove it): packages/print/src/print-check.ts | EqualityOperator | i < count => i <= count
-explained.json lists a mutant that no longer survives (remove it): packages/print/src/print-check.ts | EqualityOperator | (q[0] - p[0]) * -n[1] + (q[1] - p[1]) * n[0] >= 0 => (q[0] - p[0]) * -n[1] + (q[1] - p[1]) * n[0] > 0
-explained.json lists a mutant that no longer survives (remove it): packages/print/src/print-check.ts | ObjectLiteral | { pairs: 0 } => {}
-explained.json lists a mutant that no longer survives (remove it): packages/print/src/print-check.ts | ConditionalExpression | s.box.lo[2] <= z && s.box.hi[2] >= z => true
-explained.json lists a mutant that no longer survives (remove it): packages/print/src/print-check.ts | LogicalOperator | s.box.lo[2] <= z && s.box.hi[2] >= z => s.box.lo[2] <= z || s.box.hi[2] >= z
-explained.json lists a mutant that no longer survives (remove it): packages/print/src/print-check.ts | ConditionalExpression | s.box.lo[2] <= z => true
-explained.json lists a mutant that no longer survives (remove it): packages/print/src/print-check.ts | ConditionalExpression | s.box.hi[2] >= z => true
-explained.json lists a mutant that no longer survives (remove it): packages/print/src/print-check.ts | EqualityOperator | s.box.hi[2] >= z => s.box.hi[2] > z
-explained.json lists a mutant that no longer survives (remove it): packages/print/src/print-check.ts | EqualityOperator | f1 - f0 < 1e-12 => f1 - f0 <= 1e-12
-explained.json lists a mutant that no longer survives (remove it): packages/print/src/print-check.ts | ConditionalExpression | f1 - f0 < 1e-12 => false
-explained.json lists a mutant that no longer survives (remove it): packages/print/src/print-check.ts | ArithmeticOperator | f1 - f0 => f1 + f0
-explained.json lists a mutant that no longer survives (remove it): packages/print/src/print-check.ts | ConditionalExpression | j !== i && inBox(whole[j], outside) => true
-explained.json lists a mutant that no longer survives (remove it): packages/print/src/print-check.ts | LogicalOperator | j !== i && inBox(whole[j], outside) => j !== i || inBox(whole[j], outside)
-explained.json lists a mutant that no longer survives (remove it): packages/print/src/print-check.ts | ConditionalExpression | j !== i => true
-explained.json lists a mutant that no longer survives (remove it): packages/print/src/print-check.ts | ArithmeticOperator | 1e-3 * (Math.abs(q[0] - p[0]) + Math.abs(q[1] - p[1])) => 1e-3 / (Math.abs(q[0] - p[0]) + Math.abs(q[1] - p[1]))
-explained.json lists a mutant that no longer survives (remove it): packages/print/src/print-check.ts | ArithmeticOperator | q[0] - p[0] => q[0] + p[0]
-explained.json lists a mutant that no longer survives (remove it): packages/print/src/print-check.ts | ArithmeticOperator | q[1] - p[1] => q[1] + p[1]
-explained.json lists a mutant that no longer survives (remove it): packages/print/src/print-check.ts | ConditionalExpression | o[0] >= b[0] && o[0] <= b[2] && o[1] >= b[1] && o[1] <= b[3] => true
-explained.json lists a mutant that no longer survives (remove it): packages/print/src/print-check.ts | LogicalOperator | o[0] >= b[0] && o[0] <= b[2] && o[1] >= b[1] && o[1] <= b[3] => o[0] >= b[0] && o[0] <= b[2] && o[1] >= b[1] || o[1] <= b[3]
-explained.json lists a mutant that no longer survives (remove it): packages/print/src/print-check.ts | ConditionalExpression | o[0] >= b[0] && o[0] <= b[2] && o[1] >= b[1] => true
-explained.json lists a mutant that no longer survives (remove it): packages/print/src/print-check.ts | LogicalOperator | o[0] >= b[0] && o[0] <= b[2] && o[1] >= b[1] => o[0] >= b[0] && o[0] <= b[2] || o[1] >= b[1]
-explained.json lists a mutant that no longer survives (remove it): packages/print/src/print-check.ts | ConditionalExpression | o[0] >= b[0] && o[0] <= b[2] => true
-explained.json lists a mutant that no longer survives (remove it): packages/print/src/print-check.ts | LogicalOperator | o[0] >= b[0] && o[0] <= b[2] => o[0] >= b[0] || o[0] <= b[2]
-explained.json lists a mutant that no longer survives (remove it): packages/print/src/print-check.ts | ConditionalExpression | o[0] >= b[0] => true
-explained.json lists a mutant that no longer survives (remove it): packages/print/src/print-check.ts | EqualityOperator | o[0] >= b[0] => o[0] > b[0]
-explained.json lists a mutant that no longer survives (remove it): packages/print/src/print-check.ts | ConditionalExpression | o[0] <= b[2] => true
-explained.json lists a mutant that no longer survives (remove it): packages/print/src/print-check.ts | EqualityOperator | o[0] <= b[2] => o[0] < b[2]
-explained.json lists a mutant that no longer survives (remove it): packages/print/src/print-check.ts | ConditionalExpression | o[1] >= b[1] => true
-explained.json lists a mutant that no longer survives (remove it): packages/print/src/print-check.ts | EqualityOperator | o[1] >= b[1] => o[1] > b[1]
-explained.json lists a mutant that no longer survives (remove it): packages/print/src/print-check.ts | ConditionalExpression | o[1] <= b[3] => true
-explained.json lists a mutant that no longer survives (remove it): packages/print/src/print-check.ts | EqualityOperator | o[1] <= b[3] => o[1] < b[3]
-explained.json lists a mutant that no longer survives (remove it): packages/print/src/print-check.ts | EqualityOperator | a[0] > b[2] => a[0] >= b[2]
-explained.json lists a mutant that no longer survives (remove it): packages/print/src/print-check.ts | EqualityOperator | b[0] > a[2] => b[0] >= a[2]
-explained.json lists a mutant that no longer survives (remove it): packages/print/src/print-check.ts | EqualityOperator | a[1] > b[3] => a[1] >= b[3]
-explained.json lists a mutant that no longer survives (remove it): packages/print/src/print-check.ts | EqualityOperator | b[1] > a[3] => b[1] >= a[3]
-explained.json lists a mutant that no longer survives (remove it): packages/print/src/print-check.ts | EqualityOperator | f > 1e-12 => f >= 1e-12
-explained.json lists a mutant that no longer survives (remove it): packages/print/src/print-check.ts | EqualityOperator | f < 1 - 1e-12 => f <= 1 - 1e-12
-explained.json lists a mutant that no longer survives (remove it): packages/print/src/print-check.ts | ArithmeticOperator | 1 - 1e-12 => 1 + 1e-12
-explained.json lists a mutant that no longer survives (remove it): packages/print/src/print-check.ts | EqualityOperator | Math.abs(den) <= 1e-12 * dd => Math.abs(den) < 1e-12 * dd
-explained.json lists a mutant that no longer survives (remove it): packages/print/src/print-check.ts | EqualityOperator | Math.abs(w[0] * d[1] - w[1] * d[0]) > 1e-9 * Math.sqrt(dd) => Math.abs(w[0] * d[1] - w[1] * d[0]) >= 1e-9 * Math.sqrt(dd)
-explained.json lists a mutant that no longer survives (remove it): packages/print/src/print-check.ts | ConditionalExpression | Math.abs(w[0] * d[1] - w[1] * d[0]) > 1e-9 * Math.sqrt(dd) => false
-explained.json lists a mutant that no longer survives (remove it): packages/print/src/print-check.ts | ArithmeticOperator | 1e-9 * Math.sqrt(dd) => 1e-9 / Math.sqrt(dd)
-explained.json lists a mutant that no longer survives (remove it): packages/print/src/print-check.ts | EqualityOperator | g >= 0 => g > 0
-explained.json lists a mutant that no longer survives (remove it): packages/print/src/print-check.ts | ConditionalExpression | g >= 0 => true
-explained.json lists a mutant that no longer survives (remove it): packages/print/src/print-check.ts | ConditionalExpression | g <= 1 => true
-explained.json lists a mutant that no longer survives (remove it): packages/print/src/print-check.ts | EqualityOperator | g <= 1 => g < 1
-explained.json lists a mutant that no longer survives (remove it): packages/print/src/print-check.ts | EqualityOperator | s.count > 0 => s.count >= 0
-explained.json lists a mutant that no longer survives (remove it): packages/print/src/print-check.ts | ConditionalExpression | s.count > 0 => true
-explained.json lists a mutant that no longer survives (remove it): packages/print/src/print-check.ts | ConditionalExpression | !(top > floor) => false
-explained.json lists a mutant that no longer survives (remove it): packages/print/src/print-check.ts | EqualityOperator | top > floor => top >= floor
-explained.json lists a mutant that no longer survives (remove it): packages/print/src/print-check.ts | ConditionalExpression | top > floor => true
-explained.json lists a mutant that no longer survives (remove it): packages/print/src/print-check.ts | EqualityOperator | t < s.count => t <= s.count
-explained.json lists a mutant that no longer survives (remove it): packages/print/src/print-check.ts | MethodExpression | Math.max(0, Math.ceil((Math.min(...zs) - floor) / rules.layerHeight - 0.5)) => Math.min(0, Math.ceil((Math.min(...zs) - floor) / rules.layerHeight - 0.5))
-explained.json lists a mutant that no longer survives (remove it): packages/print/src/print-check.ts | ArithmeticOperator | (Math.min(...zs) - floor) / rules.layerHeight => (Math.min(...zs) - floor) * rules.layerHeight
-explained.json lists a mutant that no longer survives (remove it): packages/print/src/print-check.ts | ArithmeticOperator | (Math.max(...zs) - floor) / rules.layerHeight - 0.5 => (Math.max(...zs) - floor) / rules.layerHeight + 0.5
-explained.json lists a mutant that no longer survives (remove it): packages/print/src/print-check.ts | ArrowFunction | (b) => b[k] => () => undefined
-explained.json lists a mutant that no longer survives (remove it): packages/print/src/print-check.ts | EqualityOperator | k >= 0 => k > 0
-explained.json lists a mutant that no longer survives (remove it): packages/print/src/print-check.ts | EqualityOperator | a > 1e-9 => a >= 1e-9
-explained.json lists a mutant that no longer survives (remove it): packages/print/src/print-check.ts | ConditionalExpression | carried > 0 => true
-explained.json lists a mutant that no longer survives (remove it): packages/print/src/print-check.ts | EqualityOperator | carried > 0 => carried >= 0
-print: 1 survivors, all explained: true
-228 problem(s): kill each survivor with a test, or explain in explained.json why no caller can tell
+print: no report (the job stopped before the check)
+All files          |  97.30 |   97.30 |     1816 |        55 |         52 |        0 |        0 |
+ kernel            |  95.88 |   95.88 |      977 |        48 |         44 |        0 |        0 |
+ print             |  99.06 |   99.06 |      839 |         7 |          8 |        0 |        0 |
 kernel: 52 survivors, all explained: true
