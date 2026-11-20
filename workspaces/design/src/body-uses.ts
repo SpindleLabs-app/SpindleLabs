@@ -15,7 +15,8 @@
 //   change is (extrude.ts `setExtrudeOperation`).
 
 import type { Feature } from "@fission/core";
-import { bodyItem, chamferOf, combineBodies, extrudeOperation, isChamferItem, isCombineItem, isDuplicateItem, isMoveItem, isPatternItem, isPiece, isShellItem, shellOf, type DesignDocument } from "./document.ts";
+import { bodyItem, chamferOf, combineBodies, extrudeOperation, isChamferItem, isCombineItem, isDuplicateItem, isMoveItem, isPatternItem, isPiece, isShellItem, isSketchItem, shellOf, sketchInputs, type DesignDocument } from "./document.ts";
+import { faceFeature, isFacePlane } from "./face-sketch.ts";
 
 /** The bodies item `f` works on, by body id: a Move's, a Combine's target and tools, a Duplicate's (Combine bug hunt 11-08), a Pattern's (step 61b), an extrude's operation's. */
 export function bodiesUsed(f: Feature): string[] {
@@ -102,9 +103,64 @@ export function readings(features: readonly Feature[]): Reading[] {
   return out;
 }
 
-/** A body in a timeline message: its item's name ("Box 2"), or "a piece of Combine 1". */
+/**
+ * A body in a timeline message: its item's name ("Box 2"), or "a piece of
+ * Combine 1". Once that item is deleted (SL #676 item 4), the name an item
+ * using it kept in its provenance, else "a deleted body": never the raw id.
+ */
 export function bodyWords(doc: DesignDocument, body: string): string {
-  const item = doc.timeline.features.find((f) => f.id === bodyItem(body));
-  const name = item?.provenance.self.label ?? body;
+  const id = bodyItem(body);
+  const item = doc.timeline.features.find((f) => f.id === id);
+  const kept = item === undefined ? doc.timeline.features.flatMap((f) => f.provenance.from).find((x) => x.id === id)?.label : undefined;
+  const name = item?.provenance.self.label ?? kept;
+  if (name === undefined) return "a deleted body";
   return isPiece(body) ? `a piece of ${name}` : name;
+}
+
+/** How a sketch hangs on a body (SL #676 item 3): drawn on one of its faces, or following one of its edges (a pin or a projection). */
+export type SketchHold = "drawn on" | "following an edge of";
+
+/**
+ * The bodies sketch `f` lies on or follows, at its place in `doc`'s
+ * timeline (SL #676 item 3), for reordering only: the body of its face's
+ * item and of each item a pin or projection names, then, through each
+ * Combine or operation extrude before it that takes one of those bodies
+ * in, the body that comes out (its target, its picked bodies) and its
+ * pieces. The rebuild finds the face and edges on those bodies as the items
+ * before the sketch leave them, so a Move or Combine of one of them passing
+ * the sketch would quietly put the sketch somewhere else. A sketch on an
+ * origin or construction plane with no pins or projections holds none.
+ * Errs towards more bodies: a drag it refuses wrongly is refused in words,
+ * one it misses changes the part with none.
+ */
+export function sketchHolds(doc: DesignDocument, f: Feature): ((body: string) => SketchHold | null) | null {
+  if (!isSketchItem(f)) return null;
+  const content = doc.sketches.find((s) => s.id === f.id);
+  const plane = f.intent.parameters.plane;
+  const face = isFacePlane(plane) ? faceFeature(plane) : null;
+  const inputs = sketchInputs(f, content);
+  if (inputs.length === 0) return null;
+  // Per hold: the items whose bodies and pieces it is on, and the bodies taken in since.
+  const chains = new Map<SketchHold, { items: Set<string>; bodies: Set<string> }>();
+  const add = (hold: SketchHold, item: string) => {
+    const c = chains.get(hold) ?? { items: new Set<string>(), bodies: new Set<string>() };
+    c.items.add(item);
+    chains.set(hold, c);
+  };
+  for (const id of inputs) add(id === face ? "drawn on" : "following an edge of", id);
+  const inChain = (c: { items: Set<string>; bodies: Set<string> }, b: string) => c.bodies.has(b) || (bodyItem(b) !== null && c.items.has(bodyItem(b)!));
+  for (const g of doc.timeline.features) {
+    if (g === f) break;
+    const into = isCombineItem(g) ? [combineBodies(g).target] : (extrudeOperation(g)?.bodies ?? []);
+    if (into.length === 0) continue;
+    for (const c of chains.values()) {
+      if (!c.items.has(g.id) && !bodiesUsed(g).some((b) => inChain(c, b))) continue;
+      c.items.add(g.id);
+      for (const b of into) c.bodies.add(b);
+    }
+  }
+  return (body) => {
+    for (const [hold, c] of chains) if (inChain(c, body)) return hold;
+    return null;
+  };
 }

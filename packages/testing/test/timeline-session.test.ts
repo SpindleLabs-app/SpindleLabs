@@ -132,6 +132,8 @@ const CAUGHT_BY: Record<ModelFault, string> = {
   "reorder-past-shaper": "outcome differs from the model",
   // SL #676 item 1: a Copy or a kept tool's Combine dragged past a later item changing the body it works on.
   "reorder-past-reader": "outcome differs from the model",
+  // SL #676 item 3: a sketch on a face dragged past a Move of the body its face is on, or that Move past it.
+  "reorder-past-face-body": "outcome differs from the model",
   "combine-tool-kept": "the rebuild differs from the model",
   "combine-not-held": "the rebuild differs from the model",
   "combine-pieces-dropped": "the rebuild differs from the model",
