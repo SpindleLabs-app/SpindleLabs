@@ -220,7 +220,8 @@ test("Keep tools on, a second Combine uses the kept tool, then Keep tools turned
   // Turning Keep tools off would use up Box 2, which Combine 2 cuts: refused since SL #506 item 3.
   assert.throws(() => changedCombine(a.doc, c1, bodies[0], [bodies[1]], "cut", false), { message: "Combine 2 uses Body 2, which Combine 1 would use up: change or delete Combine 2 first" });
   // A file saved before #506 may hold it (the edit was allowed then): Combine 2 fails in words and the file reopens.
-  const off: DesignDocument = { ...a.doc, timeline: { ...a.doc.timeline, features: a.doc.timeline.features.map((f) => (f.id === c1 ? { ...f, intent: { ...f.intent, parameters: { ...f.intent.parameters, keepTools: false } } } : f)) } };
+  // (its words as the edit then said them: without ", keeping the tools").
+  const off: DesignDocument = { ...a.doc, timeline: { ...a.doc.timeline, features: a.doc.timeline.features.map((f) => (f.id === c1 ? { ...f, intent: { ...f.intent, parameters: { ...f.intent.parameters, keepTools: false }, summary: f.intent.summary.replace(/, keeping the tools$/, "") } } : f)) } };
   const b = await built(off);
   assert.equal(b.build.results[c2.id].status, "failed");
   assert.doesNotThrow(() => reopen(b.doc));

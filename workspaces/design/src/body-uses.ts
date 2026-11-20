@@ -17,6 +17,7 @@
 import type { Feature } from "@fission/core";
 import { bodyItem, bodyNumbers, chamferOf, combineBodies, extrudeOperation, isChamferItem, isCombineItem, isDuplicateItem, isMoveItem, isPatternItem, isPiece, isShellItem, isSketchItem, shellOf, sketchInputs, type DesignDocument } from "./document.ts";
 import { faceFeature, isFacePlane } from "./face-sketch.ts";
+import { listWords } from "./misses.ts";
 
 /** The bodies item `f` works on, by body id: a Move's, a Combine's target and tools, a Duplicate's (Combine bug hunt 11-08), a Pattern's (step 61b), an extrude's operation's. */
 export function bodiesUsed(f: Feature): string[] {
@@ -180,4 +181,32 @@ export function refuseUsedUpLater(doc: DesignDocument, at: number, usedUp: reado
     const n = bodyNumbers(doc).get(used);
     throw new Error(`${later.provenance.self.label} uses ${n === undefined ? bodyWords(doc, used) : `Body ${n}`}, which ${label} would use up: change or delete ${later.provenance.self.label} first`);
   }
+}
+
+/**
+ * Why `body` can't be used, as an edit refuses it: once its item is deleted
+ * (a pick left over after an Undo, SL #507: its id below the counter, no
+ * item holding it), in words, "Box 2 was deleted" by the name an item using
+ * it kept, never its id; anything else (an id no tool makes: a Move's, an
+ * unnumbered piece's, one never made) as before, by its id.
+ */
+export function notABody(doc: DesignDocument, body: string): string {
+  const id = bodyItem(body);
+  // Deleted: an id the counter has given (below `nextId`) that no item has now; one above it was never made.
+  const n = id === null ? NaN : Number(/^[a-z]+-([1-9][0-9]*)$/.exec(id)?.[1]);
+  if (n < doc.nextId && !doc.timeline.features.some((f) => f.id === id)) {
+    const words = bodyWords(doc, body);
+    return words === "a deleted body" ? "A body picked was deleted, so it can't be used: pick again" : `${words[0].toUpperCase()}${words.slice(1)} was deleted, so it can't be used: pick again`;
+  }
+  return `${typeof body === "string" ? body : String(body)} is not a body in the design`;
+}
+
+/**
+ * What an operation extrude does, for Edit feature with Combine hidden
+ * (#507): it has no Operation row then, so the panel says the operation
+ * and its bodies in words, and that it stays as saved.
+ */
+export function operationWords(doc: DesignDocument, op: { operation: string; bodies: readonly string[] }): string {
+  const verb = op.operation === "cut" ? "Cuts from" : op.operation === "join" ? "Joins" : "Intersects with";
+  return `${verb} ${listWords(op.bodies.map((b) => bodyWords(doc, b)))}. This stays as saved: switch Combine on to change it.`;
 }

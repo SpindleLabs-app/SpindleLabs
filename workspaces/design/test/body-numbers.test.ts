@@ -347,7 +347,7 @@ test("save-load hunt B1: a Combine's new pieces are never numbered past nextBody
         box("feature-2", "Box 2"),
         {
           id: "feature-3",
-          intent: { type: "combine", parameters: { target: "body:feature-1", tools: ["body:feature-2"], operation: "cut", keepTools: false }, summary: "Combine: cut Box 2 from Box 1" },
+          intent: { type: "combine", parameters: { target: "body:feature-1", tools: ["body:feature-2"], operation: "cut", keepTools: false }, summary: "Cut Box 2 from Box 1" },
           provenance: { self: { workspace: "design", id: "feature-3", label: "Combine 1" }, from: [] },
           dependsOn: ["feature-1", "feature-2"],
           suppressed: false,

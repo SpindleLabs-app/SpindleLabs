@@ -19,6 +19,7 @@
 // greyed with it, can't go before it, and follows it when an edit before
 // moves the plane.
 
+import { notABody } from "./body-uses.ts";
 import type { Feature, Motion } from "@fission/core";
 import { bodyIdOf, bodyItem, constructOf, counted, freshName, insertAt, insertItem, isConstructItem, isDuplicateItem, isPiece, makesBody, numberBodies, numberedWhenBuilt, shown, SKETCH_PLANES, takenNames, type DesignDocument, type SketchPlane } from "./document.ts";
 import { CONSTRUCT_KINDS, CONSTRUCT_REF, constructPlaneItem, type ConstructAnswer } from "./construct-data.ts";
@@ -94,7 +95,7 @@ export function insertDuplicates(doc: DesignDocument, bodies: readonly string[],
     if (bodies.indexOf(b) !== i) throw new Error(`${shown(b)} is picked twice`);
     const at = doc.timeline.features.findIndex((f) => f.id === item);
     const f = doc.timeline.features[at];
-    if (f === undefined || !(numberedWhenBuilt(b, f) ? numbered(doc, b) : makesBody(f))) throw new Error(`${shown(b)} is not a body in the design`);
+    if (f === undefined || !(numberedWhenBuilt(b, f) ? numbered(doc, b) : makesBody(f))) throw new Error(notABody(doc, b));
     if (at >= end) throw new Error(`${f.provenance.self.label} comes after the rollback marker, so a copy put in at the marker can't be made of it`);
     return f;
   });

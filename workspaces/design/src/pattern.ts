@@ -12,6 +12,7 @@
 // as a Move builds a moved body and joins with Combine's booleans (step 61b,
 // next). Behind the `?pattern` flag until Ben says it goes public.
 
+import { notABody } from "./body-uses.ts";
 import type { Feature } from "@fission/core";
 import { bodyItem, constructOf, counted, freshName, insertAt, insertItem, isConstructItem, isPatternItem, isPiece, makesBody, shown, takenNames, type DesignDocument } from "./document.ts";
 import { CONSTRUCT_KINDS, CONSTRUCT_REF } from "./construct-data.ts";
@@ -80,7 +81,7 @@ export function insertPattern(doc: DesignDocument, bodies: readonly string[], va
     const at = item === null ? -1 : doc.timeline.features.findIndex((f) => f.id === item);
     const f = doc.timeline.features[at];
     const numbered = (doc.bodies ?? []).some((x) => x.id === b);
-    if (f === undefined || !(isPiece(b) ? numbered : makesBody(f))) throw new Error(`${shown(b)} is not a body in the design`);
+    if (f === undefined || !(isPiece(b) ? numbered : makesBody(f))) throw new Error(notABody(doc, b));
     if (at >= end) throw new Error(`${f.provenance.self.label} comes after the rollback marker, so a Pattern put in at the marker can't use it`);
     return f;
   });

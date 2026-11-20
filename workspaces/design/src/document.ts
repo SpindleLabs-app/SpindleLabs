@@ -1647,6 +1647,12 @@ function checkCombine(d: Partial<DesignDocument>, f: Feature, byId: ReadonlyMap<
   for (const key of Object.keys(p)) if (!(COMBINE_PARAMS as readonly string[]).includes(key)) throw new Error(`${at} has a parameter ${JSON.stringify(key)} a combine doesn't have`);
   if (!(COMBINE_OPERATIONS as readonly unknown[]).includes(p.operation)) throw new Error(`${at}'s operation ${shown(p.operation)} is not join, cut or intersect`);
   if (typeof p.keepTools !== "boolean") throw new Error(`${at}'s keepTools ${shown(p.keepTools)} is not true or false`);
+  // SL #507: its row's words are read from the file, so they must say what it does: every Combine's description has
+  // started with its operation's verb and ended ", keeping the tools" exactly when it keeps them (combine.ts
+  // combineSummary, since 35f1b; a rename says it again the same way), so a hand-edited "Join" on a Cut is refused.
+  const verb = p.operation === "cut" ? "Cut " : p.operation === "join" ? "Join " : "Intersect ";
+  if (!f.intent.summary.startsWith(verb)) throw new Error(`${at}'s description ${JSON.stringify(f.intent.summary)} doesn't say it is a ${p.operation}: it must start with "${verb.trim()}"`);
+  if (f.intent.summary.endsWith(", keeping the tools") !== p.keepTools) throw new Error(`${at}'s description ${JSON.stringify(f.intent.summary)} ${p.keepTools ? "doesn't say it keeps its tools" : "says it keeps its tools, but it uses them up"}`);
   if (!Array.isArray(p.tools) || p.tools.length === 0) throw new Error(`${at} has no tool bodies`);
   notTooMany(p.tools.length, DESIGN_LIMITS.items, `${at} names`, "tools");
   const bodies = [p.target, ...(p.tools as unknown[])];

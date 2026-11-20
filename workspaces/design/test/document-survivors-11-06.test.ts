@@ -9,6 +9,9 @@ import assert from "node:assert/strict";
 import { DIMENSION_LIMITS, MAX_SKETCH_CONSTRAINTS, partDocument, readDesignDocument, type DesignDocument, type Sketch } from "../src/document.ts";
 import { addSketch, drawCircle, drawLine, projectEdges } from "../src/sketch.ts";
 
+/** A Combine's words as combine.ts says them: its operation's verb first, ", keeping the tools" when kept (the reader checks both, SL #507). */
+const combineWords = (p: Record<string, unknown>) => `${p.operation === "join" ? "Join" : p.operation === "intersect" ? "Intersect" : "Cut"} the bodies${p.keepTools === true ? ", keeping the tools" : ""}`;
+
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type Raw = Record<string, any>;
 const clone = (x: unknown): Raw => JSON.parse(JSON.stringify(x));
@@ -31,7 +34,7 @@ const box = (id: string, label: string) => ({
 });
 const combine = (id: string, label: string, params: Raw, dependsOn: string[]) => ({
   id,
-  intent: { type: "combine", parameters: { operation: "cut", keepTools: false, ...params }, summary: "Combine" },
+  intent: { type: "combine", parameters: { operation: "cut", keepTools: false, ...params }, summary: combineWords({ operation: "cut", keepTools: false, ...params }) },
   provenance: { self: { workspace: "design", id, label }, from: [] },
   dependsOn,
   suppressed: false,

@@ -267,3 +267,30 @@ test("the box answers once: its button records, Cancel, Escape and a second ask 
   assert.equal(await again, false);
   await window.happyDOM.close();
 });
+
+test("#507: a boss switched from Join to Cut removes nothing, so OK asks and the row warns", async () => {
+  // Box 1 moved down to z −20..0; the 20 × 10 rectangle on XY (z = 0, its top) extruded 10 up is a boss z 0..10, joined:
+  // 24,000 + 2,000 = 26,000 mm³. Switched to Cut, the same pad only touches the top face, so it cuts nothing: still 24,000.
+  const { doc, bodies } = boxes([[40, 30, 20], [0, 0, -20]]);
+  const boss = extruded(doc, [10, 10], [30, 20], 10, { operation: "join", bodies: [bodies[0]] });
+  const cache = new BodyCache(kernel);
+  try {
+    const build = await rebuildTimeline(boss.doc, cache, kernel);
+    near((await cache.view(build.bodies[bodies[0]].handle)).volume, 26_000);
+  } finally {
+    await cache.close();
+  }
+  const cut = setExtrudeOperation(boss.doc, boss.id, { operation: "cut", bodies: [bodies[0]] });
+  const checked = await checkedItem(kernel, cut, boss.id);
+  assert.equal(checked.refused, null);
+  assert.equal(checked.misses.length, 1, "OK asks first");
+  const after = new BodyCache(kernel);
+  try {
+    const build = await rebuildTimeline(cut, after, kernel);
+    near((await after.view(build.bodies[bodies[0]].handle)).volume, 24_000);
+    const r = build.results[boss.id];
+    assert.equal(r.status === "built" ? r.misses?.message : null, "Extrude 1 cuts nothing: it doesn't reach Body 1");
+  } finally {
+    await after.close();
+  }
+});

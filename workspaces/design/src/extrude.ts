@@ -10,7 +10,7 @@
 // Every extrude is a new body ("New body", step 24d1) until booleans join
 // them: it is added to the timeline at the marker and replaces nothing.
 
-import { bodiesUsed, refuseUsedUpLater } from "./body-uses.ts";
+import { bodiesUsed, refuseUsedUpLater, notABody } from "./body-uses.ts";
 import type { BodySpec, BodyView, ExtrudeArrow, Feature, KernelCalls } from "@fission/core";
 import { bodyIdOf, bodyItem, bodyNumbers, COMBINE_OPERATIONS, counted, extrudeOperation, freshName, insertAt, insertItem, isPiece, isSketchExtrude, makesBody, makesPieces, numberBodies, numberedWhenBuilt, takenNames, partFeature, shown, specOf, type CombineOperation, type DesignDocument } from "./document.ts";
 import { extrudeSpec, type CurveIds } from "./rebuild.ts";
@@ -127,7 +127,7 @@ function makersFor(doc: DesignDocument, bodies: readonly string[], end: number, 
     const item = bodyItem(b);
     const place = item === null ? -1 : doc.timeline.features.findIndex((f) => f.id === item);
     const f = doc.timeline.features[place];
-    if (f === undefined || !(numberedWhenBuilt(b, f) ? makesPieces(f) && (doc.bodies ?? []).some((x) => x.id === b) : makesBody(f))) throw new Error(`${shown(b)} is not a body in the design`);
+    if (f === undefined || !(numberedWhenBuilt(b, f) ? makesPieces(f) && (doc.bodies ?? []).some((x) => x.id === b) : makesBody(f))) throw new Error(notABody(doc, b));
     if (place >= end) throw new Error(`${f.provenance.self.label} comes after ${at} can't use it`);
     return f;
   });

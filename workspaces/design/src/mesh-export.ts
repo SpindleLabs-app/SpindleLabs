@@ -9,9 +9,9 @@
 import type { Action, ActionOutcome, ActionRegistry, Feature, SolidProblem, SolidReport } from "@fission/core";
 import { saveFile, type SaveKind } from "@fission/ui";
 import { nameLead, printLead } from "@fission/print";
-import { checkWords, exportNotes, failedItemsNote, joinStl, shownBodyFeature, type DesignOutcome, type SaveFile } from "./actions.ts";
+import { checkWords, exportNotes, exportShapeName, failedItemsNote, joinStl, shownBodyFeature, type DesignOutcome, type SaveFile } from "./actions.ts";
 import { designBodies } from "./browser.ts";
-import { bodyNumbers, isDuplicateItem, makesPieces, shapeOf, type DesignDocument } from "./document.ts";
+import { bodyNumbers, type DesignDocument } from "./document.ts";
 import { meshOfStl, objBytes, threeMf, type Mesh } from "./mesh-files.ts";
 import { endStls } from "./move-tool.ts";
 import type { DesignRun } from "./actions.ts";
@@ -119,15 +119,11 @@ function meshAction(format: Format, save: SaveFile): Action {
       }
       const order = designBodies(doc, failed).map((b) => b.body);
       picked.sort((a, b) => order.indexOf(a.body) - order.indexOf(b.body));
-      const kindOf = (f: Feature) => {
-        if (makesPieces(f) || isDuplicateItem(f)) return "body";
-        const shape = shapeOf(doc, f).shape;
-        return shape === "sketch-extrude" ? "extrude" : shape;
-      };
+      const kindOf = (p: { body: string; feature: Feature }) => exportShapeName(doc, p.body, p.feature, failed);
       try {
-        const files = await endStls(ctx.kernel, doc, picked.map((p) => ({ ...p, name: kindOf(p.feature) })));
+        const files = await endStls(ctx.kernel, doc, picked.map((p) => ({ ...p, name: kindOf(p) })));
         const one = picked.length === 1;
-        const name = one ? kindOf(picked[0].feature) : `${picked.length} bodies`;
+        const name = one ? kindOf(picked[0]) : `${picked.length} bodies`;
         // Named after the design as Download STL is (SL #764 item 7): its name, else its file's, else the old shape name.
         const lead = nameLead(printLead(ctx.project.name, ctx.fileName?.()));
         const file = `${lead !== "spindlelabs" ? lead : `spindlelabs-${one ? name : `${picked.length}-bodies`}`}${format.kind.extension}`;

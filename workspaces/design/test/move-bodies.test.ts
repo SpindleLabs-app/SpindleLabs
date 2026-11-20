@@ -97,9 +97,9 @@ test("a body the Move holds that was deleted since may stay under its old name; 
   assert.deepEqual(kept.provenance.from.map((r) => r.label), ["Box 1", "Cylinder 1"]);
   // Taken out, it is gone for good.
   assert.deepEqual(item(changedMove(gone, "feature-3", v({ x: 10 }), ["body:feature-2"]), "feature-3").dependsOn, ["feature-2"]);
-  // A deleted body Move 1 never held is refused.
+  // A deleted body Move 1 never held is refused, named as Move 1 remembers it (SL #507: never by its id).
   const other = insertMove(gone, ["body:feature-2"], v({ x: 1 }));
-  assert.throws(() => changedMove(other.doc, other.id, v({ x: 1 }), ["body:feature-1"]), { message: "body:feature-1 is not a body in the design" });
+  assert.throws(() => changedMove(other.doc, other.id, v({ x: 1 }), ["body:feature-1"]), { message: "Box 1 was deleted, so it can't be used: pick again" });
 });
 
 /** Box 1 (feature-1) and Cylinder 1 (feature-2); Move 1 (feature-3) shifts Box 1 10 mm along X; Move 2 (feature-4) then turns Box 1 90° about X through the origin. */

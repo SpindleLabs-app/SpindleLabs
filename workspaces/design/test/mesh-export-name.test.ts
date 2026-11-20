@@ -9,7 +9,9 @@ import assert from "node:assert/strict";
 import { ActionRegistry, emptyProject, type AnalysisOverlay, type Selected, type WorkspaceContext } from "@fission/core";
 import { nodeKernel } from "../../../packages/testing/src/node-kernel.ts";
 import { DOWNLOAD_STL, registerDesignActions } from "../src/actions.ts";
-import { partDocument } from "../src/document.ts";
+import { insertPreset, partDocument, type DesignDocument } from "../src/document.ts";
+import { insertCombine } from "../src/combine.ts";
+import { insertMove, NO_MOVE } from "../src/move.ts";
 import { DOWNLOAD_3MF, DOWNLOAD_OBJ, registerMeshActions } from "../src/mesh-export.ts";
 
 const kernel = nodeKernel();
@@ -17,13 +19,13 @@ const box = partDocument("box", 40, 30, 20);
 const boxBody: Selected = { kind: "body", id: "body:feature-1" };
 
 /** The name each of the three exports saves under for a design called `name`, saved to or opened from `fileName`. */
-async function names(name: string, fileName: string | null): Promise<string[]> {
+async function names(name: string, fileName: string | null, design: DesignDocument = box): Promise<string[]> {
   const saved: string[] = [];
   const r = new ActionRegistry();
   registerDesignActions(r, (_bytes, n) => void saved.push(n));
   registerMeshActions(r, (_bytes, n) => void saved.push(n));
   const project = emptyProject();
-  project.workspaces.design = box;
+  project.workspaces.design = design;
   project.name = name;
   const ctx = { project, kernel, fileName: () => fileName, viewport: { setOverlay: (_: AnalysisOverlay) => {}, clearOverlay: () => {} } } as unknown as WorkspaceContext;
   for (const id of [DOWNLOAD_STL, DOWNLOAD_3MF, DOWNLOAD_OBJ]) {
@@ -42,4 +44,18 @@ test("the three exports agree: the file's name when the design has none, the sha
   assert.deepEqual(await names("", "bracket-v3"), ["bracket-v3.stl", "bracket-v3.3mf", "bracket-v3.obj"]);
   assert.deepEqual(await names("Untitled", "bracket-v3"), ["bracket-v3.stl", "bracket-v3.3mf", "bracket-v3.obj"], "Untitled counts as none");
   assert.deepEqual(await names("Untitled", null), ["spindlelabs-box.stl", "spindlelabs-box.3mf", "spindlelabs-box.obj"], "nothing named: as before");
+});
+
+test("#507: a body a Combine changed is no longer its first item's shape, so an unnamed design's files say body, not box", async () => {
+  // Box 1 40 × 30 × 20 and Box 2 10 × 10 × 40 moved to x 10..20, y 10..20, z −10..30: Combine 1 cuts a square hole through
+  // Box 1, which keeps Box 1's id but is no box any more (24,000 − 10 × 10 × 20 = 22,000 mm³).
+  let doc = partDocument("box", 40, 30, 20);
+  let id: string;
+  ({ doc, id } = insertPreset(doc, "box", 10, 10, 40));
+  ({ doc } = insertMove(doc, [`body:${id}`], { ...NO_MOVE, x: 10, y: 10, z: -10 }));
+  const cut = insertCombine(doc, "body:feature-1", [`body:${id}`], "cut").doc;
+  assert.deepEqual(await names("Untitled", null, cut), ["spindlelabs-body.stl", "spindlelabs-body.3mf", "spindlelabs-body.obj"]);
+  // Control: the same design with the Combine suppressed exports Box 1 as it was made, a box.
+  const off = { ...cut, timeline: { ...cut.timeline, features: cut.timeline.features.map((f) => (f.intent.type === "combine" ? { ...f, suppressed: true } : f)) } };
+  assert.deepEqual(await names("Untitled", null, off), ["spindlelabs-box.stl", "spindlelabs-box.3mf", "spindlelabs-box.obj"]);
 });

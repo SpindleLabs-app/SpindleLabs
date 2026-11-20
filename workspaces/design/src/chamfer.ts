@@ -6,6 +6,7 @@
 // `heldEdgeName`, rule 5), as the screen names them, so a Chamfer finds
 // them again after edits before it, whatever made the body.
 
+import { notABody } from "./body-uses.ts";
 import type { Feature } from "@fission/core";
 import { bodyItem, CHAMFER_MAX, chamferOf, chamferSizeProblem, counted, freshName, insertAt, insertItem, isChamferItem, isPiece, makesBody, makesPieces, numberedWhenBuilt, shown, takenNames, type ChamferSizing, type DesignDocument } from "./document.ts";
 import { ruleFiveName } from "./design-edges.ts";
@@ -49,7 +50,7 @@ export function insertChamfer(doc: DesignDocument, body: string, edges: readonly
   const item = bodyItem(body);
   const place = item === null ? -1 : doc.timeline.features.findIndex((f) => f.id === item);
   const maker = doc.timeline.features[place];
-  if (maker === undefined || !(numberedWhenBuilt(body, maker) ? makesPieces(maker) && (doc.bodies ?? []).some((b) => b.id === body) : makesBody(maker))) throw new Error(`${shown(body)} is not a body in the design`);
+  if (maker === undefined || !(numberedWhenBuilt(body, maker) ? makesPieces(maker) && (doc.bodies ?? []).some((b) => b.id === body) : makesBody(maker))) throw new Error(notABody(doc, body));
   if (place >= insertAt(doc)) throw new Error(`${maker.provenance.self.label} comes after the rollback marker, so a Chamfer put in at the marker can't use it`);
   const id = `feature-${doc.nextId}`;
   const label = freshName("Chamfer", doc.timeline.features.filter(isChamferItem).length, takenNames(doc));

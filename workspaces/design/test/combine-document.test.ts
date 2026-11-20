@@ -8,6 +8,9 @@ import assert from "node:assert/strict";
 import type { Feature } from "@fission/core";
 import { actsOnBodies, buildingItems, combineBodies, greyedBy, isCombineItem, makesBody, numberBodies, numberPieces, readDesignDocument } from "../src/document.ts";
 
+/** A Combine's words as combine.ts says them: its operation's verb first, ", keeping the tools" when kept (the reader checks both, SL #507). */
+const combineWords = (p: Record<string, unknown>) => `${p.operation === "join" ? "Join" : p.operation === "intersect" ? "Intersect" : "Cut"} the bodies${p.keepTools === true ? ", keeping the tools" : ""}`;
+
 const box = (id: string, label: string) => ({
   id,
   intent: { type: "box", parameters: { width: 10, depth: 10, height: 10 }, summary: "Box: 10 × 10 × 10 mm" },
@@ -30,7 +33,7 @@ const file = (params: Record<string, unknown> = {}, combine: Record<string, unkn
       box("feature-2", "Box 2"),
       {
         id: "feature-3",
-        intent: { type: "combine", parameters: { ...COMBINE, ...params }, summary: "Combine: cut Box 2 from Box 1" },
+        intent: { type: "combine", parameters: { ...COMBINE, ...params }, summary: combineWords({ ...COMBINE, ...params }) },
         provenance: { self: { workspace: "design", id: "feature-3", label: "Combine 1" }, from: [] },
         dependsOn: ["feature-1", "feature-2"],
         suppressed: false,
@@ -125,7 +128,7 @@ test("a file's piece must be a Combine's: a piece of a box is refused, a piece o
   });
   const f = {
     id: "feature-6",
-    intent: { type: "combine", parameters: { target: "body:feature-3/piece:1", tools: ["body:feature-5"], operation: "join", keepTools: true }, summary: "Combine" },
+    intent: { type: "combine", parameters: { target: "body:feature-3/piece:1", tools: ["body:feature-5"], operation: "join", keepTools: true }, summary: "Join Box 3 to a piece of Combine 1, keeping the tools" },
     provenance: { self: { workspace: "design", id: "feature-6", label: "Combine 2" }, from: [] },
     dependsOn: ["feature-3", "feature-5"],
     suppressed: false,

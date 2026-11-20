@@ -8,6 +8,9 @@ import { insertMove, NO_MOVE } from "../src/move.ts";
 import { deleteItem } from "../src/timeline-edits.ts";
 import { BodyCache, rebuildTimeline } from "../src/rebuild.ts";
 
+/** A Combine's words as combine.ts says them: its operation's verb first, ", keeping the tools" when kept (the reader checks both, SL #507). */
+const combineWords = (p: Record<string, unknown>) => `${p.operation === "join" ? "Join" : p.operation === "intersect" ? "Intersect" : "Cut"} the bodies${p.keepTools === true ? ", keeping the tools" : ""}`;
+
 const kernel = nodeKernel();
 
 const box = (id: string, label: string) => ({
@@ -19,7 +22,7 @@ const box = (id: string, label: string) => ({
 });
 const combine = (id: string, params: Record<string, unknown>, dependsOn: string[]) => ({
   id,
-  intent: { type: "combine", parameters: { operation: "cut", keepTools: false, ...params }, summary: "Combine" },
+  intent: { type: "combine", parameters: { operation: "cut", keepTools: false, ...params }, summary: combineWords({ operation: "cut", keepTools: false, ...params }) },
   provenance: { self: { workspace: "design", id, label: id }, from: [] },
   dependsOn,
   suppressed: false,

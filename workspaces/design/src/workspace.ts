@@ -11,6 +11,7 @@ import { extrudePanel } from "./extrude-panel.ts";
 import { throughDistance, throughWords } from "./extrude-through.ts";
 import { FACE_ALONE, joinedView, ONE_PROFILE_OPERATION, pickedWords, severalWords, togglePick, type PickedProfile } from "./extrude-picks.ts";
 import { bodyChoices, operationNote, tickedBodies, touchingOnly, type BodyChoice, type Bounds, type ExtrudeOperation, type ListedBody } from "./extrude-operation.ts";
+import { operationWords } from "./body-uses.ts";
 import { CHANGED_WHILE_CHECKING, editableFeature, editFeature, editStep, readTyped, refusedSizes } from "./feature-edit.ts";
 import { featureEditPanel } from "./feature-edit-panel.ts";
 import { copiedText, copiesOf, DUPLICATE_STEP, insertDuplicates, MIRROR_STEP, mirrorPlaneProblem, pastedBodies, type MirrorPlane } from "./duplicate.ts";
@@ -5057,6 +5058,9 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
       editBox.showOperation(op);
       showEditBodies();
       void loadEditBodies(id);
+    } else {
+      const op = extrudeOperation(item);
+      if (op !== null) editBox.showOperationWords(operationWords(designDoc(), op));
     }
     void offerEditRegions(id);
   }

@@ -12,6 +12,7 @@
 // Move's `bodies` (`movedBodies`), with `dependsOn` the items that made them.
 // `moveMotions` what the kernel is asked to do.
 
+import { notABody } from "./body-uses.ts";
 import type { BodySpec, Feature, Motion, MoveKind } from "@fission/core";
 import { bodyItem, counted, freshName, insertItem, numberedWhenBuilt, insertAt, isMoveItem, makesBody, MOVE_PARAMS, MOVE_SCALE, shown, takenNames, type DesignDocument, type MoveParam } from "./document.ts";
 
@@ -148,7 +149,7 @@ function bodiesFor(doc: DesignDocument, bodies: readonly string[]): Feature[] {
   return itemsOf(bodies).map((id, i) => {
     const at = doc.timeline.features.findIndex((f) => f.id === id);
     const f = doc.timeline.features[at];
-    if (f === undefined || !(numberedWhenBuilt(bodies[i], f) ? numbered(doc, bodies[i]) : makesBody(f))) throw new Error(`${shown(bodies[i])} is not a body in the design`);
+    if (f === undefined || !(numberedWhenBuilt(bodies[i], f) ? numbered(doc, bodies[i]) : makesBody(f))) throw new Error(notABody(doc, bodies[i]));
     if (at >= end) throw new Error(`${f.provenance.self.label} comes after the rollback marker, so a move put in at the marker can't move it`);
     return f;
   });
@@ -191,7 +192,7 @@ function bodiesBefore(doc: DesignDocument, move: Feature, bodies: readonly strin
     const f = doc.timeline.features[at];
     const held = move.provenance.from.find((r) => r.id === id);
     if (f === undefined && movedBodies(move).includes(bodies[i]) && held) return { id, label: held.label };
-    if (f === undefined || !(numberedWhenBuilt(bodies[i], f) ? numbered(doc, bodies[i]) : makesBody(f))) throw new Error(`${shown(bodies[i])} is not a body in the design`);
+    if (f === undefined || !(numberedWhenBuilt(bodies[i], f) ? numbered(doc, bodies[i]) : makesBody(f))) throw new Error(notABody(doc, bodies[i]));
     if (at > end) throw new Error(madeAfter(f.provenance.self.label, move.provenance.self.label).slice(0, -1));
     return { id, label: f.provenance.self.label };
   });
