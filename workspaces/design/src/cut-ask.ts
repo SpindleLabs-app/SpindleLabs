@@ -32,16 +32,48 @@ export interface Checked {
    * cut through dropped back to where it was before the Move (app-wide hunt 2026-11-14, T-2).
    */
   numbered?: DesignDocument;
+  /**
+   * SL #676 item 2: each item after the checked one, by name, that fails in the check build or moves fewer bodies
+   * than in `before` (the results the design as it is now built), in timeline order: an edit that breaks a later step
+   * is asked about first (`breaksWords`). Empty when nothing is given to compare with.
+   */
+  breaks?: string[];
 }
 
-/** Item `id` built in design `next` on a body store of its own: refused in the rebuild's words, or what it misses. */
-export async function checkedItem(kernel: KernelCalls, next: DesignDocument, id: string): Promise<Checked> {
+/** The results a build gave each item, as `checkedItem` compares them: failed, or how many bodies a Move left out. */
+export type ResultsBefore = Readonly<Record<string, { status: string; missing?: { bodies: readonly string[] } } | undefined>>;
+
+/** The items after `id` that `after` breaks that `before` built (failing now, or a Move leaving out more bodies), by name. */
+export function brokenLater(doc: DesignDocument, id: string, before: ResultsBefore, after: ResultsBefore): string[] {
+  const at = doc.timeline.features.findIndex((f) => f.id === id);
+  return doc.timeline.features.slice(at + 1).flatMap((f) => {
+    const was = before[f.id];
+    const now = after[f.id];
+    if (was?.status !== "built" || now === undefined) return [];
+    const broke = now.status === "failed" || (now.status === "built" && (now.missing?.bodies.length ?? 0) > (was.missing?.bodies.length ?? 0));
+    return broke ? [f.provenance.self.label] : [];
+  });
+}
+
+/** The question for an edit of item `label` ("Combine 1") that breaks the later steps `names` (never empty). */
+export function breaksWords(label: string, names: readonly string[]): AskWords {
+  const one = names.length === 1;
+  return {
+    heading: one ? "A later step would break" : "Later steps would break",
+    words: `This change to ${label} would break ${listWords(names)}: ${one ? "it" : "they"} would no longer find a body ${one ? "it works" : "they work"} on and show red. Record it anyway, or cancel and change it?`,
+    go: "Record anyway",
+  };
+}
+
+/** Item `id` built in design `next` on a body store of its own: refused in the rebuild's words, or what it misses and which later steps it breaks against `before`. */
+export async function checkedItem(kernel: KernelCalls, next: DesignDocument, id: string, before: ResultsBefore = {}): Promise<Checked> {
   const cache = new BodyCache(kernel);
   try {
     const build = await rebuildTimeline(next, cache, kernel);
     const r = build.results[id];
     if (r?.status === "failed") return { refused: r.message, misses: [] };
-    return { refused: null, misses: r?.status === "built" ? (r.misses?.list ?? []) : [], numbered: numberPieces(followedDoc(next, build), Object.keys(build.bodies), builtPieceFaces(build)) };
+    const breaks = brokenLater(next, id, before, build.results);
+    return { refused: null, misses: r?.status === "built" ? (r.misses?.list ?? []) : [], numbered: numberPieces(followedDoc(next, build), Object.keys(build.bodies), builtPieceFaces(build)), breaks };
   } finally {
     await cache.close();
   }

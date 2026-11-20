@@ -7,7 +7,7 @@
 // target's piece keeping its id.
 
 import type { Feature } from "@fission/core";
-import { bodiesUsed } from "./body-uses.ts";
+import { bodiesUsed, refuseUsedUpLater } from "./body-uses.ts";
 import { bodyItem, bodyNumbers, combineBodies, COMBINE_OPERATIONS, counted, freshName, insertAt, insertItem, isCombineItem, isPiece, makesBody, makesPieces, numberedWhenBuilt, shown, takenNames, type CombineOperation, type DesignDocument } from "./document.ts";
 
 /** The undo step a new Combine is recorded as. */
@@ -68,6 +68,8 @@ export function insertCombine(doc: DesignDocument, target: string, tools: readon
   const items = itemsFor(doc, target, tools);
   const id = `feature-${doc.nextId}`;
   const label = freshName("Combine", doc.timeline.features.filter(isCombineItem).length, takenNames(doc));
+  // SL #676 item 2: put in with the marker rolled back, it may not use up a tool an item after the marker works on.
+  refuseUsedUpLater(doc, insertAt(doc), keepTools ? [] : tools, label);
   const feature: Feature = { id, ...combineFields(target, tools, operation, keepTools, items), provenance: { self: { workspace: "design", id, label }, from: fromOf(items) }, suppressed: false };
   return { id, doc: { ...doc, nextId: counted(doc.nextId + 1), timeline: insertItem(doc, feature) } };
 }

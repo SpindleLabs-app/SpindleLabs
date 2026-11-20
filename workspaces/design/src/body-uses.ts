@@ -15,7 +15,7 @@
 //   change is (extrude.ts `setExtrudeOperation`).
 
 import type { Feature } from "@fission/core";
-import { bodyItem, chamferOf, combineBodies, extrudeOperation, isChamferItem, isCombineItem, isDuplicateItem, isMoveItem, isPatternItem, isPiece, isShellItem, isSketchItem, shellOf, sketchInputs, type DesignDocument } from "./document.ts";
+import { bodyItem, bodyNumbers, chamferOf, combineBodies, extrudeOperation, isChamferItem, isCombineItem, isDuplicateItem, isMoveItem, isPatternItem, isPiece, isShellItem, isSketchItem, shellOf, sketchInputs, type DesignDocument } from "./document.ts";
 import { faceFeature, isFacePlane } from "./face-sketch.ts";
 
 /** The bodies item `f` works on, by body id: a Move's, a Combine's target and tools, a Duplicate's (Combine bug hunt 11-08), a Pattern's (step 61b), an extrude's operation's. */
@@ -163,4 +163,21 @@ export function sketchHolds(doc: DesignDocument, f: Feature): ((body: string) =>
     for (const [hold, c] of chains) if (inChain(c, body)) return hold;
     return null;
   };
+}
+
+/**
+ * SL #676 item 2: a new item put in at the marker (place `at`, named
+ * `label`) that would use up `usedUp` refuses when an item after it works
+ * on one of them, in the words `changedCombine` refuses the same with: a
+ * Combine put in with the marker rolled back would otherwise take a later
+ * Combine's tool, and that Combine would go red when rolled forward.
+ */
+export function refuseUsedUpLater(doc: DesignDocument, at: number, usedUp: readonly string[], label: string): void {
+  if (usedUp.length === 0) return;
+  for (const later of doc.timeline.features.slice(at)) {
+    const used = bodiesUsed(later).find((b) => usedUp.includes(b));
+    if (used === undefined) continue;
+    const n = bodyNumbers(doc).get(used);
+    throw new Error(`${later.provenance.self.label} uses ${n === undefined ? bodyWords(doc, used) : `Body ${n}`}, which ${label} would use up: change or delete ${later.provenance.self.label} first`);
+  }
 }

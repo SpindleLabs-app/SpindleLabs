@@ -390,7 +390,14 @@ export function designSubject(kernel: KernelCalls, faults: Iterable<DesignFault>
         return { state: { doc: changedMove(doc, op.item, moveValues(op), op.bodies?.map(bodyIdOf)), meta }, made: [] };
       case "add-combine": {
         // 35f1d2: Design's Combine, as its panel's OK puts it in: the model names bodies by item, Design by body id.
-        const c = insertCombine(doc, bodyIdOf(op.target), [bodyIdOf(op.tool)], op.operation, op.keep);
+        // SL #676 item 2: refused in words when it would use up a tool an item after the marker works on.
+        let c: ReturnType<typeof insertCombine>;
+        try {
+          c = insertCombine(doc, bodyIdOf(op.target), [bodyIdOf(op.tool)], op.operation, op.keep);
+        } catch (e) {
+          if (e instanceof Error && / would use up: change or delete /.test(e.message)) return { kind: "refused", cause: "used-later" };
+          throw e;
+        }
         return { state: { doc: c.doc, meta }, made: [c.id] };
       }
       case "add-duplicate": {

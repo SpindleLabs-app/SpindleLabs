@@ -134,7 +134,11 @@ const CAUGHT_BY: Record<ModelFault, string> = {
   "reorder-past-reader": "outcome differs from the model",
   // SL #676 item 3: a sketch on a face dragged past a Move of the body its face is on, or that Move past it.
   "reorder-past-face-body": "outcome differs from the model",
-  "combine-tool-kept": "the rebuild differs from the model",
+  // SL #676 item 2: a Combine put in with the marker rolled back using up a later item's tool.
+  "combine-uses-up-later": "outcome differs from the model",
+  // Since SL #676 items 2 and 3 refuse some reorders and Combines, the first catch (seed 4) is the kept tool's faces sharing
+  // names with the target's; seeds 5 and 6 catch it as a rebuild differing from the model.
+  "combine-tool-kept": "two faces share a name",
   "combine-not-held": "the rebuild differs from the model",
   "combine-pieces-dropped": "the rebuild differs from the model",
   "combine-op-ignored": "outcome differs from the model",
@@ -159,7 +163,8 @@ const CAUGHT_BY: Record<ModelFault, string> = {
 
 // SL #676 item 1: a drag past a later item changing a body the dragged one reads is rare in the sessions; 49 is the first seed (of 1 to 600) to catch it.
 /** Faults the first 24 seeds don't reach, and the seeds that do (found by searching 1 to 200; search again if the sessions change). */
-const LATE_SEEDS: Partial<Record<ModelFault, bigint[]>> = { "combine-face-moves-with-target": [77n], "reorder-past-reader": [49n] };
+// SL #676 items 2 and 3 changed the sessions (refused reorders and Combines): 26 is then the first seed to catch "extrude-base-dropped".
+const LATE_SEEDS: Partial<Record<ModelFault, bigint[]>> = { "combine-face-moves-with-target": [77n], "reorder-past-reader": [49n], "extrude-base-dropped": [26n] };
 
 /** The first seed whose session the planted bug fails, and how. */
 async function firstFailure(make: () => TimelineSubject, late: readonly bigint[] = []): Promise<{ seed: bigint; failure: TimelineFailure } | null> {

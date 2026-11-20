@@ -10,7 +10,7 @@
 // Every extrude is a new body ("New body", step 24d1) until booleans join
 // them: it is added to the timeline at the marker and replaces nothing.
 
-import { bodiesUsed } from "./body-uses.ts";
+import { bodiesUsed, refuseUsedUpLater } from "./body-uses.ts";
 import type { BodySpec, BodyView, ExtrudeArrow, Feature, KernelCalls } from "@fission/core";
 import { bodyIdOf, bodyItem, bodyNumbers, COMBINE_OPERATIONS, counted, extrudeOperation, freshName, insertAt, insertItem, isPiece, isSketchExtrude, makesBody, makesPieces, numberBodies, numberedWhenBuilt, takenNames, partFeature, shown, specOf, type CombineOperation, type DesignDocument } from "./document.ts";
 import { extrudeSpec, type CurveIds } from "./rebuild.ts";
@@ -218,6 +218,13 @@ export function extrudeSketch(doc: DesignDocument, sketchId: string, distance: n
   const others = extrudeSketches(plain).slice(1);
   const several: Feature = { ...plain, dependsOn: [sketchId, ...others], provenance: { ...plain.provenance, from: [...plain.provenance.from, ...others.map((s) => ({ workspace: "design" as const, id: s, label: sketchItem(doc, s).provenance.self.label }))] } };
   const made = withOperation(several, sketchId, label, choice, makers);
+  // SL #676 item 2: a Join put in with the marker rolled back joins every body it picks into the earliest made, using
+  // the others up, so an item after the marker working on one of them refuses it, as a Combine's tool does.
+  if (choice?.operation === "join") {
+    const place = (b: string) => doc.timeline.features.findIndex((f) => f.id === bodyItem(b));
+    const first = Math.min(...choice.bodies.map(place));
+    refuseUsedUpLater(doc, insertAt(doc), choice.bodies.filter((b) => place(b) !== first), name);
+  }
   const feature: Feature = { ...made, intent: { ...made.intent, summary: summary(label, distance, flip, made) } };
   return { id, doc: numberBodies({ ...doc, nextId: counted(doc.nextId + 1), timeline: insertItem(doc, feature) }) };
 }
