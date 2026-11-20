@@ -2989,6 +2989,251 @@
     "why": "stressUnits with a mesh size of exactly 0: it gets through, but every side over 0 cells is Infinity, so the result is capped at STRESS_MOST_UNITS, what the test returns."
   },
   {
+    "file": "packages/print/src/slice-run.ts",
+    "mutator": "EqualityOperator",
+    "original": "stl.length >= 84",
+    "replacement": "stl.length > 84",
+    "why": "stlLowestZ: at exactly 84 bytes (a header and the count, no triangle) the count is cut to floor((84 - 84) / 50) = 0 either way, so no triangle is read and the answer is the same."
+  },
+  {
+    "file": "packages/print/src/slice-run.ts",
+    "mutator": "ArrowFunction",
+    "original": "() => false",
+    "replacement": "() => undefined",
+    "why": "levelNote reads rests only as !rests(i): !undefined is true, as !false is."
+  },
+  {
+    "file": "packages/print/src/slice-run.ts",
+    "mutator": "ConditionalExpression",
+    "original": "known.length < 2",
+    "replacement": "false",
+    "why": "levelNote with fewer than two known bodies: with none the floor is Math.min() = Infinity and no z - Infinity is over LEVEL_GAP; with one it is the floor itself (gap 0). Either way findIndex finds none and the result is \"\", what the early return gives."
+  },
+  {
+    "file": "packages/print/src/slice-run.ts",
+    "mutator": "EqualityOperator",
+    "original": "stl.length >= 84",
+    "replacement": "stl.length > 84",
+    "why": "stlCorners: at exactly 84 bytes (a header and the count, no triangle) the count is cut to floor((84 - 84) / 50) = 0 either way, so no triangle is read and the answer is the same."
+  },
+  {
+    "file": "packages/print/src/slice-run.ts",
+    "mutator": "EqualityOperator",
+    "original": "t < corners.length",
+    "replacement": "t <= corners.length",
+    "why": "sectionAt: corners holds 9 numbers a triangle, so at t = corners.length every read is past the end (undefined); undefined < h is false at both ends of every edge, so each edge is skipped and the extra pass pushes nothing."
+  },
+  {
+    "file": "packages/print/src/slice-run.ts",
+    "mutator": "EqualityOperator",
+    "original": "za < h",
+    "replacement": "za <= h",
+    "why": "sectionAt: h is the upper body's lowest corner (a float32) less LEVEL_GAP; a corner (a float32) equals it only if no float32 value v has v - 0.1 (worked in doubles) equal to a float32 below |v| = 1.1e15 mm (2^50; a search of 30 million float32 values found none), a billion times the kernel's 1 km, so for every body the app makes a corner is never exactly at it and the two comparisons agree."
+  },
+  {
+    "file": "packages/print/src/slice-run.ts",
+    "mutator": "EqualityOperator",
+    "original": "zb < h",
+    "replacement": "zb <= h",
+    "why": "sectionAt: h is the upper body's lowest corner (a float32) less LEVEL_GAP; a corner (a float32) equals it only if no float32 value v has v - 0.1 (worked in doubles) equal to a float32 below |v| = 1.1e15 mm (2^50; a search of 30 million float32 values found none), a billion times the kernel's 1 km, so for every body the app makes a corner is never exactly at it and the two comparisons agree."
+  },
+  {
+    "file": "packages/print/src/slice-run.ts",
+    "mutator": "EqualityOperator",
+    "original": "d1 > 0",
+    "replacement": "d1 >= 0",
+    "why": "segmentsCross: d1 = 0 puts the outline segment's start on the line of the underside's edge. On the edge itself inTriangle (the same cross product, so the same exact 0) has already returned true for that start; off it, the segment's line meets the edge's line only at that start, outside the edge, so both ends of the edge are on one side of it, d3 and d4 never differ in sign, and no crossing is found either way."
+  },
+  {
+    "file": "packages/print/src/slice-run.ts",
+    "mutator": "EqualityOperator",
+    "original": "d1 < 0",
+    "replacement": "d1 <= 0",
+    "why": "segmentsCross: d1 = 0 puts the outline segment's start on the line of the underside's edge. On the edge itself inTriangle (the same cross product, so the same exact 0) has already returned true for that start; off it, the segment's line meets the edge's line only at that start, outside the edge, so both ends of the edge are on one side of it, d3 and d4 never differ in sign, and no crossing is found either way."
+  },
+  {
+    "file": "packages/print/src/slice-run.ts",
+    "mutator": "ConditionalExpression",
+    "original": "section.length === 0",
+    "replacement": "false",
+    "why": "holdsUp with an empty section: insideSection finds nothing inside (it has no segment to cross) and the loops over segments do not run, so it returns false, as the early return does."
+  },
+  {
+    "file": "packages/print/src/slice-run.ts",
+    "mutator": "EqualityOperator",
+    "original": "Math.min(c[t + 2], c[t + 5], c[t + 8]) > z + LEVEL_GAP",
+    "replacement": "Math.min(c[t + 2], c[t + 5], c[t + 8]) >= z + LEVEL_GAP",
+    "why": "levelNoteOf's underside: a triangle's lowest corner (a float32) equals z + LEVEL_GAP (z a float32) only if no float32 value v has v + 0.1 (worked in doubles) equal to a float32 below |v| = 1.1e15 mm (2^50; a search of 30 million float32 values found none), a billion times the kernel's 1 km, so for every body the app makes a corner is never exactly at it and the two comparisons agree."
+  },
+  {
+    "file": "packages/print/src/slice-run.ts",
+    "mutator": "EqualityOperator",
+    "original": "Math.abs(cross(c[t], c[t + 1], c[t + 3], c[t + 4], c[t + 6], c[t + 7])) < 1e-9",
+    "replacement": "Math.abs(cross(c[t], c[t + 1], c[t + 3], c[t + 4], c[t + 6], c[t + 7])) <= 1e-9",
+    "why": "levelNoteOf's side-wall test differs only for a triangle whose shadow from above has a cross product of exactly 1e-9 (an area of 5e-10 mm², 0.0005 µm²): to the kernel's 10 nm tolerance that is an upright wall, a line from above, whichever side of the cut it falls; whether it counts can only decide for a body touching the one below along that line, where both answers are within tolerance."
+  },
+  {
+    "file": "packages/print/src/slice-run.ts",
+    "mutator": "ConditionalExpression",
+    "original": "j !== i",
+    "replacement": "true",
+    "why": "levelNoteOf: j === i never holds a body up, as its own section at its lowest point less LEVEL_GAP is empty (no corner is below it), so the j !== i test changes nothing."
+  },
+  {
+    "file": "packages/print/src/slice-run.ts",
+    "mutator": "EqualityOperator",
+    "original": "lowest[j] < z - LEVEL_GAP",
+    "replacement": "lowest[j] <= z - LEVEL_GAP",
+    "why": "levelNoteOf: holdsUp is true only when the other body's section at z - LEVEL_GAP has a segment, which needs a corner below that height, so lowest[j] < z - LEVEL_GAP already holds; a lowest point that is NaN fails <= and < z + LEVEL_GAP as it fails <. Loosening the test changes nothing."
+  },
+  {
+    "file": "packages/print/src/slice-run.ts",
+    "mutator": "ArithmeticOperator",
+    "original": "z - LEVEL_GAP",
+    "replacement": "z + LEVEL_GAP",
+    "why": "levelNoteOf: holdsUp is true only when the other body's section at z - LEVEL_GAP has a segment, which needs a corner below that height, so lowest[j] < z - LEVEL_GAP already holds; a lowest point that is NaN fails <= and < z + LEVEL_GAP as it fails <. Loosening the test changes nothing."
+  },
+  {
+    "file": "packages/print/src/slice-run.ts",
+    "mutator": "EqualityOperator",
+    "original": "stl.length >= 84",
+    "replacement": "stl.length > 84",
+    "why": "stlHighestZ: at exactly 84 bytes (a header and the count, no triangle) the count is cut to floor((84 - 84) / 50) = 0 either way, so no triangle is read and the answer is the same."
+  },
+  {
+    "file": "packages/print/src/slice-run.ts",
+    "mutator": "ConditionalExpression",
+    "original": "typeof e === \"object\" && e !== null",
+    "replacement": "true",
+    "why": "refusalOf: WeakMap.get of a string, null or any other non-object returns undefined without throwing, the same undefined the guard gives."
+  },
+  {
+    "file": "packages/print/src/slice-run.ts",
+    "mutator": "LogicalOperator",
+    "original": "typeof e === \"object\" && e !== null",
+    "replacement": "typeof e === \"object\" || e !== null",
+    "why": "refusalOf: WeakMap.get of a string, null or any other non-object returns undefined without throwing, the same undefined the guard gives."
+  },
+  {
+    "file": "packages/print/src/slice-run.ts",
+    "mutator": "ConditionalExpression",
+    "original": "typeof e === \"object\"",
+    "replacement": "true",
+    "why": "refusalOf: WeakMap.get of a string, null or any other non-object returns undefined without throwing, the same undefined the guard gives."
+  },
+  {
+    "file": "packages/print/src/slice-run.ts",
+    "mutator": "ConditionalExpression",
+    "original": "e !== null",
+    "replacement": "true",
+    "why": "refusalOf: WeakMap.get of a string, null or any other non-object returns undefined without throwing, the same undefined the guard gives."
+  },
+  {
+    "file": "packages/print/src/slice-run.ts",
+    "mutator": "StringLiteral",
+    "original": "\"gcode\"",
+    "replacement": "\"\"",
+    "why": "filamentFor reads the format only as format === \"p1s\": \"\" gives the plain file's filament (Generic PLA for Automatic), as \"gcode\" does."
+  },
+  {
+    "file": "packages/print/src/slice-run.ts",
+    "mutator": "ConditionalExpression",
+    "original": "run.stopped",
+    "replacement": "false",
+    "why": "testPieceFile reads run.stopped right after asRun added the run, with no await between (fitPieceStl is synchronous): stopSlices cannot have run, so it is always false there."
+  },
+  {
+    "file": "packages/print/src/slice-run.ts",
+    "mutator": "EqualityOperator",
+    "original": "at + 30 <= bytes.length",
+    "replacement": "at + 30 < bytes.length",
+    "why": "gcodeOfPackage: a local header starting exactly 30 bytes before the end has no room for a name or data, so it is not the plate's (\"Metadata/plate_1.gcode\" needs 22 more bytes): reading it returns null (cut off) or goes on to the end, and stopping before it returns null too."
+  },
+  {
+    "file": "packages/print/src/slice-run.ts",
+    "mutator": "BooleanLiteral",
+    "original": "true",
+    "replacement": "false",
+    "why": "gcodeOfPackage compares the compression method with 0: a 16-bit value is 0 read either way round, and not 0 either way round."
+  },
+  {
+    "file": "packages/print/src/slice-run.ts",
+    "mutator": "EqualityOperator",
+    "original": "end < 0",
+    "replacement": "end <= 0",
+    "why": "printMovesOf searches for the end routine from first, so end is 0 only if first is 0 and \";===== end\" starts at 0, where the text starts \";LAYER_CHANGE\": end is never 0."
+  },
+  {
+    "file": "packages/print/src/slice-run.ts",
+    "mutator": "OptionalChaining",
+    "original": "named?.includes",
+    "replacement": "named.includes",
+    "why": "extrasNamed is called only with a refusal's matched group when it is not undefined (each caller returns its plain words first when it is), so named is always a string and the ?. never acts."
+  },
+  {
+    "file": "packages/print/src/slice-run.ts",
+    "mutator": "BooleanLiteral",
+    "original": "false",
+    "replacement": "true",
+    "why": "extrasNamed is called only with a refusal's matched group when it is not undefined, so includes always gives a boolean and the ?? default is never used."
+  },
+  {
+    "file": "packages/print/src/slice-run.ts",
+    "mutator": "OptionalChaining",
+    "original": "named?.includes",
+    "replacement": "named.includes",
+    "why": "extrasNamed is called only with a refusal's matched group when it is not undefined (each caller returns its plain words first when it is), so named is always a string and the ?. never acts."
+  },
+  {
+    "file": "packages/print/src/slice-run.ts",
+    "mutator": "BooleanLiteral",
+    "original": "false",
+    "replacement": "true",
+    "why": "extrasNamed is called only with a refusal's matched group when it is not undefined, so includes always gives a boolean and the ?? default is never used."
+  },
+  {
+    "file": "packages/print/src/slice-run.ts",
+    "mutator": "ConditionalExpression",
+    "original": "height !== undefined",
+    "replacement": "true",
+    "why": "refusalWords: Number.isFinite(undefined) is false, so the next test already refuses a height not given."
+  },
+  {
+    "file": "packages/print/src/slice-run.ts",
+    "mutator": "StringLiteral",
+    "original": "\"gcode\"",
+    "replacement": "\"\"",
+    "why": "filamentFor reads the format only as format === \"p1s\": \"\" gives the plain file's filament (Generic PLA for Automatic), as \"gcode\" does."
+  },
+  {
+    "file": "packages/print/src/slice-run.ts",
+    "mutator": "ConditionalExpression",
+    "original": "kept.length < lead.length",
+    "replacement": "true",
+    "why": "fitName's lead is nameLead's output, which is trimmed: when it is kept whole (kept.length = lead.length) trimEnd changes nothing, so trimming it then too gives the same name."
+  },
+  {
+    "file": "packages/print/src/slice-run.ts",
+    "mutator": "EqualityOperator",
+    "original": "kept.length < lead.length",
+    "replacement": "kept.length <= lead.length",
+    "why": "fitName's lead is nameLead's output, which is trimmed: when it is kept whole (kept.length = lead.length) trimEnd changes nothing, so trimming it then too gives the same name."
+  },
+  {
+    "file": "packages/print/src/slice-run.ts",
+    "mutator": "EqualityOperator",
+    "original": "fraction < FILE_CRAWL_TOP",
+    "replacement": "fraction <= FILE_CRAWL_TOP",
+    "why": "fileCrawl at fraction exactly 0.99: the creep adds (0.99 - 0.99) × (1 - e^-t/τ) = 0, so going on gives back the same fraction."
+  },
+  {
+    "file": "packages/print/src/slice-run.ts",
+    "mutator": "EqualityOperator",
+    "original": "inFileMs > 0",
+    "replacement": "inFileMs >= 0",
+    "why": "fileCrawl at exactly 0 ms into the file: the creep adds (0.99 - fraction) × (1 - e^0) = 0, so going on gives back the same fraction."
+  },
+  {
     "file": "packages/ai/src/commands.ts",
     "mutator": "StringLiteral",
     "original": "\"\"",
@@ -5437,6 +5682,48 @@
     "original": "slash >= 0",
     "replacement": "slash > 0",
     "why": "The kept shapes' extrude lookup (issue #220, 11-14): with slash === 0 the extrude looked up is byId.get(\"\"), and no item has an empty id, so !f refuses the key before the profile-key test is read, with the same words."
+  },
+  {
+    "file": "workspaces/design/src/document.ts",
+    "mutator": "ConditionalExpression",
+    "original": "across !== null",
+    "replacement": "true",
+    "why": "Without a construction plane `across` is null, so byId.get(null) is undefined and the check asks !ID_SHAPE.test(null): String(null) is \"null\", which ID_SHAPE matches, so it refuses nothing, as the skipped check does."
+  },
+  {
+    "file": "workspaces/design/src/document.ts",
+    "mutator": "EqualityOperator",
+    "original": "there.at >= byId.get(f.id)!.at",
+    "replacement": "there.at > byId.get(f.id)!.at",
+    "why": "A Mirror across itself (construct:<its own id>) is the only case at equal places, and a Duplicate is not a construction, so !isConstructItem refuses it either way."
+  },
+  {
+    "file": "workspaces/design/src/document.ts",
+    "mutator": "OptionalChaining",
+    "original": "CONSTRUCT_KINDS[there.item.intent.parameters.make as ConstructKind]?.makes",
+    "replacement": "CONSTRUCT_KINDS[there.item.intent.parameters.make as ConstructKind].makes",
+    "why": "The reader checks Duplicates and constructions in one pass in timeline order, so a construction before the Mirror has had its make checked as a known kind before this line reads CONSTRUCT_KINDS for it; the ?. never meets undefined."
+  },
+  {
+    "file": "workspaces/design/src/document.ts",
+    "mutator": "EqualityOperator",
+    "original": "there.at >= byId.get(f.id)!.at",
+    "replacement": "there.at > byId.get(f.id)!.at",
+    "why": "A Chamfer naming its own body (body:<its own id>) is the only case at equal places, and a Chamfer makes no body, so isBodyOf refuses it either way."
+  },
+  {
+    "file": "workspaces/design/src/document.ts",
+    "mutator": "ConditionalExpression",
+    "original": "ref.kind !== \"construct\"",
+    "replacement": "false",
+    "why": "Only a construct ref has an item: for an origin, face, edge or corner ref ref.item is undefined, byId.get(undefined) is undefined and !ID_SHAPE.test(undefined) is false (String(undefined) is \"undefined\", which ID_SHAPE matches), so going on refuses nothing, as continue does."
+  },
+  {
+    "file": "workspaces/design/src/document.ts",
+    "mutator": "ArrayDeclaration",
+    "original": "[]",
+    "replacement": "[\"Stryker was here\"]",
+    "why": "The fallback list when the data has no timeline: a list holding a string has no record in it, so some() finds nothing either way."
   },
   {
     "file": "packages/account/src/data.ts",

@@ -1,0 +1,67 @@
+{
+ "seed": "1329556652201185624",
+ "check": "the rebuild differs from the model",
+ "issue": "SpindleLabs-app/SpindleLabs#430",
+ "what": "Six steps: a suppress, two boxes, a Combine, a sketch on a face, the Combine made a Cut. The model judged the face sketch's face by its frame's origin where Design (SL #707) judges it by the middle of the sketch's own points, so the model warned plane-split where Design found the face. Seen 19 Nov on e3bdc4a; fails with the model before the seed 11116828921063044366 fix and passes after.",
+ "steps": [
+  {
+   "op": "suppress",
+   "pick": 0.950432988844734
+  },
+  {
+   "op": "add-preset",
+   "kind": "box",
+   "sizes": [
+    47,
+    7,
+    13
+   ]
+  },
+  {
+   "op": "add-preset",
+   "kind": "box",
+   "sizes": [
+    46,
+    6,
+    54
+   ]
+  },
+  {
+   "op": "add-combine",
+   "target": 0.27549643706738436,
+   "tool": 0.3954261606161158,
+   "operation": "join",
+   "keep": true
+  },
+  {
+   "op": "add-face-sketch",
+   "pick": 0.6305867887823614,
+   "shape": {
+    "kind": "polygon",
+    "corners": [
+     [
+      -2,
+      -9
+     ],
+     [
+      -16,
+      3
+     ],
+     [
+      -19,
+      19
+     ],
+     [
+      -8,
+      39
+     ]
+    ]
+   }
+  },
+  {
+   "op": "set-combine",
+   "pick": 0.6147615801949158,
+   "operation": "cut"
+  }
+ ]
+}

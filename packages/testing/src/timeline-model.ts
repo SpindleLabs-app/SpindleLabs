@@ -1039,7 +1039,16 @@ function placeSketch(item: SketchItem, done: Record<string, ItemResult>, faults:
   // own body), from the origin it was drawn with: the face plane's nearest point to the world's, over the origin.
   const bodies = bodiesNow(done);
   const ref: FaceName = onFaceName(item.on);
-  const found = findFace(bodies, ref, [0, 0, item.on.drawn], { firstPiece: faults.has("combine-first-piece") });
+  // SL #430 (Design's rule from SL #707, rebuild.ts `originOn`): judged on each face by the middle of the sketch's own
+  // points (the frame's origin, over the world's, when it has none), carried by that face's Moves since it was drawn.
+  const middle = sketchMiddle(item);
+  const origin = (b: ModelBody, f: ModelFace): Vec3 => {
+    const t = turnSince(faceMotion(b, f, ref), item.on!.motion);
+    const p = t === undefined ? middle : ([t.at[0] + t.x[0] * middle[0] - t.x[1] * middle[1], t.at[1] + t.x[1] * middle[0] + t.x[0] * middle[1]] as const);
+    // The face lies level (every face the sessions draw on looks up), so the point is at the face's height now.
+    return [p[0], p[1], f.centroid[2]];
+  };
+  const found = findFace(bodies, ref, origin, { firstPiece: faults.has("combine-first-piece") });
   if (found !== null && "body" in found) {
     const body = bodies[found.body];
     // 35e2h: carried along the face by what its body's Moves did since it was drawn. Planted bug ("sketch-not-carried"): only its height follows.
@@ -1060,6 +1069,33 @@ function placeSketch(item: SketchItem, done: Record<string, ItemResult>, faults:
  * now after drawn undone, turns by now.a − drawn.a and takes the world's
  * origin to now.t − R(that) drawn.t. Left out when that is no motion.
  */
+/**
+ * The middle of a sketch's own points (face-sketch.ts `sketchMiddle`: the
+ * box round them), in its face's coordinates, which read as the world's
+ * (x, y): the points of the curves still there (a polygon's side k from
+ * corner k to corner k + 1; a slot's bottom, right arc with its centre,
+ * top, left arc with its centre; a circle's centre), the origin with none.
+ */
+export function sketchMiddle(item: Extract<ModelItem, { kind: "sketch" }>): readonly [number, number] {
+  const s = item.shape;
+  const points: (readonly number[])[] = [];
+  item.curves.forEach((c, k) => {
+    if (c === null) return;
+    if (s.kind === "circle") points.push(s.centre);
+    else if (s.kind === "polygon") points.push(s.corners[k], s.corners[(k + 1) % s.corners.length]);
+    else {
+      const [x, y] = s.at;
+      const [l, r] = [s.length, s.radius];
+      const a = [x, y - r], b = [x + l, y - r], t1 = [x + l, y + r], t2 = [x, y + r];
+      points.push(...[[a, b], [b, t1, [x + l, y]], [t1, t2], [t2, a, [x, y]]][k]);
+    }
+  });
+  if (points.length === 0) return [0, 0];
+  const xs = points.map((p) => p[0]);
+  const ys = points.map((p) => p[1]);
+  return [(Math.min(...xs) + Math.max(...xs)) / 2, (Math.min(...ys) + Math.max(...ys)) / 2];
+}
+
 function turnSince(now: Motion2 | undefined, drawn: Motion2 | undefined): Turn | undefined {
   const n = now ?? { a: 0, t: [0, 0] };
   const d = drawn ?? { a: 0, t: [0, 0] };
