@@ -2,8 +2,8 @@
 // build with `?all` (which turns the home screen on; E2E_DIST names another build). Without it there is no home screen and
 // no background.
 // - A first visit: the background moves (two pictures 600 ms apart differ), paints something, and turns the neutral cube,
-//   which builds up from the floor, has a ripple of light run through it, and has its top face pulled out and let back
-//   (the story's stages in order, within 30 s).
+//   which opens already built with a ripple of light running through it within 3 s (never a build first: Ben, 2026-11-21),
+//   has its top face pulled out and let back, then the next story builds the next part up from the floor (in order).
 // - With a project kept and reopened under the screen, the background turns that project's own shape, painted solid (its
 //   faces, the lines behind them hidden), and is unseen until it is ready: from the first frame it shows that shape at
 //   the one place and size it keeps (Ben, 2026-11-16: it showed bigger and shrank a second later).
@@ -238,6 +238,12 @@ await check("without ?all there is no home screen, so no background", async () =
     const { context, page } = await newPage({ clock: "paused" });
     await homeShown(page);
     await ready(page);
+    // Opened on the cube already built, and a ripple within 3 s (the story below).
+    await until(page, () => document.querySelector("#home .home-backdrop").dataset.build !== undefined, null, "the first frame", 1000);
+    const opened = await page.$eval("#home .home-backdrop", (c) => Number(c.dataset.build));
+    assert.ok(opened >= 0.9, `built from the first frame (built ${opened})`);
+    await until(page, () => document.querySelector("#home .home-backdrop").dataset.stage === "ripple", null, "a ripple within 3 s", 3000);
+    assert.equal(await page.$eval("#home .home-backdrop", (c) => c.dataset.build), "1.0");
     assert.equal(await mode(page), "live");
     assert.equal(await shape(page), "neutral");
     assert.equal(await page.$eval("#home .home-backdrop", (c) => c.dataset.faces), "6", "the cube's six faces painted");
@@ -249,25 +255,29 @@ await check("without ?all there is no home screen, so no background", async () =
     assert.ok((await picture(page)) !== a, "two pictures 600 ms apart differ");
     assert.ok((await painted(page)) > 200, "something is painted");
     assert.equal(await page.$eval("#home .home-backdrop", (c) => c.getAttribute("aria-hidden")), "true");
-    // The story: it builds up from the floor (half built 5.4 s in), a ripple runs through it (12 to 17.6 s), then the top
-    // face is pulled out (the cube's top, out by 0.24 of its size, 20.9 to 24.5 s) and let back (by 27.4 s).
+    // The story opens on the cube already built (OPEN_AT, Ben 2026-11-21: the build first held every motion back for
+    // 10.8 s, like a slow load): it is drawn at least 0.9 built from the first frame, and a ripple runs through it within
+    // 3 s of the picture being ready (it starts 1.98 s in: story 9.9 s to 11.88 s). Then the top face is pulled out (out by
+    // 0.24 of its size, 20.9 to 24.5 s) and let back (by 27.4 s), and the next story builds from the floor (half built at
+    // 41.4 s: 36 + 5.4). Before the change the first ripple came 12 s after ready.
     const stage = () => document.querySelector("#home .home-backdrop").dataset.stage;
-    await until(page, () => document.querySelector("#home .home-backdrop").dataset.build === "0.5", null, "half built", 12000);
-    assert.equal(await page.evaluate(stage), "building");
-    // Printed: the slice laid down now is drawn (the cube's four walls cut, so 4 or more pieces), and the words under it
-    // say so, with no layer numbers for a sample part, which is named as one (round 10).
     const words = () => document.querySelector("#home .home-backdrop").dataset.words;
-    assert.equal(await page.evaluate(words), "Printing preview");
-    assert.ok(Number(await page.$eval("#home .home-backdrop", (c) => c.dataset.slice)) >= 4, "the slice drawn");
-    await until(page, () => document.querySelector("#home .home-backdrop").dataset.stage === "ripple", null, "a ripple", 14000);
     await until(page, () => document.querySelector("#home .home-backdrop").dataset.extrude === "0.24", null, "the top face pulled out", 14000);
     assert.equal(await page.evaluate(stage), "extrude");
     assert.equal(await page.evaluate(words), "Extrude top face");
     await until(page, () => document.querySelector("#home .home-backdrop").dataset.extrude === "0.00", null, "the top face back", 10000);
+    // The next story builds the next simple part (the L-bracket) from the floor, as every story after the first does.
+    await until(page, () => document.querySelector("#home .home-backdrop").dataset.build === "0.5" && document.querySelector("#home .home-backdrop").dataset.stage === "building", null, "half built", 20000);
+    assert.equal(await page.evaluate(stage), "building");
+    assert.equal(await page.$eval("#home .home-backdrop", (c) => c.dataset.part), "1");
+    // Printed: the slice laid down now is drawn (the bracket's six walls cut, so 6 or more pieces), and the words under it
+    // say so, with no layer numbers for a sample part, which is named as one (round 10).
+    assert.equal(await page.evaluate(words), "Printing preview");
+    assert.ok(Number(await page.$eval("#home .home-backdrop", (c) => c.dataset.slice)) >= 6, "the slice drawn");
     if (shots) {
       await page.screenshot({ path: `${shots}/home-empty-1280.png` });
-      // The next story builds the next simple part (the L-bracket), part way up.
-      await until(page, () => document.querySelector("#home .home-backdrop").dataset.part === "1" && document.querySelector("#home .home-backdrop").dataset.build === "0.7", null, "the bracket building", 45000);
+      // The bracket part way up.
+      await until(page, () => document.querySelector("#home .home-backdrop").dataset.part === "1" && document.querySelector("#home .home-backdrop").dataset.build === "0.7", null, "the bracket building", 10000);
       await page.screenshot({ path: `${shots}/home-empty-1280-build.png` });
     }
     await context.close();
@@ -280,6 +290,8 @@ await check("without ?all there is no home screen, so no background", async () =
       // From its first frame (marked ready) it is the project's shape, at one place and size, kept for the next 3 s.
       assert.match(await shape(page), /^project \d+$/);
       assert.equal(await page.$eval("#home .home-backdrop", (c) => c.dataset.faces), "6", "the box's six faces painted");
+      await until(page, () => document.querySelector("#home .home-backdrop").dataset.build !== undefined, null, "the first frame", 1000);
+      assert.ok(Number(await page.$eval("#home .home-backdrop", (c) => c.dataset.build)) >= 0.9, "the project built from the first frame (OPEN_AT)");
       await wait(page, 3000);
       const seen = await page.evaluate(() => window.__picture);
       const first = seen.findIndex((e) => e.ready === "yes");
@@ -291,8 +303,6 @@ await check("without ?all there is no home screen, so no background", async () =
       assert.ok(after.every((e) => e.place === after[0].place), `one place and size: ${[...new Set(after.map((e) => e.place))].join(" then ")}`);
       assert.ok(seen.slice(first).every((e) => /^project \d+$/.test(e.shape ?? "")), "the project's shape from the first frame");
       assert.equal(await mode(page), "live");
-      // The words under the design while it prints: the box is 20 mm tall, so 100 layers of 0.2 mm (round 10).
-      if (!stl) await until(page, () => /^Printing preview · layer \d+ of 100$/.test(document.querySelector("#home .home-backdrop").dataset.words ?? ""), null, "the layer words", 45000);
       // Nothing runs off the side.
       assert.equal(await page.evaluate(() => document.getElementById("home").scrollWidth <= window.innerWidth), true);
       // The words straight on the picture (the title, the guide link) against the brightest pixel behind them, read from a
@@ -303,9 +313,7 @@ await check("without ?all there is no home screen, so no background", async () =
           await page.evaluate(({ lines, surface }) => window.fissionTest.homeStandIn(lines, surface), stlSolid(readFileSync(stl)));
           await until(page, () => /^project \d+$/.test(document.querySelector("#home .home-backdrop")?.dataset.shape ?? ""), null, "the STL's shape", 3000);
         }
-        // Part way through building (the next story's, if this one's has gone by), then the ripple and the extrude.
-        await until(page, () => document.querySelector("#home .home-backdrop").dataset.build === "0.6" && document.querySelector("#home .home-backdrop").dataset.stage === "building", null, "part built", 45000);
-        await page.screenshot({ path: `${shots}/home-${width}-${scheme}-build.png` });
+        // Opened built: the first ripple (within 3 s of opening), the top face pulled out, then the next story's build.
         await until(page, () => document.querySelector("#home .home-backdrop").dataset.stage === "ripple", null, "a ripple", 20000);
         await wait(page, 1500);
         await page.screenshot({ path: `${shots}/home-${width}-${scheme}.png` });
@@ -313,7 +321,11 @@ await check("without ?all there is no home screen, so no background", async () =
           await until(page, () => document.querySelector("#home .home-backdrop").dataset.extrude === "0.24", null, "the top face held pulled out", 20000);
           await page.screenshot({ path: `${shots}/home-${width}-${scheme}-extrude.png` });
         }
+        await until(page, () => document.querySelector("#home .home-backdrop").dataset.build === "0.6" && document.querySelector("#home .home-backdrop").dataset.stage === "building", null, "part built", 45000);
+        await page.screenshot({ path: `${shots}/home-${width}-${scheme}-build.png` });
       }
+      // The words under the design while it prints: the box is 20 mm tall, so 100 layers of 0.2 mm (round 10).
+      if (!stl) await until(page, () => /^Printing preview · layer \d+ of 100$/.test(document.querySelector("#home .home-backdrop").dataset.words ?? ""), null, "the layer words", 45000);
       // The picture takes no press: the card's button works.
       await page.click("#home-carry-on");
       await until(page, () => document.getElementById("home").hidden, null, "the home screen going");
@@ -400,8 +412,9 @@ await check("without ?all there is no home screen, so no background", async () =
     await pick("full");
     assert.equal(await mode(page), "live");
     assert.equal(await data("motion"), "full");
-    await until(page, () => document.querySelector("#home .home-backdrop").dataset.stage === "building", null, "the full story building", 3000);
-    await until(page, () => document.querySelector("#home .home-backdrop").dataset.build === "0.5", null, "half built", 8000);
+    // Shown again it opens on the design built, with a ripple running through it within 3 s (OPEN_AT).
+    assert.ok(Number(await data("build")) >= 0.9, "built from the first frame");
+    await until(page, () => document.querySelector("#home .home-backdrop").dataset.stage === "ripple", null, "the full story's ripple", 3000);
     // Auto: gentle again, as the computer asks.
     await pick("system");
     assert.equal(await data("motion"), "gentle");
