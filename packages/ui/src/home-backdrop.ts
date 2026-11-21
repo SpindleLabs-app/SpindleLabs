@@ -693,6 +693,15 @@ export const STORY_SECONDS = 36;
 export const BUILD_END = 0.3;
 export const UNBUILD_AT = 0.9;
 export const FLASH_AT = BUILD_END;
+/**
+ * Where the first story starts once the picture is revealed, as a fraction of the story (Ben, 2026-11-21: the build at
+ * the start held every other motion back for 10.8 s, so it looked like a slow load). It opens on the design already
+ * built, its last layers going down, a little before the flash: the picture's 0.9 s fade-in (home-screen.css) is about
+ * over by the flash, and the first ripple follows a second later. Later stories still build from the floor, as before.
+ */
+export const OPEN_AT = FLASH_AT - 0.025;
+/** Story time, seconds, at which a revealed picture starts: OPEN_AT moving fully; at 0 moving gently (nothing builds, and a simple part fades in at a story's start). Pure. */
+export const openingAt = (gentle: boolean): number => (gentle ? 0 : OPEN_AT * STORY_SECONDS);
 export const RIPPLES: readonly (readonly [number, number])[] = [
   [0.33, 0.49],
   [0.78, 0.9],
@@ -1306,7 +1315,7 @@ export interface Backdrop {
   setSource(source: () => ArrayLike<number> | null, faces?: () => Surface | null): void;
   /**
    * With `waits` (the home screen): the list is painted and the design is here (or will not come), so the picture is shown,
-   * placed and sized for good from its first frame, its story starting with the build. Before this nothing is drawn.
+   * placed and sized for good from its first frame, its story opening on the design already built (OPEN_AT). Before this nothing is drawn.
    */
   reveal(): void;
   /** The words moved (the list scrolled or changed): a still picture is drawn again in the room left (a moving one follows by itself). */
@@ -2194,7 +2203,7 @@ export function homeBackdrop(canvas: HTMLCanvasElement, env: Env = { win: window
       shown = true;
       reshape();
       place = null; // placed where it belongs from the first frame, never eased in from somewhere else
-      story = 0; // the story starts with the build
+      story = openingAt(gentle()); // opens on the design already built, never on its build (OPEN_AT)
       stillAt = STILL_AT;
       turnOffset = 0;
       turnCalm = gentle();

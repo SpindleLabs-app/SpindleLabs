@@ -2,7 +2,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { clipUnder, faceFrame, faceMix, facesViewer, fitSurface, groupFaces, LIGHT, NEUTRAL_SURFACES, Occluder, OCCLUDE_BIAS, prismSurface, surfaceVolume, toneOf, triangulate, visibleRuns, type Surface } from "../src/home-backdrop.ts";
-import { pushWords, extentOf, EXTRUDE_IN, EXTRUDE_OUT, extrudeAmount, hslOf, linksOf, placeShape, shadesOf, SPARK_SPEED, stepSpark, topFace, fitShape, flash, FLASH_AT, floorOf, FRAME_MS, homeBackdrop, lowEnd, luminance, makeTraces, MAX_ALPHA, NEUTRAL_SHAPE, project, rgbOf, depthCue, seeded, sizeWords, growthAt, growthLife, grownPath, GROW_SPEED, GROW_HOLD, GROW_FADE, makeMotes, moteAt, MOTE_LOW, MOTE_HIGH, NEUTRAL_SHAPES, prismEdges, QUALITY, WARM_FRAMES, SLOW_WINDOW, median, STORY_SECONDS, storyPhase, buildAt, BUILD_END, UNBUILD_AT, rippleAt, RIPPLE_REACH, glowOf, cornerOf, sphereGap, reachOf, CAMERA, dolly, DOLLY, DOLLY_SECONDS, ABOVE, BELOW } from "../src/home-backdrop.ts";
+import { pushWords, extentOf, EXTRUDE_IN, EXTRUDE_OUT, extrudeAmount, hslOf, linksOf, placeShape, shadesOf, SPARK_SPEED, stepSpark, topFace, fitShape, flash, FLASH_AT, OPEN_AT, openingAt, floorOf, FRAME_MS, homeBackdrop, lowEnd, luminance, makeTraces, MAX_ALPHA, NEUTRAL_SHAPE, project, rgbOf, depthCue, seeded, sizeWords, growthAt, growthLife, grownPath, GROW_SPEED, GROW_HOLD, GROW_FADE, makeMotes, moteAt, MOTE_LOW, MOTE_HIGH, NEUTRAL_SHAPES, prismEdges, QUALITY, WARM_FRAMES, SLOW_WINDOW, median, STORY_SECONDS, storyPhase, buildAt, BUILD_END, UNBUILD_AT, rippleAt, RIPPLE_REACH, glowOf, cornerOf, sphereGap, reachOf, CAMERA, dolly, DOLLY, DOLLY_SECONDS, ABOVE, BELOW } from "../src/home-backdrop.ts";
 import { GENTLE_FPS, gentleGrowthAt, GENTLE_FADE_IN, GENTLE_TURN, GENTLE_DRIFT, TURN_SECONDS, partFade, PART_FADE, pauseAt, STILL_AT, motionChoiceOf, MOTION_CHOICES, type MotionChoice } from "../src/home-backdrop.ts";
 
 const near = (a: number, b: number, tol = 1e-9) => assert.ok(Math.abs(a - b) <= tol, `${a} vs ${b}`);
@@ -406,6 +406,25 @@ test("a body that arrives after the screen opened replaces the neutral cube with
   tick!(); // the same array again: not fitted or drawn again
   assert.equal(strokes, 0);
   b.stop();
+});
+
+test("hand-worked: a revealed picture opens on the design built, just before the flash, and the first ripple follows", () => {
+  const S = STORY_SECONDS;
+  // OPEN_AT = 0.3 − 0.025 = 0.275 of a 36 s story: 9.9 s in.
+  near(OPEN_AT, 0.275);
+  near(openingAt(false), 9.9);
+  // Built: smoothstep(0.275 / 0.3 = 0.91667) = 0.91667² × (3 − 1.83333) = 0.84028 × 1.16667 = 0.98032.
+  near(buildAt(openingAt(false)), 0.98032, 1e-5);
+  // The flash peaks 0.025 × 36 = 0.9 s later (as the 0.9 s fade-in ends); at the opening it is 0.6 e^−1 = 0.22073.
+  near(flash(openingAt(false)), 0.6 * Math.exp(-1));
+  near(FLASH_AT * S - openingAt(false), 0.9);
+  // The first ripple: none at the opening, then from 0.33 × 36 = 11.88 s, 1.98 s after it (it was 11.88 s after when
+  // the story opened with the build).
+  assert.equal(rippleAt(openingAt(false)), null);
+  assert.equal(rippleAt(11.87), null);
+  assert.equal(rippleAt(11.89)!.which, 0);
+  // Moving gently nothing builds and a simple part fades in at a story's start, so it opens at 0.
+  assert.equal(openingAt(true), 0);
 });
 
 test("hand-worked: the story: building, the flash, the ripples, sinking back; the depth cue and the turntable's height", () => {
@@ -846,7 +865,7 @@ test("hand-worked: one frame of the cube's faces: what is painted, in what order
   for (let k = 1; k < half.paint.length; k++) assert.ok(half.paint[k - 1].depth >= half.paint[k].depth, "farthest first");
 });
 
-test("waiting for the screen: nothing drawn until revealed, then placed for good and the story starts with the build", () => {
+test("waiting for the screen: nothing drawn until revealed, then placed for good and the story opens on the design built", () => {
   let strokes = 0;
   let fills = 0;
   let frame: ((t: number) => void) | null = null;
@@ -881,8 +900,11 @@ test("waiting for the screen: nothing drawn until revealed, then placed for good
   clock += 40;
   frame!(clock);
   assert.ok(strokes > 0);
-  assert.equal(canvas.dataset.stage, "building"); // the story starts at the start: the build
-  assert.equal(canvas.dataset.build, "0.0");
+  // The story opens at OPEN_AT (9.9 s of 36, plus this frame's 0.04 s), never on the build (Ben, 2026-11-21: 10.8 s of
+  // build held every other motion back): smoothstep(9.94 / 10.8 = 0.9204) = 0.9204² × (3 − 2 × 0.9204) = 0.982, shown
+  // to one decimal as 1.0; its last layers still going down (it was "0.0" when the story started with the build).
+  assert.equal(canvas.dataset.stage, "building");
+  assert.equal(canvas.dataset.build, "1.0");
   b.stop();
   assert.equal(canvas.dataset.ready, undefined); // shown again only once revealed again
   // Without faces (a design that gives only lines) nothing is painted solid.
