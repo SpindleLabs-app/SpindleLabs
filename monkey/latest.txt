@@ -1,4 +1,4 @@
-tested commit f21c122 on main, 2026-11-20 21:08 UTC (https://github.com/SpindleLabs-app/SpindleLabs/actions/runs/44758875463)
-Monkey, seeds 202611200-202611201: 2 session(s) of 2000 actions in Chromium; 2 Combines made of 17 tried; 1 FAILED
-seed 202611200: pass (2000 actions)
-seed 202611201: FAIL: no kernel body leaks: the kernel holds 37 bodies, the Bodies group lists 13, and its Moves and Combines keep 4 bodies as they were
+tested commit 13cea5a on main, 2026-11-21 21:04 UTC (https://github.com/SpindleLabs-app/SpindleLabs/actions/runs/44916814284)
+Monkey, seeds 202611210-202611211: 2 session(s) of 2000 actions in Chromium; 10 Combines made of 29 tried; every check passed after every action
+seed 202611210: pass (2000 actions)
+seed 202611211: pass (2000 actions)
