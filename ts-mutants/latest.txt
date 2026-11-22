@@ -1,4 +1,4 @@
-tested commit 13cea5a on main, 2026-11-21 21:04 UTC (https://github.com/SpindleLabs-app/SpindleLabs/actions/runs/44916814284)
+tested commit 13cea5a on main, 2026-11-22 20:25 UTC (https://github.com/SpindleLabs-app/SpindleLabs/actions/runs/45035840508)
 All files   |  97.11 |   97.11 |      627 |        11 |         19 |        0 |        0 |
  feature.ts | 100.00 |  100.00 |       23 |         0 |          0 |        0 |        0 |
  history.ts |  96.30 |   96.30 |      380 |        10 |         15 |        0 |        0 |
@@ -29,9 +29,9 @@ UNEXPLAINED survivor at workspaces/design/src/document.ts:1911: workspaces/desig
 UNEXPLAINED survivor at workspaces/design/src/document.ts:1653: workspaces/design/src/document.ts | StringLiteral | "Intersect " => ""
 UNEXPLAINED survivor at workspaces/design/src/document.ts:1871: workspaces/design/src/document.ts | EqualityOperator | there.at >= byId.get(f.id)!.at => there.at > byId.get(f.id)!.at
 UNEXPLAINED survivor at workspaces/design/src/document.ts:1895: workspaces/design/src/document.ts | EqualityOperator | there.at >= byId.get(f.id)!.at => there.at > byId.get(f.id)!.at
+UNEXPLAINED survivor at workspaces/design/src/document.ts:1854: workspaces/design/src/document.ts | StringLiteral | "bodies" => ""
 UNEXPLAINED survivor at workspaces/design/src/document.ts:1854: workspaces/design/src/document.ts | StringLiteral | `${at} names` => ``
 UNEXPLAINED survivor at workspaces/design/src/document.ts:1897: workspaces/design/src/document.ts | StringLiteral | `${at} names` => ``
-UNEXPLAINED survivor at workspaces/design/src/document.ts:1854: workspaces/design/src/document.ts | StringLiteral | "bodies" => ""
 UNEXPLAINED survivor at workspaces/design/src/document.ts:1860: workspaces/design/src/document.ts | ConditionalExpression | maker !== null => true
 UNEXPLAINED survivor at workspaces/design/src/document.ts:1861: workspaces/design/src/document.ts | LogicalOperator | there === undefined || there.at >= byId.get(f.id)!.at || !isBodyOf(d, byId, id as string) => (there === undefined || there.at >= byId.get(f.id)!.at) && !isBodyOf(d, byId, id as string)
 UNEXPLAINED survivor at workspaces/design/src/document.ts:1895: workspaces/design/src/document.ts | LogicalOperator | there === undefined || there.at >= byId.get(f.id)!.at || !isBodyOf(d, byId, id as string) => (there === undefined || there.at >= byId.get(f.id)!.at) && !isBodyOf(d, byId, id as string)
@@ -113,7 +113,7 @@ All files       |  96.76 |   96.76 |     1277 |         9 |         43 |        
  views.ts       |  96.43 |   96.43 |      270 |         0 |         10 |        0 |        0 |
 viewport: 43 survivors, all explained: true
  features.ts    | 100.00 |  100.00 |       50 |         0 |          0 |        0 |        0 |
- hosted.ts      |  99.16 |   99.16 |      471 |         3 |          4 |        0 |        0 |
+ hosted.ts      |  98.95 |   98.95 |      473 |         0 |          5 |        0 |        0 |
  http.ts        |  97.20 |   97.20 |       90 |        14 |          3 |        0 |        0 |
  keys.ts        | 100.00 |  100.00 |       51 |         0 |          0 |        0 |        0 |
  local.ts       |  98.03 |   98.03 |      248 |         1 |          5 |        0 |        0 |
@@ -121,16 +121,18 @@ viewport: 43 survivors, all explained: true
  prompt.ts      | 100.00 |  100.00 |       48 |         0 |          0 |        0 |        0 |
  providers.ts   |  98.50 |   98.50 |      197 |         0 |          3 |        0 |        0 |
  specialists.ts | 100.00 |  100.00 |       35 |         0 |          0 |        0 |        0 |
-explained.json lists a mutant that no longer survives (remove it): packages/ai/src/hosted.ts | UpdateOperator | events++ => events--
-ai: 22 survivors, all explained: true
-1 problem(s): kill each survivor with a test, or explain in explained.json why no caller can tell
+ai: 23 survivors, all explained: true
 All files                |  89.94 |   89.94 |     1307 |        52 |        152 |        0 |        0 |
  boolean-naming-model.ts |  89.94 |   89.94 |     1307 |        52 |        152 |        0 |        0 |
 naming: 152 survivors, all explained: true
 All files         |  93.90 |   93.90 |      856 |         6 |         56 |        0 |        0 |
  boolean-names.ts |  93.90 |   93.90 |      856 |         6 |         56 |        0 |        0 |
 combine: 56 survivors, all explained: true
-print: no report (the job stopped before the check)
+All files       |  88.41 |   88.41 |     1981 |        33 |        264 |        0 |        0 |
+ overhang.ts    |  92.74 |   92.74 |      115 |         0 |          9 |        0 |        0 |
+ print-check.ts |  82.58 |   82.58 |     1013 |        30 |        220 |        0 |        0 |
+ slice-run.ts   |  96.07 |   96.07 |      853 |         3 |         35 |        0 |        0 |
+print: 264 survivors, all explained: true
 All files          |  97.30 |   97.30 |     1816 |        55 |         52 |        0 |        0 |
  kernel            |  95.88 |   95.88 |      977 |        48 |         44 |        0 |        0 |
  print             |  99.06 |   99.06 |      839 |         7 |          8 |        0 |        0 |
