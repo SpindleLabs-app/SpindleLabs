@@ -1,4 +1,4 @@
-tested commit 13cea5a on main, 2026-11-22 20:25 UTC (https://github.com/SpindleLabs-app/SpindleLabs/actions/runs/45035840508)
+tested commit 13cea5a on main, 2026-11-23 20:25 UTC (https://github.com/SpindleLabs-app/SpindleLabs/actions/runs/45200293397)
 All files   |  97.11 |   97.11 |      627 |        11 |         19 |        0 |        0 |
  feature.ts | 100.00 |  100.00 |       23 |         0 |          0 |        0 |        0 |
  history.ts |  96.30 |   96.30 |      380 |        10 |         15 |        0 |        0 |
@@ -29,9 +29,9 @@ UNEXPLAINED survivor at workspaces/design/src/document.ts:1911: workspaces/desig
 UNEXPLAINED survivor at workspaces/design/src/document.ts:1653: workspaces/design/src/document.ts | StringLiteral | "Intersect " => ""
 UNEXPLAINED survivor at workspaces/design/src/document.ts:1871: workspaces/design/src/document.ts | EqualityOperator | there.at >= byId.get(f.id)!.at => there.at > byId.get(f.id)!.at
 UNEXPLAINED survivor at workspaces/design/src/document.ts:1895: workspaces/design/src/document.ts | EqualityOperator | there.at >= byId.get(f.id)!.at => there.at > byId.get(f.id)!.at
-UNEXPLAINED survivor at workspaces/design/src/document.ts:1854: workspaces/design/src/document.ts | StringLiteral | "bodies" => ""
 UNEXPLAINED survivor at workspaces/design/src/document.ts:1854: workspaces/design/src/document.ts | StringLiteral | `${at} names` => ``
 UNEXPLAINED survivor at workspaces/design/src/document.ts:1897: workspaces/design/src/document.ts | StringLiteral | `${at} names` => ``
+UNEXPLAINED survivor at workspaces/design/src/document.ts:1854: workspaces/design/src/document.ts | StringLiteral | "bodies" => ""
 UNEXPLAINED survivor at workspaces/design/src/document.ts:1860: workspaces/design/src/document.ts | ConditionalExpression | maker !== null => true
 UNEXPLAINED survivor at workspaces/design/src/document.ts:1861: workspaces/design/src/document.ts | LogicalOperator | there === undefined || there.at >= byId.get(f.id)!.at || !isBodyOf(d, byId, id as string) => (there === undefined || there.at >= byId.get(f.id)!.at) && !isBodyOf(d, byId, id as string)
 UNEXPLAINED survivor at workspaces/design/src/document.ts:1895: workspaces/design/src/document.ts | LogicalOperator | there === undefined || there.at >= byId.get(f.id)!.at || !isBodyOf(d, byId, id as string) => (there === undefined || there.at >= byId.get(f.id)!.at) && !isBodyOf(d, byId, id as string)
@@ -116,7 +116,7 @@ viewport: 43 survivors, all explained: true
  hosted.ts      |  98.95 |   98.95 |      473 |         0 |          5 |        0 |        0 |
  http.ts        |  97.20 |   97.20 |       90 |        14 |          3 |        0 |        0 |
  keys.ts        | 100.00 |  100.00 |       51 |         0 |          0 |        0 |        0 |
- local.ts       |  98.03 |   98.03 |      248 |         1 |          5 |        0 |        0 |
+ local.ts       |  98.03 |   98.03 |      249 |         0 |          5 |        0 |        0 |
  ollama.ts      |  97.70 |   97.70 |      170 |         0 |          4 |        0 |        0 |
  prompt.ts      | 100.00 |  100.00 |       48 |         0 |          0 |        0 |        0 |
  providers.ts   |  98.50 |   98.50 |      197 |         0 |          3 |        0 |        0 |

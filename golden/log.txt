@@ -93,3 +93,4 @@
 2026-11-20 21:08,f21c122,main,seed 1795186841, 50 rounds of 14 models; every answer right and the same every round; replay: FISSION_SEED=1795186841 FISSION_GOLDEN_ROUNDS=50 npm run golden -w @fission/testing
 2026-11-21 21:04,13cea5a,main,seed 1795273236, 50 rounds of 14 models; every answer right and the same every round; replay: FISSION_SEED=1795273236 FISSION_GOLDEN_ROUNDS=50 npm run golden -w @fission/testing
 2026-11-22 20:25,13cea5a,main,seed 1795359636, 50 rounds of 14 models; every answer right and the same every round; replay: FISSION_SEED=1795359636 FISSION_GOLDEN_ROUNDS=50 npm run golden -w @fission/testing
+2026-11-23 20:25,13cea5a,main,seed 1795446052, 50 rounds of 14 models; every answer right and the same every round; replay: FISSION_SEED=1795446052 FISSION_GOLDEN_ROUNDS=50 npm run golden -w @fission/testing
