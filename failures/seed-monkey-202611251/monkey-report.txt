@@ -1,0 +1,2 @@
+Monkey, seeds 202611250-202611251: 2 session(s) of 2000 actions in Chromium; 1 Combine made of 6 tried; 1 FAILED
+failure: no errors: uncaught: Cannot set properties of null (setting 'textContent') | seed 202611251 at action 328; replay: cd apps/fission && npm run build && FISSION_SEED=202611251 MONKEY_STEPS=2000 node e2e/monkey.mjs

@@ -1,0 +1,43 @@
+{
+  "seed": 202611251,
+  "failure": {
+    "check": "no errors",
+    "message": "uncaught: Cannot set properties of null (setting 'textContent')"
+  },
+  "shrunk": true,
+  "replayed": true,
+  "actions": [
+    {
+      "do": "canvas",
+      "x": 0.418,
+      "y": 0.449,
+      "double": false
+    },
+    {
+      "do": "resize",
+      "size": [
+        820,
+        600
+      ]
+    },
+    {
+      "do": "click",
+      "sel": "#command-search-button"
+    },
+    {
+      "do": "round-trip"
+    },
+    {
+      "do": "wheel",
+      "x": 0.721,
+      "y": 0.554,
+      "dy": 100
+    },
+    {
+      "do": "canvas",
+      "x": 0.396,
+      "y": 0.564,
+      "double": false
+    }
+  ]
+}
