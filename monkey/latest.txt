@@ -1,4 +1,4 @@
-tested commit 13cea5a on main, 2026-11-25 20:59 UTC (https://github.com/SpindleLabs-app/SpindleLabs/actions/runs/45640240623)
-Monkey, seeds 202611250-202611251: 2 session(s) of 2000 actions in Chromium; 1 Combine made of 6 tried; 1 FAILED
-seed 202611250: pass (2000 actions)
-seed 202611251: FAIL: no errors: uncaught: Cannot set properties of null (setting 'textContent')
+tested commit 13cea5a on main, 2026-11-26 21:07 UTC (https://github.com/SpindleLabs-app/SpindleLabs/actions/runs/45844641680)
+Monkey, seeds 202611260-202611261: 2 session(s) of 2000 actions in Chromium; 1 Combine made of 31 tried; every check passed after every action
+seed 202611260: pass (2000 actions)
+seed 202611261: pass (2000 actions)
