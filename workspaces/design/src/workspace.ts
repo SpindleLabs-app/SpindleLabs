@@ -38,7 +38,7 @@ import { chamferArrow, refusedEdges, snapChamfer, wedgeMesh } from "./chamfer-ar
 import { patternShown } from "./pattern-flag.ts";
 import { patternPanel } from "./pattern-panel.ts";
 import { copiesMesh, editPreviewOff, patternHintWords, readPatternBoxes, refusalWords, startSpacing } from "./pattern-tool.ts";
-import { changedPattern, editablePattern, insertPattern, PATTERN_STEP, patternProblem, patternRequest, turnAxes, turnAxisItem, turnAxisProblem } from "./pattern.ts";
+import { changedPattern, editablePattern, insertPattern, PATTERN_STEP, patternCopyMakers, patternProblem, patternRequest, turnAxes, turnAxisItem, turnAxisProblem } from "./pattern.ts";
 import { constructShown } from "./construct-flag.ts";
 import { constructView } from "./construct-view.ts";
 import { KIND_GROUPS, kindTitle } from "./construct-tool.ts";

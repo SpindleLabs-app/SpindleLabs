@@ -101,3 +101,32 @@ test("control: a click on Body 2's top (x 15..25) still picks Body 2, by its fac
   assert.deepEqual(a.doc().timeline.features.at(-1)!.intent.parameters.bodies, ["body:feature-2/piece:1"]);
   await a.close();
 });
+
+test("Chamfer through its panel: Body 2's top front edge, whose name only looks unique because Pattern 2 changed Body 3, is refused in words, never recorded (A1-2)", async () => {
+  const { setChamferShown } = await import("../../../workspaces/design/src/chamfer-flag.ts");
+  setChamferShown(true);
+  // Pattern 2 joins Body 3 (piece:2) with a copy 5 along X, so Body 3 is x 30..45 and Body 2's names look its own.
+  const first = await app(row());
+  const numbered = first.doc();
+  await first.close();
+  const p2 = insertPattern(numbered, ["body:feature-2/piece:2"], { kind: "linear", direction: "X", spacing: 5, count: 2, join: true });
+  const a = await app(p2.doc);
+  const items = a.doc().timeline.features.length;
+  a.$("#modify-menu")!.click(); await a.settle();
+  (a.$("#modify-menu-chamfer") as HTMLElement).click(); await a.settle();
+  // The drawn edge at y 0, z 10, x 15..25: Body 2's top front edge.
+  const m = a.mesh()!;
+  let edge = -1;
+  for (let s = 0; s < m.edge_line_edges.length; s++) {
+    const p = m.edge_lines.slice(6 * s, 6 * s + 6);
+    if (p[1] === 0 && p[4] === 0 && p[2] === 10 && p[5] === 10 && Math.min(p[0], p[3]) >= 15 && Math.max(p[0], p[3]) <= 25) edge = m.edge_line_edges[s];
+  }
+  assert.ok(edge >= 0, "Body 2's top front edge drawn");
+  await a.pick({ face: null, edge });
+  const d = a.$("#chamfer-distance") as HTMLInputElement;
+  d.value = "2"; d.dispatchEvent(new a.window.Event("input") as never); await a.settle();
+  (a.$("#chamfer-ok") as HTMLButtonElement).click(); await a.settle();
+  assert.equal(a.doc().timeline.features.length, items, "no Chamfer recorded");
+  assert.match(a.$("#chamfer-panel")!.textContent ?? "", /no name of its own/);
+  await a.close();
+});
