@@ -152,7 +152,8 @@ test("Slice asks the engine for the stacked files with the choices and says what
   const calls: unknown[][] = [];
   const { doc, panel } = panelIn(async (...a) => (calls.push(a), { layers: 12, filamentMm: 1000, filamentG: 3, printTimeS: 600, unprintedVolume: 0 }));
   await panel.slice();
-  assert.equal(calls[0][0], "slice_stl");
+  // The P1S's file is the default, so Slice slices as that file does (A2-3); plain G-code's slice_stl is tested below.
+  assert.equal(calls[0][0], "print_file_stl");
   assert.equal(calls[0][2], PRINT_DEFAULTS.layerHeight);
   assert.equal((calls[0][1] as Uint8Array).length, 3 * 134, "three bodies' files back to back");
   assert.match(doc.querySelector(".slice-page-slice-words")!.textContent!, /^12 layers, /);
@@ -597,10 +598,10 @@ test("the filament: Bambu PLA Basic for the P1S's file and Generic PLA for plain
   assert.equal(calls[0][10], "bambu-pla-basic", "the P1S's file goes with Bambu PLA Basic");
   assert.match(words(), /about 10 min of printing with Bambu PLA Basic \(plus heating/);
   assert.doesNotMatch(saved[0].suggestedName, /pla/, "the file's own default is not in its name");
-  // The Slice button, which asks the plain slice, agrees with the P1S file: Bambu PLA Basic, not the plain file's Generic PLA.
+  // The Slice button slices as the P1S file does (A2-3), so it agrees with it: Bambu PLA Basic, not the plain file's Generic PLA.
   await panel.slice();
-  assert.equal(calls[1][0], "slice_stl");
-  assert.equal(calls[1][8], "bambu-pla-basic");
+  assert.equal(calls[1][0], "print_file_stl");
+  assert.equal(calls[1][10], "bambu-pla-basic");
   calls.length = 0;
   // Plain G-code follows with Generic PLA: the box moves with the file while none is picked.
   set("format", "1");
@@ -630,4 +631,109 @@ test("the filament: Bambu PLA Basic for the P1S's file and Generic PLA for plain
   // A kept value that is not a filament is ignored.
   const junk = panelIn(async () => answer, objects, { storage: { getItem: () => "abs", setItem: () => undefined } });
   assert.equal(junk.panel.choices().filament, "auto");
+});
+
+// ---- Bug sweep 2026-11-28 (A2-1, A2-2, A2-3) ----
+
+test("a design change while another workspace was shown marks the last slice out of date on waking: its words and cost line go; an unchanged design keeps them (A2-1)", async () => {
+  const window = new Window();
+  const doc = window.document as unknown as Document;
+  const slot = () => doc.body.appendChild(doc.createElement("div"));
+  // The box's top: z 20 at first, then the person types Height 30 in Design. By hand 20 / 0.2 = 100 layers, 30 / 0.2 = 150:
+  // after the change the "100 layers" result is not the plate's any more.
+  let top = 20;
+  const registry = new RepresentationRegistry();
+  registry.registerProducer("fake.body", "mesh", () => ({ kind: "mesh", positions: [0, 0, 0, 1, 0, 0, 0, 1, top], indices: [0, 1, 2] }));
+  registry.registerProducer("fake.body", "data", () => ({ kind: "data", values: { format: "stl", bytes: triangle(top) } }));
+  const one = [{ type: "fake.body", id: "a", label: "Body a" }];
+  registry.registerLister("design", () => one);
+  const result = { layers: 100, filamentMm: 2730, filamentG: 8.1, printTimeS: 720, unprintedVolume: 0, package: new Uint8Array(0) };
+  const ctx = { project: {}, toolbar: slot(), browser: slot(), properties: slot(), representations: registry, kernel: { call: async () => result, stopSlicing: () => undefined }, viewport: { showBody: () => null, fit: () => null } } as unknown as WorkspaceContext;
+  const page = mountSlicePage(ctx);
+  await page.ready;
+  const words = () => ctx.properties.querySelector(".slice-page-slice-words")!.textContent!;
+  const cost = ctx.properties.querySelector("#slice-page-cost") as unknown as HTMLElement;
+  (ctx.properties.querySelector("#slice-page-slice") as unknown as HTMLButtonElement).click();
+  await new Promise((r) => setTimeout(r, 20));
+  assert.match(words(), /^100 layers/);
+  assert.equal(cost.hidden, false);
+  // To Design and back with nothing changed: the result still matches the plate, so it stays.
+  page.sleep!();
+  page.wake!();
+  await new Promise((r) => setTimeout(r, 20));
+  assert.match(words(), /^100 layers/, "an unchanged design keeps its result");
+  // To Design, Height 30, back.
+  page.sleep!();
+  top = 30;
+  page.wake!();
+  await new Promise((r) => setTimeout(r, 20));
+  assert.doesNotMatch(words(), /100 layers/, "the old numbers go");
+  assert.match(words(), /design changed/i, "and the words say why, and to slice again");
+  assert.equal(cost.hidden, true, "the cost line goes with them");
+  page.unmount();
+});
+
+test("Preview clears the last slice's cost line with its words, so no grams or minutes are left without their slice (A2-1)", async () => {
+  const result = { layers: 12, filamentMm: 1000, filamentG: 40, printTimeS: 4800, unprintedVolume: 0, package: new Uint8Array(0), gcode: "G1 X1" };
+  const { doc, panel } = panelIn(async () => result, objects, { openPreview: () => undefined });
+  const cost = doc.getElementById("slice-page-cost") as unknown as HTMLElement;
+  await panel.slice();
+  assert.equal(cost.hidden, false, "a cost line to clear");
+  await panel.preview();
+  assert.equal(doc.querySelector(".slice-page-slice-words")!.textContent, "");
+  assert.equal(cost.hidden, true);
+});
+
+test("a preset picked after a slice clears the slice's words as well as its cost line (A2-2)", async () => {
+  const stored = new Map<string, string>();
+  const settings = { layerHeight: 0.2, walls: 2, infill: 15, supports: "off", warmUp: true, betterGrip: false, format: "p1s", plate: "textured", nozzle: "standard" };
+  stored.set("spindlelabs.slice.presets", JSON.stringify({ version: 1, presets: [{ id: "p-1", name: "Standard", printer: "bambu-p1s", settings, updatedAt: 1 }] }));
+  const storage = { getItem: (k: string) => stored.get(k) ?? null, setItem: (k: string, v: string) => void stored.set(k, v) };
+  // A 20 mm box: the fake engine answers 20 / layer height layers (by hand 20 / 0.16 = 125, 20 / 0.2 = 100).
+  const { doc, panel } = panelIn(async (_n, _stl, lh) => ({ layers: Math.round(20 / (lh as number)), filamentMm: 1000, filamentG: 8, printTimeS: 780, unprintedVolume: 0, package: new Uint8Array(0) }), objects, { storage });
+  const Ev = (doc.defaultView as unknown as { Event: typeof Event }).Event;
+  const quality = choiceSelect(doc, "quality");
+  quality.value = "1"; // Detailed, 0.16 mm
+  quality.dispatchEvent(new Ev("change"));
+  await panel.slice();
+  const words = () => doc.querySelector(".slice-page-slice-words")!.textContent!;
+  assert.match(words(), /^125 layers/);
+  const list = doc.querySelector("#slice-presets-list") as unknown as HTMLSelectElement;
+  list.value = "p-1";
+  list.dispatchEvent(new Ev("change"));
+  assert.equal(panel.choices().layerHeight, 0.2);
+  assert.equal(words(), "", "the 0.16 mm slice's 125 layers never sit beside 0.2 mm");
+});
+
+test("with the P1S's file chosen, Slice slices as the file does, so it refuses what the file refuses and says the file's numbers; plain G-code keeps the plain slice (A2-3)", async () => {
+  // A 20 x 20 x 253 mm box: by hand 253 > the P1S file's 250 mm, so the file refuses it; the plain slice (for any
+  // printer) does not. Slice must not report a print the file the person would send cannot make.
+  const calls: string[] = [];
+  const tall = async (name: string) => {
+    calls.push(name);
+    if (name === "print_file_stl") throw new Error("the part is taller than the P1S's 250 mm: layer 1250 cuts it at z = 250.1 mm");
+    return { layers: 1265, filamentMm: 11000, filamentG: 35, printTimeS: 5880, unprintedVolume: 0 };
+  };
+  const { doc, panel } = panelIn(tall);
+  assert.equal(panel.file().format, "p1s", "the P1S's file is the default");
+  await panel.slice();
+  const words = () => doc.querySelector(".slice-page-slice-words")!.textContent!;
+  assert.deepEqual(calls, ["print_file_stl"]);
+  assert.match(words(), /taller than the P1S's 250 mm/);
+  assert.doesNotMatch(words(), /1265 layers/);
+  assert.equal((doc.getElementById("slice-page-cost") as unknown as HTMLElement).hidden, true, "no cost for a print that can't be made");
+  // The same numbers as Slice and download: the file's 14 min and 8.2 g, not the plain slice's 12 min and 8.1 g.
+  const both = async (name: string) => (name === "print_file_stl" ? { layers: 100, filamentMm: 2730, filamentG: 8.2, printTimeS: 840, unprintedVolume: 0, package: new Uint8Array(0) } : { layers: 100, filamentMm: 2730, filamentG: 8.1, printTimeS: 720, unprintedVolume: 0 });
+  const p1s = panelIn(both);
+  await p1s.panel.slice();
+  assert.match(p1s.doc.querySelector(".slice-page-slice-words")!.textContent!, /8\.2 g.*14 min/);
+  // Plain G-code: the plain slice, as its download.
+  const plainCalls: string[] = [];
+  const plain = panelIn(async (name) => (plainCalls.push(name), { layers: 100, filamentMm: 2730, filamentG: 8.1, printTimeS: 720, unprintedVolume: 0 }));
+  const format = choiceSelect(plain.doc, "format");
+  format.value = [...format.options].findIndex((o) => /G-code/i.test(o.textContent ?? "")).toString();
+  format.dispatchEvent(new (plain.doc.defaultView as unknown as { Event: typeof Event }).Event("change"));
+  assert.equal(plain.panel.file().format, "gcode");
+  await plain.panel.slice();
+  assert.deepEqual(plainCalls, ["slice_stl"]);
 });

@@ -84,6 +84,12 @@ export async function readPlate(registry: RepresentationRegistry, objects: reado
   return { bodies, failed };
 }
 
+/** Whether two reads of the plate are the same bodies, names and triangles. Pure. */
+export function samePlate(a: readonly PlateBody[], b: readonly PlateBody[]): boolean {
+  const same = (x: readonly number[], y: readonly number[]) => x.length === y.length && x.every((v, i) => Object.is(v, y[i]));
+  return a.length === b.length && a.every((p, i) => p.label === b[i].label && same(p.positions, b[i].positions) && same(p.indices, b[i].indices));
+}
+
 /** The page's mounting. */
 export function mountSlicePage(ctx: WorkspaceContext): MountedWorkspace {
   const doc = ctx.toolbar.ownerDocument;
@@ -130,6 +136,8 @@ export function mountSlicePage(ctx: WorkspaceContext): MountedWorkspace {
   });
   ctx.properties.append(panel.element);
 
+  /** The plate read last, to tell on waking whether the design changed under the panel's result. */
+  let lastPlate: PlateBody[] | null = null;
   const show = async () => {
     const mine = ++reading;
     // Design's list is the truth only once that very design has been rebuilt: after a reload, an Open or an Undo here,
@@ -138,6 +146,8 @@ export function mountSlicePage(ctx: WorkspaceContext): MountedWorkspace {
     if (!live || mine !== reading) return;
     const { bodies, failed } = await readPlate(ctx.representations, ctx.representations.objectsOf("design", ctx.project));
     if (!live || mine !== reading) return;
+    if (lastPlate !== null && !samePlate(lastPlate, bodies)) panel.designChanged(); // bug sweep 2026-11-28, A2-1
+    lastPlate = bodies;
     items.replaceChildren(
       ...bodies.map((b) => {
         const li = doc.createElement("li");

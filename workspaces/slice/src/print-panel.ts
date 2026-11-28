@@ -123,8 +123,13 @@ export interface PrintPanel {
   download(): Promise<void>;
   /** Stops a slice under way and drops its file (nothing is saved or previewed); the panel is ready again at once. */
   stop(): void;
+  /** The plate's design changed: a result on screen is cleared and the words say to slice again (never shown stale unmarked). */
+  designChanged(): void;
   destroy(): void;
 }
+
+/** Said in place of a result once the design it was sliced from has changed. */
+export const DESIGN_CHANGED_WORDS = "The design changed since the last slice: Slice again for its layers, plastic and time.";
 
 export function printPanel(doc: Document, parts: PrintPanelParts): PrintPanel {
   let choices: PrintChoices = { ...PRINT_DEFAULTS, warmUp: rememberedWarmUp(parts.storage), betterGrip: rememberedBetterGrip(parts.storage), filament: rememberedFilament(parts.storage) };
@@ -426,7 +431,7 @@ export function printPanel(doc: Document, parts: PrintPanelParts): PrintPanel {
     for (const sync of syncs) sync();
     plateAndNozzleMatter();
     if (fitsShown) showFits();
-    showCost(null);
+    clearResult(); // the words too, not only the cost line: a result never sits beside a preset's other settings (bug sweep 2026-11-28, A2-2)
   };
   const presets = presetBar(doc, parts.storage as Storage | null, {
     current: () => ({ layerHeight: choices.layerHeight, walls: choices.walls, infill: choices.infill, format, plate, nozzle }),
@@ -535,6 +540,7 @@ export function printPanel(doc: Document, parts: PrintPanelParts): PrintPanel {
     }
     busy(true);
     status.textContent = "";
+    showCost(null); // the last slice's cost goes with its words (A2-1)
     try {
       // The file the download would save: the P1S's own G-code (its time, filament and start routine), else the plain slice.
       const files = () => plateFiles(parts.registry, objects);
@@ -596,7 +602,10 @@ export function printPanel(doc: Document, parts: PrintPanelParts): PrintPanel {
     status.textContent = "";
     showCost(null);
     try {
-      const done = await sliceStls(parts.kernel, () => plateFiles(parts.registry, objects), asSliced());
+      // For the P1S's file, the file's own slice (its height limit, start routine and filament), so Slice refuses what Slice
+      // and download refuses and says the same numbers (bug sweep 2026-11-28, A2-3); plain G-code, the plain slice.
+      const files = () => plateFiles(parts.registry, objects);
+      const done = format === "p1s" ? await printFileOfStls(parts.kernel, files, asSliced(), plate, nozzle) : await sliceStls(parts.kernel, files, asSliced());
       if (live && !stopped) {
         status.textContent = sliceWords(done, filamentFor(choices.filament, format));
         showCost(done);
@@ -630,6 +639,13 @@ export function printPanel(doc: Document, parts: PrintPanelParts): PrintPanel {
     slice,
     preview: previewPrint,
     download: downloadFile,
+    designChanged() {
+      if (running || (status.textContent === "" && cost.hidden)) return;
+      clearResult();
+      downloadRepeats.reset();
+      previewRepeats.reset();
+      status.textContent = DESIGN_CHANGED_WORDS;
+    },
     stop() {
       if (!running) return;
       stopped = true;
