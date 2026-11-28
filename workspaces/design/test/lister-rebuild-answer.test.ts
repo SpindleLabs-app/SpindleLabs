@@ -53,13 +53,13 @@ for (const [bx, name, want] of [[10, "control: the Join reaches both cubes (Box 
     assert.deepEqual(r.listed, r.shown, "the bodies offered to other workspaces are the bodies shown");
   });
 
-// A Combine the rebuild fails (a cylinder cut from a box: curved booleans are not built yet, a known limit, so the Combine
-// is red and both bodies stay as they were, 2 bodies shown: the box 24,000 and the cylinder). The data alone says the
-// tool is used up.
-test("a Combine that fails in the rebuild (box cut by a cylinder): other workspaces are offered the 2 bodies Design shows", async () => {
+// A Combine the rebuild fails (a ball cut from a box: the kernel's booleans don't take spheres yet, a known limit, so the
+// Combine is red and both bodies stay as they were, 2 bodies shown: the box 24,000 and the ball). The data alone says the
+// tool is used up. (A cylinder was the tool here until curved Combine built it, kernel 0.33.88.)
+test("a Combine that fails in the rebuild (box cut by a ball): other workspaces are offered the 2 bodies Design shows", async () => {
   let doc = partDocument("box", 40, 30, 20);
   const box = doc.timeline.features[0].id;
-  const c = insertPreset(doc, "cylinder", 10, 10, 30);
+  const c = insertPreset(doc, "sphere", 10, 10, 10);
   doc = insertCombine(c.doc, `body:${box}`, [`body:${c.id}`], "cut").doc;
   const cache = new BodyCache(kernel);
   const build = await rebuildTimeline(doc, cache, kernel);

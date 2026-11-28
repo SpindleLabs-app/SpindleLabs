@@ -36,8 +36,9 @@
 //    kernel still checks it: the Insert waits, so both are made. Scene 3's
 //    boxes; the Cut of Box 2 from Box 1 leaves 24,000 − 3,000 = 21,000,
 //    with Box 3's 1,000 and the new 40 × 30 × 20 box's 24,000: 46,000.
-// 6. A round tool (#677 item 1): Insert > Cylinder, then Combine cutting it
-//    from Box 1 is refused in the app's words, naming the round body.
+// 6. A round tool the kernel still refuses (#677 item 1): Insert > Sphere,
+//    then Combine cutting it from Box 1 is refused in the app's words, naming
+//    the sphere (a cylinder builds since curved Combine: combine-round.mjs).
 // 7. Modify > Duplicate pressed right after Combine's OK (#760 item 5): the
 //    Duplicate waits, so the Cut is made (21,000 + 1,000 = 22,000); the OK
 //    clears the selection, so nothing is copied, as when pressed slowly.
@@ -250,19 +251,19 @@ try {
     assert.equal((await toolbarStl(page)).volume, 21000 + 1000 + 24000, "5: the Cut and the new box");
     await page.context().close();
   }
-  // 6. A round tool is refused in the app's words.
+  // 6. A sphere tool is refused in the app's words.
   {
     const page = await fresh(design([[[40, 30, 20], null]]));
     await page.click("#insert");
-    await page.click("#insert-cylinder");
-    await until(page, () => document.getElementById("move-panel")?.hidden === false, null, "the cylinder's Move panel opened");
+    await page.click("#insert-sphere");
+    await until(page, () => document.getElementById("move-panel")?.hidden === false, null, "the sphere's Move panel opened");
     await page.click("#move-cancel");
     await rebuilt(page);
     assert.deepEqual(await bodyRows(page), ["Body 1", "Body 2"]);
     await combine(page, "Body 1", ["Body 2"], "cut", false, false);
     await page.click("#combine-ok");
     await until(page, () => !document.getElementById("combine-error").hidden, null, "6: OK answered with words");
-    assert.equal(await page.$eval("#combine-error", (e) => e.textContent), "Combine 1 can't be made: a tool body has a round face. Cut, Join and Intersect work on flat-sided shapes for now; round shapes are coming.");
+    assert.equal(await page.$eval("#combine-error", (e) => e.textContent), "Combine 1 can't be made: a tool body has a sphere face. Cut, Join and Intersect work on flat and cylinder-shaped bodies for now; spheres are coming.");
     await page.context().close();
   }
   // 7. Modify > Duplicate pressed right after Combine's OK.

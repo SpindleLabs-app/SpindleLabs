@@ -195,8 +195,8 @@ export const KERNEL_INPUT_WORDS: Record<string, string> = {
   angle: "the angle",
 };
 
-/** Why Join can't be used on a body with curved faces yet (until curved booleans, step 37). */
-export const CURVED_JOIN = "Join can't join copies of a body with curved faces yet (that comes with curved Combine). Turn Join off to keep the copies as separate bodies.";
+/** Why Join can't be used on a body with a sphere face yet (cylinders it joins since curved Combine, 37df). */
+export const CURVED_JOIN = "Join can't join copies of a body with a sphere face yet (spheres are coming). Turn Join off to keep the copies as separate bodies.";
 
 /** The copies' body ids: `body:<pattern>/piece:k`, k from 1, each source's copies in turn, in the kernel's order. */
 export function copyIds(pattern: string, sources: number, copiesEach: number): string[] {

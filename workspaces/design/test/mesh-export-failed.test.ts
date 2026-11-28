@@ -83,11 +83,12 @@ test("control: a plain 20 × 30 × 10 box is 'Checked solid' in all three, with 
 });
 
 test("regression (#640 1): a failed Extrude Cut is named by the 3MF and OBJ as by the STL, the file never 'Checked solid'", async () => {
-  // A 40 × 30 × 20 box with a circle r 5 on its top, Extrude Cut 10 mm: the design is 24,000 − π × 25 × 10 = 23,214.6
-  // mm³, but the Cut fails (curved booleans come later), so every file holds the plain box, 24,000 mm³.
+  // A 40 × 30 × 20 box with a circle r 5 on its top at (5, 15), Extrude Cut 10 mm: the design is 24,000 − π × 25 × 10 =
+  // 23,214.6 mm³, but the circle touches the side wall x = 0 side on, which the kernel refuses for now (at (20, 15) it
+  // builds since curved Combine), so the Cut fails and every file holds the plain box, 24,000 mm³.
   const d = partDocument("box", 40, 30, 20);
   const s = addFaceSketch(d, { plane: facePlane("feature-1", "top"), feature: "feature-1" }, drawnFrame([0, 0, 1], [20, 15, 20]));
-  const c = drawCircle(s.doc, s.id, [20, 15] as never, 5);
+  const c = drawCircle(s.doc, s.id, [5, 15] as never, 5);
   const { doc, id } = extrudeSketch(c.doc, s.id, 10, true, undefined, { operation: "cut", bodies: ["body:feature-1"] });
   const { failed, out } = await exportAll(doc);
   assert.deepEqual(failed, [id], "the Cut fails today; should it ever build, this test proves nothing");

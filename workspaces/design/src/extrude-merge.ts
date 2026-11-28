@@ -1,7 +1,8 @@
 // An extrude of several profiles (version 18) without a boolean where none
-// is needed (SL #611 C1). The kernel's booleans take flat faces only for
-// now, so the prisms of profiles with a curved side could never be joined,
-// even when they never meet. Two rules, both exact:
+// is needed (SL #611 C1). Written when the kernel's booleans took flat faces
+// only; they take cylinders now (37df) but still not two round faces lying
+// on each other side by side, and a boolean never needed is never asked
+// for. Two rules, both exact:
 //
 // - Prisms whose boxes don't meet, or meet only along a line or at a point
 //   (on two axes thinner than the kernel's 10 nm), can't share any face, so
