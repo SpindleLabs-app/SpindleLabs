@@ -145,9 +145,10 @@ const CAUGHT_BY: Record<ModelFault, string> = {
   "combine-refusal-changes": "the rebuild differs from the model",
   // Pieces of one face left untagged carry one name: the subject's own rebuild shows it.
   "combine-tags-dropped": "two faces share a name",
-  // The first carrier taken for a split face: from 35e2's Duplicate the sessions' first catch (seed 6) is a held reference
-  // sent to the wrong piece; a guess between pieces alike is caught by hand in timeline-combine.test.ts.
-  "combine-first-piece": "a reference was lost",
+  // The first carrier taken for a split face: from 35e2's Duplicate the sessions' first catch (seed 6) was a held reference
+  // sent to the wrong piece; since curved Combine (kernel 0.33.88) the sessions leave cylinder Combines out as unmodelled,
+  // and the first catch (seed 64, of 1 to 400) is a reference guessed between pieces; caught by hand in timeline-combine.test.ts too.
+  "combine-first-piece": "a reference guessed between pieces",
   "combine-face-moves-with-target": "the rebuild differs from the model",
   // From 35e2's Duplicate the first catch (seed 6) is the untagged edges sharing a name; seed 15's is the model's.
   "combine-edge-tags-dropped": "two edges share a name",
@@ -164,7 +165,7 @@ const CAUGHT_BY: Record<ModelFault, string> = {
 // SL #676 item 1: a drag past a later item changing a body the dragged one reads is rare in the sessions; 49 is the first seed (of 1 to 600) to catch it.
 /** Faults the first 24 seeds don't reach, and the seeds that do (found by searching 1 to 200; search again if the sessions change). */
 // SL #676 items 2 and 3 changed the sessions (refused reorders and Combines): 26 is then the first seed to catch "extrude-base-dropped".
-const LATE_SEEDS: Partial<Record<ModelFault, bigint[]>> = { "combine-face-moves-with-target": [77n], "reorder-past-reader": [49n], "extrude-base-dropped": [26n] };
+const LATE_SEEDS: Partial<Record<ModelFault, bigint[]>> = { "combine-face-moves-with-target": [77n], "reorder-past-reader": [49n], "extrude-base-dropped": [26n], "combine-first-piece": [64n] };
 
 /** The first seed whose session the planted bug fails, and how. */
 async function firstFailure(make: () => TimelineSubject, late: readonly bigint[] = []): Promise<{ seed: bigint; failure: TimelineFailure } | null> {

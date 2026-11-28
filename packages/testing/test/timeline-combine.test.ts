@@ -112,15 +112,24 @@ test("hand-worked: a reference to the whole split face goes to the larger piece;
   assert.equal(first.area, 600);
 });
 
-test("a Combine of a curved body is refused by the kernel's rule (error), changing no body; one of a flat body no block can model is unmodelled", () => {
+test("a Combine with a sphere is refused by the kernel's rule (error), changing no body; one with a cylinder or of a flat body no block can model is unmodelled", () => {
+  // Curved Combine (kernel 0.33.88): the kernel's booleans take cylinders but still refuse a sphere's faces.
   const m = createModel();
-  run(m, { op: "add-preset", kind: "box", sizes: [40, 30, 20] }, { op: "add-preset", kind: "cylinder", sizes: [5, 30] }, { op: "add-combine", target: "item-1", tool: "item-2", operation: "cut", keep: false });
+  run(m, { op: "add-preset", kind: "box", sizes: [40, 30, 20] }, { op: "add-preset", kind: "sphere", sizes: [10] }, { op: "add-combine", target: "item-1", tool: "item-2", operation: "cut", keep: false });
   const r = rebuild(m.doc);
   assert.equal(r.results["item-3"].status, "failed");
   assert.equal((r.results["item-3"] as { cause?: string }).cause, "error");
-  // The box and the cylinder are as they were: the box's six faces, the cylinder still built with its body.
+  // The box and the ball are as they were: the box's six faces, the ball still built with its body.
   assert.equal((r.results["item-1"] as { body?: ModelBody }).body?.faces.length, 6);
   assert.ok((r.results["item-2"] as { body?: ModelBody }).body !== undefined);
+  // A sphere as the target is refused the same way.
+  const t0 = createModel();
+  run(t0, { op: "add-preset", kind: "sphere", sizes: [10] }, { op: "add-preset", kind: "box", sizes: [40, 30, 20] }, { op: "add-combine", target: "item-1", tool: "item-2", operation: "join", keep: false });
+  assert.equal(rebuild(t0.doc).results["item-3"].status, "failed");
+  // A cylinder now builds in the app, but the model has no exact boolean for it: unmodelled, never refused.
+  const c = createModel();
+  run(c, { op: "add-preset", kind: "box", sizes: [40, 30, 20] }, { op: "add-preset", kind: "cylinder", sizes: [5, 30] }, { op: "add-combine", target: "item-1", tool: "item-2", operation: "cut", keep: false });
+  assert.throws(() => rebuild(c.doc), UnmodelledCombine);
   // A triangle's extrude is flat but no block: the model can't say what Combine makes of it, and says so.
   const t = createModel();
   run(t, { op: "add-preset", kind: "box", sizes: [40, 30, 20] }, { op: "add-sketch", shape: { kind: "polygon", corners: [[0, 0], [10, 0], [0, 10]] } });

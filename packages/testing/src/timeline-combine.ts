@@ -49,27 +49,31 @@ export interface Form {
 export class UnmodelledCombine extends Error {}
 
 /** What each body built in a model rebuild is, for a Combine: its form, or "curved"; a body with neither is flat. */
-const kinds = new WeakMap<ModelBody, Form | "curved">();
+const kinds = new WeakMap<ModelBody, Form | "curved" | "sphere">();
 /** Where each face of a body with a form lies, as boxes of no thickness (rule 3's "the piece holding the origin"). */
 const regions = new WeakMap<ModelFace, readonly Rect3[]>();
 /** Each combined body's faces' extra names (rule 4), in order after the shown one. */
 export const formOf = (b: ModelBody): Form | undefined => {
   const k = kinds.get(b);
-  return k === undefined || k === "curved" ? undefined : k;
+  return k === undefined || typeof k === "string" ? undefined : k;
 };
-export const isCurved = (b: ModelBody): boolean => kinds.get(b) === "curved";
-/** Whether a Combine can take the body: one with a form, or a curved one (refused in words). */
+/** Whether the body has a round face (a cylinder's, sphere's, circle's or slot's). */
+export const isCurved = (b: ModelBody): boolean => typeof kinds.get(b) === "string";
+/** Whether the body has a sphere's face: the kernel's booleans still refuse it (curved Combine takes cylinders only, kernel 0.33.88). */
+export const isSphere = (b: ModelBody): boolean => kinds.get(b) === "sphere";
+/** Whether a Combine can take the body: one with a form, or a curved one (a sphere refused in words, other round bodies not modelled). */
 export const combinable = (b: ModelBody): boolean => kinds.has(b);
 
 /** Marks a body as curved (built with a cylinder's, sphere's, circle's or slot's faces), and gives it back. */
-export function curvedBody(b: ModelBody): ModelBody {
-  kinds.set(b, "curved");
+export function curvedBody(b: ModelBody, sphere = false): ModelBody {
+  kinds.set(b, sphere ? "sphere" : "curved");
   return b;
 }
 
 /** Gives body `to` what `from` is (a Move's or a lift's copy of a body), and gives it back. */
 export function sameKind(from: ModelBody, to: ModelBody): ModelBody {
-  if (kinds.get(from) === "curved") kinds.set(to, "curved");
+  const k = kinds.get(from);
+  if (typeof k === "string") kinds.set(to, k);
   return to;
 }
 
@@ -111,7 +115,7 @@ const TURNED: Record<Facing, Facing> = { "-x": "-y", "-y": "+x", "+x": "+y", "+y
  */
 export function movedForm(from: ModelBody, to: ModelBody, move: { id: string; turnZ: number; pivot: readonly [number, number]; shift: Vec3 }, place: number): ModelBody {
   const k = kinds.get(from);
-  if (k === "curved") return curvedBody(to);
+  if (typeof k === "string") return curvedBody(to, k === "sphere");
   if (k === undefined || k.steps.length !== 1 || k.steps[0].feature.kind !== "block") return to;
   const turn = ((move.turnZ % 360) + 360) % 360;
   if (turn % 90 !== 0) return to;
@@ -155,7 +159,7 @@ export function movedForm(from: ModelBody, to: ModelBody, move: { id: string; tu
  */
 export function copiedForm(from: ModelBody, to: ModelBody, id: string, place: number): ModelBody {
   const k = kinds.get(from);
-  if (k === "curved") return curvedBody(to);
+  if (typeof k === "string") return curvedBody(to, k === "sphere");
   if (k === undefined || k.steps.length !== 1 || k.steps[0].feature.kind !== "block") return to;
   const b = k.steps[0].feature;
   const faces = Object.fromEntries(FACINGS.map((f) => [f, { name: fullName({ feature: id, role: parseName(b.faces![f].name).role }), made: [place, b.faces![f].made[1]] }])) as unknown as BlockFeature["faces"];
