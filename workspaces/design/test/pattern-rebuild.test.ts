@@ -8,11 +8,12 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import type { BodyView } from "@fission/core";
 import { nodeKernel } from "../../../packages/testing/src/node-kernel.ts";
-import { insertPattern, type PatternValues } from "../src/pattern.ts";
+import { CURVED_JOIN, insertPattern, type PatternValues } from "../src/pattern.ts";
+import { insertMove, NO_MOVE } from "../src/move.ts";
 import { DESIGN_VERSION, insertPreset, numberPieces, partDocument, readDesignDocument, type DesignDocument } from "../src/document.ts";
 import { insertCombine } from "../src/combine.ts";
 import { deleteItem, suppressItem } from "../src/timeline-edits.ts";
-import { BodyCache, patternJoinWords, rebuildTimeline, type TimelineBuild } from "../src/rebuild.ts";
+import { BodyCache, patternJoinWords, rebuildTimeline, roundWords, type TimelineBuild } from "../src/rebuild.ts";
 
 const kernel = nodeKernel();
 
@@ -194,7 +195,8 @@ test("refusals: a deleted, suppressed or used-up body; a copy out past model spa
 });
 
 test("Join of a body with a curved face is refused in the Pattern's words while the kernel can't join it", async () => {
-  // A cylinder Ø10 at the origin, copies 5 mm along X: they overlap, so the Join needs a curved boolean.
+  // A cylinder Ø10 at the origin, copies 5 mm along X: they overlap, so the Join needs two round faces joined, which
+  // the kernel refuses for now (flat faces with cylinders it joins since curved Combine).
   const d0 = partDocument("cylinder", 10, 10, 10);
   const { doc, id } = insertPattern(d0, ["body:feature-1"], row({ spacing: 5, count: 2, join: true }));
   const { build, cache, view } = await built(doc);
@@ -203,8 +205,29 @@ test("Join of a body with a curved face is refused in the Pattern's words while 
     // A kernel that joins them: one body, two discs Ø10 5 mm apart, 10 high: 2 · 250π − the lens (2r²·acos(d/2r) − (d/2)·√(4r² − d²)) · 10.
     const lens = 2 * 25 * Math.acos(5 / 10) - 2.5 * Math.sqrt(100 - 25);
     near((await view("body:feature-1")).volume, (2 * 25 * Math.PI - lens) * 10, "joined discs");
-  } else assert.deepEqual(r, { status: "failed", cause: "error", message: "Pattern 1 can't be made: Join can't join copies of a body with curved faces yet (that comes with curved Combine). Turn Join off to keep the copies as separate bodies." });
+  } else assert.deepEqual(r, { status: "failed", cause: "error", message: `Pattern 1 can't be made: ${roundWords("round-pair")}` });
   await cache.close();
+});
+
+test("Join of copies of a ball is refused in the Pattern's words (spheres don't join yet); a box with a round hole joins", async () => {
+  // A ball Ø10 at the origin, copies 5 mm along X: they overlap, and the kernel's booleans take no sphere yet.
+  const ball = insertPattern(partDocument("sphere", 10, 10, 10), ["body:feature-1"], row({ spacing: 5, count: 2, join: true }));
+  const one = await built(ball.doc);
+  assert.deepEqual(one.build.results[ball.id], { status: "failed", cause: "error", message: `Pattern 1 can't be made: ${CURVED_JOIN}` });
+  await one.cache.close();
+  // A 20 × 20 × 10 box less a rod r 3 through its middle (4,000 − π·9·10 = 4,000 − 90π), two copies 15 mm along X joined:
+  // the copies overlap 5 mm of box (5·20·10 = 1,000, no hole in that strip: the holes are at x 7..13 and 22..28), so
+  // 2·(4,000 − 90π) − 1,000 = 7,000 − 180π.
+  const box = partDocument("box", 20, 20, 10);
+  const rod = insertPreset(box, "cylinder", 6, 6, 30);
+  const placed = insertMove(rod.doc, [`body:${rod.id}`], { ...NO_MOVE, x: 10, y: 10, z: -10 });
+  const holed = insertCombine(placed.doc, "body:feature-1", [`body:${rod.id}`], "cut");
+  const p = insertPattern(holed.doc, ["body:feature-1"], row({ spacing: 15, count: 2, join: true }));
+  const two = await built(p.doc);
+  assert.equal(two.build.results[p.id].status, "built", JSON.stringify(two.build.results[p.id]));
+  const v = (await two.view("body:feature-1")).volume;
+  assert.ok(Math.abs(v - (7000 - 180 * Math.PI)) < 1e-6, `${v}`);
+  await two.cache.close();
 });
 
 test("the data: version 25 holds a Pattern and reads back the same; version 24 holding one is refused; every break is refused", () => {

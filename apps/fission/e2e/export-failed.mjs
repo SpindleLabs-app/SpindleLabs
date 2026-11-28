@@ -1,6 +1,7 @@
 // Browser check of export hunt 2026-11-12 D (SL #613): a design whose hole failed (failed-hole.spindle: a 40 × 30 ×
-// 20 box with a circle r 5 sketched on its top face and Extrude Cut 10 mm into it, which fails while booleans take
-// flat faces only) exports a box without its hole. Export STL must say that Extrude 1 failed and is not in the file
+// 20 box with a circle r 5 at (5, 15) sketched on its top face and Extrude Cut 10 mm into it, which fails: the hole
+// touches the side wall x = 0 side on, a contact the kernel refuses for now; until curved Combine the circle sat at
+// (20, 15), which builds now) exports a box without its hole. Export STL must say that Extrude 1 failed and is not in the file
 // (amber card "Not the whole design", never "Checked solid", the file unstamped), and Slice for printing must say it
 // as the dialog opens. At 1280 and 375 px (taps). SHOTS=<dir> also saves screenshots.
 import assert from "node:assert/strict";

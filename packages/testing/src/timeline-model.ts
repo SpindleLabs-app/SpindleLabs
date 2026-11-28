@@ -71,7 +71,7 @@
 // `faults` plants the bugs the session tests use to prove the harness
 // catches them (timeline-session.ts); real code never passes any.
 
-import { boxForm, combinable, combineBodies, curvedBody, faceMotion, findFace, formOf, isCurved, copiedForm, movedForm, sameKind, tagDesign, UnmodelledCombine, type CombineOperation } from "./timeline-combine.ts";
+import { boxForm, combinable, combineBodies, curvedBody, faceMotion, findFace, formOf, isCurved, isSphere, copiedForm, movedForm, sameKind, tagDesign, UnmodelledCombine, type CombineOperation } from "./timeline-combine.ts";
 
 export { UnmodelledCombine, type CombineOperation };
 
@@ -758,7 +758,7 @@ function build(item: ModelItem, byId: Map<string, ModelItem>, seen: ReadonlySet<
   if (item.kind === "combine") return combineRun(item, done, faults, place);
   if (item.kind === "duplicate") return copyBody(item, done, faults, place);
   if (item.kind === "box") return { status: "built", body: boxForm(presetBody(item, faults), item.id, item.width, item.depth, item.height, place) };
-  if (item.kind !== "extrude") return { status: "built", body: curvedBody(presetBody(item, faults)) };
+  if (item.kind !== "extrude") return { status: "built", body: curvedBody(presetBody(item, faults), item.kind === "sphere") };
   const sketch = byId.get(item.sketch);
   if (sketch === undefined) return lost(item, "deleted-input", faults);
   const input = done[item.sketch];
@@ -937,7 +937,7 @@ function copyBody(item: DuplicateItem, done: Record<string, ItemResult>, faults:
  * Design, section 8 of docs/document-model.md): greyed while its target's
  * or tool's item is suppressed or greyed (Q3); failed naming the first of
  * them that is deleted, not built, or has no body (used up by an earlier
- * Combine); failed in the kernel's words for a curved body (until 37) and
+ * Combine); failed in the kernel's words for a body with a sphere face, left out as unmodelled for another round body (curved Combine, 37), and
  * for whatever the naming model refuses (a result touching itself along
  * an edge or at a corner, nothing left, a sliver); else built, the
  * target's body replaced by the result in `done`, the tool's used up
@@ -964,7 +964,10 @@ function combineRun(item: CombineItem, done: Record<string, ItemResult>, faults:
     if (faults.has("combine-refusal-changes") && !item.keep) useUp();
     return { status: "failed", cause: "error" };
   };
-  if (isCurved(target.body!) || isCurved(tool.body!)) return refused();
+  // Curved Combine (kernel 0.33.88): a sphere is still refused; a cylinder, circle or slot builds, but the model has
+  // no exact boolean for one, so the sessions leave such a Combine out (checked by hand in Design's combine-round tests).
+  if (isSphere(target.body!) || isSphere(tool.body!)) return refused();
+  if (isCurved(target.body!) || isCurved(tool.body!)) throw new UnmodelledCombine(`${item.id} combines a round body the model has no exact boolean for`);
   if (!combinable(target.body!) || !combinable(tool.body!) || !formOf(target.body!) || !formOf(tool.body!))
     throw new UnmodelledCombine(`${item.id} combines a flat body the model has no exact boolean for`);
   // Planted bug ("combine-face-moves-with-target"): every face of the result carried by the target's Moves.

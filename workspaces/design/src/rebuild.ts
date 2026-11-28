@@ -1848,8 +1848,8 @@ async function copyBody(f: Feature, done: Record<string, FeatureResult>, bodies:
  * left as they were. With Join, each body's copies are joined to it by
  * Combine's booleans (`booleanSteps`: the joined body keeps the body's id,
  * a copy meeting nothing stays a piece of the Pattern, all or none); a body
- * with a curved face is refused in `CURVED_JOIN`'s words until curved
- * booleans join it. A copy put out past model space fails the Pattern in
+ * with a sphere face is refused in `CURVED_JOIN`'s words until the kernel's
+ * booleans join spheres (flat faces and cylinders they join). A copy put out past model space fails the Pattern in
  * the kernel's words, as a Move's would.
  */
 async function patternRun(doc: DesignDocument, f: Feature, done: Record<string, FeatureResult>, bodies: Bodies, cache: BodyCache): Promise<FeatureResult> {
@@ -1924,8 +1924,9 @@ async function patternRun(doc: DesignDocument, f: Feature, done: Record<string, 
   const r = await booleanSteps(doc, f, made.map((m, i) => ({ target: m.source, tools: temp[i], keepTools: false })), "join", "join", done, bodies, cache);
   for (const id of temp.flat()) delete bodies[id];
   if (r.status !== "built") {
-    // A round face anywhere among the inputs: the kernel's booleans don't join curved bodies yet, said in the Pattern's words.
-    const round = await Promise.all(sources.map(async (b) => (await cache.view(bodies[b].handle)).face_types.some((t) => t !== "plane")));
+    // A sphere face anywhere among the inputs: the kernel's booleans don't join spheres yet (flat faces and cylinders
+    // they do, 37df), said in the Pattern's words.
+    const round = await Promise.all(sources.map(async (b) => (await cache.view(bodies[b].handle)).face_types.includes("sphere")));
     if (r.status === "failed" && r.cause === "error" && round.some(Boolean)) return { ...r, message: `${label} can't be made: ${CURVED_JOIN}` };
     return r.status === "failed" ? { ...r, message: patternJoinWords(r.message) } : r;
   }
@@ -2364,11 +2365,14 @@ async function booleanSteps(doc: DesignDocument, f: Feature, steps: readonly Boo
       if (e instanceof KernelError && (e.kind === "invalid-input" || e.kind === "non-manifold-result" || e.kind === "thin-result")) {
         // Refused, it still holds the bodies it made for an equal pick, so the next rebuild needn't build them again
         // (a body cut by its own Duplicate, then joined with it: SL #360's seed 11).
-        // SL #677 item 1: a round body is refused whatever else is asked (the kernel's booleans take flat faces only for
-        // now), so with one among the inputs the item says so in the app's words, told by the bodies' own face types.
-        // Asked of the cache only here, on a refusal (a step that builds never meshes its inputs for this).
-        const round = e.kind !== "invalid-input" ? [] : await Promise.all(pending.map(async (x) => (await cache.view(x.handle)).face_types.some((type) => type !== "plane")));
-        const who = !round.some(Boolean) ? null : round[0] ? "target" : step.tools.some((b, i) => round[i + 1] && (bodyItem(b) ?? f.id) !== f.id) ? "tool" : "extrude";
+        // SL #677 item 1, as curved booleans grew (37df: flat faces and cylinders): a body with a sphere face is refused
+        // whatever else is asked, so with one among the inputs the item says so in the app's words; with a cylinder among
+        // them, a refusal naming two faces is two faces meeting side on or coming too close, said in the app's words too.
+        // Told by the bodies' own face types and the refusal's named faces, never by the kernel's sentence (whose words
+        // are the kernel's: "face 1 of the tool is curved (part of a sphere) ..."). Asked of the cache only here, on a
+        // refusal (a step that builds never meshes its inputs for this).
+        const types = e.kind !== "invalid-input" ? [] : await Promise.all(pending.map(async (x) => (await cache.view(x.handle)).face_types));
+        const who = refusedRound(types, e.inputs.flatMap((x) => (x.input === "face" ? [{ body: x.body, face: x.face }] : [])));
         return { status: "failed", cause: "error", message: `${label} can't be made: ${who === null ? e.message : roundWords(who)}`, ...(e.touches.length > 0 ? { touches: e.touches } : {}), ...(e.thin.length > 0 ? { thin: e.thin } : {}), ...(made.length > 0 ? { holds: made } : {}) };
       }
       throw e;
@@ -2562,7 +2566,8 @@ async function operationRun(doc: DesignDocument, f: Feature, self: Omit<BuiltBod
  * curved side are made as the one region they tile (`mergedOutline`), so a plate and its hole make
  * the block; prisms that can't share a face stay as they are
  * (`contactGroups`); only a group that may share one goes to the kernel,
- * whose booleans take flat faces only for now (said in plain words). The
+ * whose refusals with a round prism are said in the app's words
+ * (`roundWords`, through `booleanSteps`). The
  * body holding the first profile keeps the extrude's own id, as a Combine's
  * target keeps its id; the others are its pieces, numbered when built and
  * remembered by their faces (`booleanSteps`). The prisms after the first go
@@ -2581,7 +2586,6 @@ async function unitedRun(doc: DesignDocument, f: Feature, built: readonly Omit<B
   const r = await booleanSteps(doc, f, [{ target: own, tools: others, keepTools: false }], "join", "join", done, bodies, cache, true);
   if (r.status !== "built") {
     for (const id of [own, ...others]) delete bodies[id];
-    if (r.status === "failed" && (await curvedMeeting(prisms, cache))) return { ...r, message: `${f.provenance.self.label} can't be made: ${CURVED_TOUCHING}` };
     return r;
   }
   return { ...r, ...rest };
@@ -2611,8 +2615,11 @@ export async function unitedViews(kernel: KernelCalls, prisms: readonly { spec: 
       }
       const [t, ...ts] = group.map((i) => joined[i].handle);
       const r = await cache.boolean(t, ts, "union").catch(async (err: unknown) => {
-        // In the same plain words as OK's refusal (`unitedRun`), never the kernel's.
-        if (await curvedMeeting(joined, cache)) throw new Error(`These profiles can't be extruded together: ${CURVED_TOUCHING}`);
+        // In the same words as OK's refusal (`unitedRun`, through `booleanSteps`): a round refusal in the app's words.
+        if (!(err instanceof KernelError) || err.kind !== "invalid-input") throw err;
+        const types = await Promise.all(group.map(async (i) => (await cache.view(joined[i].handle)).face_types));
+        const who = refusedRound(types, err.inputs.flatMap((x) => (x.input === "face" ? [{ body: x.body, face: x.face }] : [])));
+        if (who !== null) throw new Error(`These profiles can't be extruded together: ${roundWords(who)}`);
         throw err;
       });
       for (const h of r.bodies) out.push(await cache.view(h));
@@ -2623,16 +2630,41 @@ export async function unitedViews(kernel: KernelCalls, prisms: readonly { spec: 
   }
 }
 
-/** Why an extrude of several profiles whose curved prisms touch is refused, while the kernel's booleans take flat faces only. */
-export const CURVED_TOUCHING = "profiles with curved sides can only be extruded together when they don't touch or overlap, or are side by side regions of one sketch, for now: extrude them one at a time";
+/** What a refusal with a round body is about, in the app's words (`roundWords`). */
+export type RoundRefusal = "target" | "tool" | "flat-side-on" | "round-pair" | "round-meets";
 
 /**
- * SL #677 item 1: why a Combine or an operation extrude with a round body is refused, in the app's words. `who` is the
- * round one: the body changed, a tool body of a Combine, or the extrude's own shape.
+ * SL #677 item 1: why a Combine or an operation extrude with a round body is refused, in the app's words. `who` is what
+ * the refusal is about: the body changed has a sphere face, a tool body has one, a round face touches a flat one side
+ * on or comes too close to it, two round faces meet, or (`round-meets`, when the refusal can't be told apart) either.
  */
-export function roundWords(who: "target" | "tool" | "extrude"): string {
-  const round = who === "target" ? "the body it changes has a round face" : who === "tool" ? "a tool body has a round face" : "this extrude has a round side";
-  return `${round}. Cut, Join and Intersect work on flat-sided shapes for now; round shapes are coming.`;
+export function roundWords(who: RoundRefusal): string {
+  const later = "Cut, Join and Intersect work on flat and cylinder-shaped bodies for now";
+  if (who === "target") return `the body it changes has a sphere face. ${later}; spheres are coming.`;
+  if (who === "tool") return `a tool body has a sphere face. ${later}; spheres are coming.`;
+  if (who === "flat-side-on") return "a round face touches a flat face side on, or comes very close to it without crossing it. Move or resize one a little so they cross clearly or stay apart; this case is coming.";
+  if (who === "round-pair") return "two round faces meet or come very close. Cut, Join and Intersect take round faces meeting flat ones for now; round faces meeting each other are coming.";
+  return "a round face meets another face in a way not taken yet (two round faces meeting, or a round face touching a flat one side on). Combine one tool at a time to see which; this case is coming.";
+}
+
+/**
+ * Which of `roundWords` a refusal is said in, from each input's face types (the target's first, then the tools', as
+ * the kernel was given them; none when the refusal is not of the input) and the faces the refusal names (`body` 0 the
+ * target, 1 the tool, by kernel face index): a sphere face on the target, then on a tool; else two faces named with a
+ * cylinder among the inputs, told apart by the named faces' own types when there is one tool (with more, the kernel
+ * works through them and its tool is not one of ours, so `round-meets`); null otherwise, when the kernel's own words
+ * are said.
+ */
+export function refusedRound(types: readonly (readonly string[])[], faces: readonly { body: number; face: number }[]): RoundRefusal | null {
+  const has = (k: number, type: string) => types[k]?.includes(type) ?? false;
+  if (has(0, "sphere")) return "target";
+  if (types.some((_, k) => k > 0 && has(k, "sphere"))) return "tool";
+  if (faces.length !== 2 || !types.some((_, k) => has(k, "cylinder"))) return null;
+  if (types.length !== 2) return "round-meets";
+  const [x, y] = faces.map((n) => types[n.body]?.[n.face]);
+  if (x === "cylinder" && y === "cylinder") return "round-pair";
+  if ((x === "cylinder" && y === "plane") || (x === "plane" && y === "cylinder")) return "flat-side-on";
+  return null;
 }
 
 /** Whether an extrude's spec has a curved side (a circle or an arc in its profile). */
@@ -2642,16 +2674,11 @@ function curvedSpec(spec: BodySpec | null): boolean {
   return [outer, ...holes].some((l) => "circle" in l || l.path.bulges.some((b) => b !== 0));
 }
 
-/** Whether a group of prisms that may share a face holds one with a curved side (what the kernel refuses for now). */
-async function curvedMeeting(prisms: readonly Omit<BuiltBody, "feature">[], cache: BodyCache): Promise<boolean> {
-  const boxes = await Promise.all(prisms.map(async (p) => (await cache.view(p.handle)).bounds));
-  return contactGroups(boxes).some((g) => g.length > 1 && g.some((i) => curvedSpec(prisms[i].spec)));
-}
-
 /**
  * The prisms with each group that may share a face, is of one sketch
  * extruded alike (the same distance, frame, way and curves) and has a
- * curved side (which the kernel's booleans can't join yet) made as the one
+ * curved side (whose side by side round faces the kernel's booleans can't
+ * join yet: two round faces meeting) made as the one
  * region its regions tile, where they do (`mergedOutline`); in order, a
  * joined prism where its first was.
  */

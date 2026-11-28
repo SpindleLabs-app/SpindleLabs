@@ -19,11 +19,15 @@ import { badgeFor, CHECKED_HEADER } from "../src/solid-badge.ts";
 
 const kernel = nodeKernel();
 
-/** A 40 × 30 × 20 box with a circle r 5 at (20, 15) sketched on its top face and Extrude Cut 10 mm into it (the hunt's repro). */
+/**
+ * A 40 × 30 × 20 box with a circle r 5 sketched on its top face and Extrude Cut 10 mm into it. The hunt's repro put it
+ * at (20, 15), which builds since curved Combine (kernel 0.33.88); at (5, 15) it touches the side wall x = 0 side on,
+ * which the kernel still refuses, so the Cut still fails.
+ */
 function holed() {
   const d = partDocument("box", 40, 30, 20);
   const s = addFaceSketch(d, { plane: facePlane("feature-1", "top"), feature: "feature-1" }, drawnFrame([0, 0, 1], [20, 15, 20]));
-  const c = drawCircle(s.doc, s.id, [20, 15] as never, 5);
+  const c = drawCircle(s.doc, s.id, [5, 15] as never, 5);
   return extrudeSketch(c.doc, s.id, 10, true, undefined, { operation: "cut", bodies: ["body:feature-1"] });
 }
 
@@ -56,7 +60,7 @@ const header = (bytes: Uint8Array) => String.fromCharCode(...bytes.subarray(0, 8
 test("regression (hunt D 1): a failed Extrude Cut is named in the STL's outcome, which is bad and never 'Checked solid'", async () => {
   const { doc, id } = holed();
   const { build, failed, saved, outcome } = await download(doc);
-  // The circle's side is curved, so the Cut fails today (the kernel roadmap's curved booleans). Should it ever build,
+  // The circle touches the wall side on, so the Cut fails today (the kernel roadmap's step for that contact). Should it ever build,
   // this test has nothing to prove, and says so rather than passing quietly.
   assert.equal(build.results[id]?.status, "failed", "the hole's Cut built: this regression needs another failing item");
   // The extrude is the design's first sketch extrude, so the timeline names it "Extrude 1" (freshName("Extrude", 0)).

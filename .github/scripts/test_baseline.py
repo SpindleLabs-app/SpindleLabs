@@ -155,6 +155,17 @@ class Main(unittest.TestCase):
         self.assertEqual(code, 1)
         self.assertIn("was not measured", printed)
 
+    def test_a_failure_from_a_zero_baseline_is_said_not_crashed(self):
+        # A metric whose baseline is 0 has no percentage change: 0.4193 wrong from 0 failed with a TypeError
+        # formatting None (SL #894's run) instead of the error line.
+        margins = {**MARGINS, "wrong_percent": {"fail": 2}}
+        base = {"margins": margins, "metrics": {"simulated_users.wrong_percent": 0}}
+        code, printed, _ = self.run_main(base, {"simulated_users.wrong_percent": 0.4193})
+        self.assertEqual(code, 1)
+        self.assertIn("::error title=Baseline: simulated_users.wrong_percent::simulated_users.wrong_percent is 0.4193, baseline 0 (from 0)", printed)
+        code, _, _ = self.run_main(base, {"simulated_users.wrong_percent": 0})
+        self.assertEqual(code, 0)
+
     def test_only_judges_the_metrics_it_names(self):
         # The nightly golden run measures app.golden* alone: without --only the
         # kernel's line reads as missing and fails; with it, only the golden

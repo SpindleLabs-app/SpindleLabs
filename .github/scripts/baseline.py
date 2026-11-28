@@ -159,12 +159,17 @@ def fmt(x):
     return f"{x:,.4f}".rstrip("0").rstrip(".") if isinstance(x, float) and x < 100 else f"{x:,.0f}"
 
 
+def pct(change):
+    """A change in percent, or "from 0" when the baseline was zero (no percentage exists)."""
+    return "from 0" if change is None else f"{change:+.1f}%"
+
+
 def table(rows):
     lines = ["| metric | baseline | now | change | |", "|---|---:|---:|---:|---|"]
     for metric, old, new, change, verdict in rows:
         mark = {"ok": "", "fail": "FAIL", "flag": "slower (flag)", "better": "better: lower the baseline?",
                 "new": "new: add to the baseline", "missing": "MISSING", "info": "report only"}[verdict]
-        lines.append(f"| {metric} | {fmt(old)} | {fmt(new)} | {'-' if change is None else f'{change:+.1f}%'} | {mark} |")
+        lines.append(f"| {metric} | {fmt(old)} | {fmt(new)} | {'-' if change is None else pct(change)} | {mark} |")
     return "\n".join(lines)
 
 
@@ -214,11 +219,11 @@ def main(argv):
             f.write("## Speed and memory against tests/baseline.json\n\n" + text + "\n")
     for metric, old, new, change, verdict in rows:
         if verdict == "fail":
-            print(f"::error title=Baseline: {metric}::{metric} is {fmt(new)}, baseline {fmt(old)} ({change:+.1f}%), past the {baseline['margins'][kind_of(metric.split(' ')[0])]['fail']}% margin")
+            print(f"::error title=Baseline: {metric}::{metric} is {fmt(new)}, baseline {fmt(old)} ({pct(change)}), past the {baseline['margins'][kind_of(metric.split(' ')[0])]['fail']}% margin")
         elif verdict == "missing":
             print(f"::error title=Baseline: {metric}::{metric} is in tests/baseline.json but was not measured")
         elif verdict == "flag":
-            print(f"::warning title=Baseline: {metric}::{metric} is {fmt(new)}, baseline {fmt(old)} ({change:+.1f}%), slower than the {baseline['margins'][kind_of(metric.split(' ')[0])]['flag']}% margin (time is noisy: check before acting)")
+            print(f"::warning title=Baseline: {metric}::{metric} is {fmt(new)}, baseline {fmt(old)} ({pct(change)}), slower than the {baseline['margins'][kind_of(metric.split(' ')[0])]['flag']}% margin (time is noisy: check before acting)")
     print("\nMeasured (for --update or a new baseline):\n" + json.dumps(measured, indent=2, sort_keys=True))
     if "--update" in argv:
         baseline["metrics"] = {m: v for m, v in sorted(measured.items()) if kind_of(m) in baseline["margins"]}
