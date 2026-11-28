@@ -74,8 +74,9 @@ async function pickBoth(a: App) {
 }
 
 test("C1: a square and a circle of two sketches that overlap: OK refuses in plain words and records nothing", async () => {
-  // The circle r 5 at (110, 5) overlaps the square's right side: the prisms must be joined, and the kernel's booleans
-  // take flat faces only for now, so OK says so before anything is recorded.
+  // The circle r 5 at (110, 5) overlaps the square's right side and touches its front and back sides (y = 0 and
+  // y = 10) side on at the square's corners: the prisms must be joined, and the kernel refuses that contact for now
+  // (curved Combine joins a crossing one), so OK says so in the app's words before anything is recorded.
   const { doc } = squareThenCircle([110, 5]);
   const a = await app(doc);
   const before = a.doc().timeline.features.length;
@@ -83,7 +84,7 @@ test("C1: a square and a circle of two sketches that overlap: OK refuses in plai
   (a.$("#extrude-ok") as HTMLButtonElement).click();
   await a.settle();
   assert.equal(a.doc().timeline.features.length, before, "nothing recorded");
-  assert.match(a.$("#extrude-panel")!.textContent ?? "", /curved sides can only be extruded together when they don't touch or overlap/);
+  assert.match(a.$("#extrude-panel")!.textContent ?? "", /Extrude 1 can't be made: a round face touches a flat face side on, or comes very close to it without crossing it\./);
   assert.ok(await a.close());
 });
 
