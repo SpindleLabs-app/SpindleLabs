@@ -13,6 +13,7 @@ import { namedBody } from "./built-body.ts";
 import { heldEdgeNames } from "./design-edges.ts";
 import { chamferSizeProblem, type ChamferSizing } from "./document.ts";
 import type { BuiltBody } from "./rebuild.ts";
+import { copyShared } from "./pattern-values.ts";
 
 /** One picked edge: the body it is on (a body id) and its kernel edge index there, as the scene shows it. */
 export interface PickedEdge {
@@ -139,14 +140,16 @@ export function chamferHintWords(bodies: number): string {
  * rebuild's `chamferRun` names them: every body of the build (`bodies`, by
  * body id, as rebuilt up to the marker, where the Chamfer goes in) named as
  * one by `designNames`, each body's view from `view`. Null for an edge
- * with no name of its own, or a body the build does not hold.
+ * with no name of its own, or a body the build does not hold, or a name
+ * made from the names of a copy of a Pattern in `copied` (`copyShared`).
  */
-export async function heldNamesOf(bodies: Readonly<Record<string, BuiltBody>>, view: (b: BuiltBody) => Promise<BodyView>, picks: readonly PickedEdge[]): Promise<(string | null)[]> {
+export async function heldNamesOf(bodies: Readonly<Record<string, BuiltBody>>, view: (b: BuiltBody) => Promise<BodyView>, picks: readonly PickedEdge[], copied: ReadonlySet<string> = new Set()): Promise<(string | null)[]> {
   const ids = Object.keys(bodies);
   const list = await Promise.all(ids.map(async (k) => namedBody(k, bodies[k], await view(bodies[k]), 0)));
   const names = designNames(list);
   return picks.map((p) => {
     const at = ids.indexOf(p.body);
-    return at < 0 ? null : (heldEdgeNames(names, at)[p.edge] ?? null);
+    const name = at < 0 ? null : (heldEdgeNames(names, at)[p.edge] ?? null);
+    return name !== null && copyShared(p.body, name, copied) ? null : name; // a Pattern copy's: shared by the copies (A1-2)
   });
 }

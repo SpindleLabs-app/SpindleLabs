@@ -144,3 +144,25 @@ test("the box is modal (accessibility pass 2026-11-11): Tab never leaves it for 
   assert.equal(doc.getElementById("command-search-list")!.getAttribute("aria-label"), "Commands");
   box.close();
 });
+
+test("a command runs as the workspace has it when it is run, not as it was when the box opened: an Open that remounts Design under the open box never runs the old Design's closure (SL #891)", () => {
+  const { doc } = page();
+  const calls: string[] = [];
+  // The first Design's Rotate, then the Design mounted afresh by an Open while the box stays open: same id, a new closure.
+  let mount = "old";
+  const rotateOf = (m: string): Command => ({ id: "rotate", label: "Rotate", run: () => void calls.push(`rotate on ${m}`) });
+  let gone = false;
+  const box = commandSearch(doc, () => [rotateOf(mount), ...(gone ? [] : [{ id: "extrude", label: "Extrude", run: () => void calls.push(`extrude on ${mount}`) }])]);
+  box.open();
+  mount = "new";
+  (doc.getElementById("command-search-rotate") as HTMLElement).click();
+  assert.deepEqual(calls, ["rotate on new"], "the new Design's Rotate, never the old one's");
+  // A command the workspace no longer has runs nothing; the box shows the list as it is now.
+  box.open();
+  gone = true;
+  (doc.getElementById("command-search-extrude") as HTMLElement).click();
+  assert.deepEqual(calls, ["rotate on new"]);
+  assert.equal(box.isOpen, true, "the box stays, showing what can be run now");
+  assert.equal(doc.getElementById("command-search-extrude"), null);
+  box.close();
+});

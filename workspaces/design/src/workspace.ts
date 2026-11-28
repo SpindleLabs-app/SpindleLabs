@@ -38,7 +38,7 @@ import { chamferArrow, refusedEdges, snapChamfer, wedgeMesh } from "./chamfer-ar
 import { patternShown } from "./pattern-flag.ts";
 import { patternPanel } from "./pattern-panel.ts";
 import { copiesMesh, editPreviewOff, patternHintWords, readPatternBoxes, refusalWords, startSpacing } from "./pattern-tool.ts";
-import { changedPattern, editablePattern, insertPattern, PATTERN_STEP, patternProblem, patternRequest, turnAxes, turnAxisItem, turnAxisProblem } from "./pattern.ts";
+import { changedPattern, editablePattern, insertPattern, PATTERN_STEP, patternCopyMakers, patternProblem, patternRequest, turnAxes, turnAxisItem, turnAxisProblem } from "./pattern.ts";
 import { constructShown } from "./construct-flag.ts";
 import { constructView } from "./construct-view.ts";
 import { KIND_GROUPS, kindTitle } from "./construct-tool.ts";
@@ -161,6 +161,9 @@ let snapDefaultTaken = DEFAULT_GRID_SNAP;
 /** Each sketch's grid size as typed and taken, kept until the page reloads like Snap to grid: Edit Sketch opens it on the grid it was left on (typed-sizes hunt 2026-11-01). */
 const sketchGrids = new Map<string, { grid: number; typed: string }>();
 /** How long (ms) Ctrl or Cmd is held with no other key before the snap under a still pointer goes: long enough for a shortcut's second key. */
+/** Item `id`'s name as the timeline shows it ("Pattern 1"), else `fallback`. */
+const itemLabel = (doc: DesignDocument, id: string, fallback: string): string => doc.timeline.features.find((f) => f.id === id)?.provenance.self.label ?? fallback;
+
 const HELD_SHOW_MS = 150;
 /** The Snap button on the sketch's toolbar: snapping to points, edges and line-ups on (the default) or off, kept for every sketch until the page reloads. */
 let snapOn = true;
@@ -4197,7 +4200,7 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
     let checked: Checked;
     let next: DesignDocument | null = null;
     try {
-      const held = await okCheck(bodies.using(() => heldNamesOf(built, (b) => bodies.view(b.handle), picks)));
+      const held = await okCheck(bodies.using(() => heldNamesOf(built, (b) => bodies.view(b.handle), picks, patternCopyMakers(before))));
       if (chamferOpenings !== opened) return;
       if (held.some((h) => h === null)) checked = { refused: NO_NAME, misses: [] };
       else {
@@ -4238,7 +4241,7 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
     chamferBox.busy(true);
     let checked: Checked;
     try {
-      checked = await okCheck(onceMoreAfterRestart(() => checkedItem(kernel, next, id)));
+      checked = await okCheck(onceMoreAfterRestart(() => checkedItem(kernel, next, id, resultsNow))); // a later step it breaks is asked about (A1-4)
     } catch (e) {
       checked = { refused: e instanceof Error ? e.message : String(e), misses: [] };
     }
@@ -4247,6 +4250,12 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
     if (designDoc() !== before) return chamferBox.showError(CHAMFER_CHANGED);
     if (chamferAsked() !== asked) return chamferBox.showError(CHAMFER_PICKS_CHANGED);
     if (checked.refused !== null) return chamferBox.showError(checked.refused);
+    if ((checked.breaks?.length ?? 0) > 0) {
+      const yes = await okCheck(ctx.history.asking(missAsk.ask(breaksWords(itemLabel(before, id, "Chamfer"), checked.breaks!))));
+      if (!yes || chamferOpenings !== opened) return;
+      if (designDoc() !== before) return chamferBox.showError(CHAMFER_CHANGED);
+      if (chamferAsked() !== asked) return chamferBox.showError(CHAMFER_PICKS_CHANGED);
+    }
     leaveChamfer();
     menuHost.record(editStep(before, id), checked.numbered ?? next);
   }
@@ -4473,7 +4482,7 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
     let checked: Checked;
     let next: DesignDocument | null = null;
     try {
-      const held = await okCheck(bodies.using(() => heldFaceNames(built, (b) => bodies.view(b.handle), picks.body, picks.faces)));
+      const held = await okCheck(bodies.using(() => heldFaceNames(built, (b) => bodies.view(b.handle), picks.body, picks.faces, patternCopyMakers(before))));
       if (shellOpenings !== opened) return;
       if (held.some((h) => h === null)) checked = { refused: SHELL_NO_NAME, misses: [] };
       else {
@@ -4508,7 +4517,7 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
     shellBox.busy(true);
     let checked: Checked;
     try {
-      checked = await okCheck(onceMoreAfterRestart(() => checkedItem(kernel, next, id)));
+      checked = await okCheck(onceMoreAfterRestart(() => checkedItem(kernel, next, id, resultsNow))); // a later step it breaks is asked about (A1-4)
     } catch (e) {
       checked = { refused: e instanceof Error ? e.message : String(e), misses: [] };
     }
@@ -4517,6 +4526,12 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
     if (designDoc() !== before) return shellBox.showError(SHELL_CHANGED);
     if (shellAsked() !== asked) return shellBox.showError(SHELL_PICKS_CHANGED);
     if (checked.refused !== null) return shellBox.showError(checked.refused);
+    if ((checked.breaks?.length ?? 0) > 0) {
+      const yes = await okCheck(ctx.history.asking(missAsk.ask(breaksWords(itemLabel(before, id, "Shell"), checked.breaks!))));
+      if (!yes || shellOpenings !== opened) return;
+      if (designDoc() !== before) return shellBox.showError(SHELL_CHANGED);
+      if (shellAsked() !== asked) return shellBox.showError(SHELL_PICKS_CHANGED);
+    }
     leaveShell();
     menuHost.record(editStep(before, id), checked.numbered ?? next);
   }
@@ -4914,7 +4929,8 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
     patternBox.busy(true);
     let checked: Checked;
     try {
-      checked = await okCheck(onceMoreAfterRestart(() => checkedItem(kernel, next, made)));
+      // An edit is compared with the build shown now, so a later step it would break is asked about, as Combine's (A1-4).
+      checked = await okCheck(onceMoreAfterRestart(() => checkedItem(kernel, next, made, id === null ? {} : resultsNow)));
     } catch (e) {
       checked = { refused: e instanceof Error ? e.message : String(e), misses: [] };
     }
@@ -4924,6 +4940,12 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
     if (designDoc() !== before) return patternBox.showError(PATTERN_CHANGED);
     if (patternAsked() !== asked) return patternBox.showError(PATTERN_PICKS_CHANGED);
     if (checked.refused !== null) return patternBox.showError(checked.refused);
+    if (id !== null && (checked.breaks?.length ?? 0) > 0) {
+      const yes = await okCheck(ctx.history.asking(missAsk.ask(breaksWords(itemLabel(before, id, "Pattern"), checked.breaks!))));
+      if (!yes || patternOpenings !== opened) return;
+      if (designDoc() !== before) return patternBox.showError(PATTERN_CHANGED);
+      if (patternAsked() !== asked) return patternBox.showError(PATTERN_PICKS_CHANGED);
+    }
     // A Join whose copies meet nothing records without a question: they stay bodies of their own, as a Combine Join of
     // bodies that don't meet does (Ben's Fusion answer F2; the rebuild gives such a Join no misses).
     if (id === null) ctx.selection.clear();
@@ -6253,6 +6275,9 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
       // its OK stayed held for good, so the page asked "Leave site?" on every reload though it said Saved, and Undo
       // waited for it (nightly monkey #749: a file opened as the question came up).
       missAsk.close();
+      // The command search box goes too: left open over the Design mounted next, a command clicked in it ran this
+      // mount's code on a panel that had left the page (SL #891: a file opened while the box was open).
+      searchBox.close();
       unitWatch = null;
       for (const d of [pointDrag, liveDrag]) if (d) cancelDrag(d);
       putAwayByRestore = ctx.history.restoring() ? ctx.project : null;

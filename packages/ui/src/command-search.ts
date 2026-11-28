@@ -5,7 +5,8 @@
 // clicked, and Escape or a press outside closes it. A command that is off
 // stays in the list, dimmed, saying why, and can't be run, so the box never
 // does anything the toolbar could not. The workspace gives the commands as
-// they are now (read each time the box opens), then the shell's own (Undo,
+// they are now (read each time the box opens, and again when one is run,
+// SL #891), then the shell's own (Undo,
 // Save, Settings…: shellCommands, issue #523). Styles:
 // src/styles/command-search.css.
 
@@ -60,7 +61,8 @@ export function commandSearch(doc: Document, commands: () => readonly Command[])
   const open = () => {
     if (root) return;
     previous = doc.activeElement;
-    const all = [...commands(), ...(shellLists.get(doc)?.() ?? [])];
+    const now = () => [...commands(), ...(shellLists.get(doc)?.() ?? [])];
+    let all = now();
     root = doc.createElement("div");
     root.className = "command-search";
     const box = doc.createElement("div");
@@ -84,10 +86,20 @@ export function commandSearch(doc: Document, commands: () => readonly Command[])
     root.append(box);
     let shown: Command[] = [];
     let active = 0;
+    // The command is looked up again as the workspace has it now (SL #891: an Open under the open box remounted Design,
+    // and the old mount's closure wrote to elements that were gone); one it no longer has, or now off, runs nothing, and
+    // the list is shown as it is now.
     const run = (c: Command | undefined) => {
       if (!c || c.off) return;
+      all = now();
+      const fresh = all.find((x) => x.id === c.id);
+      if (!fresh || fresh.off) {
+        show();
+        input.focus();
+        return;
+      }
       close();
-      c.run();
+      fresh.run();
     };
     const mark = () => {
       list.querySelectorAll("li").forEach((li, i) => li.setAttribute("aria-selected", String(i === active)));

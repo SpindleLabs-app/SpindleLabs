@@ -5,6 +5,7 @@
 // the item in; rebuild.ts builds it).
 
 import type { PatternSpec } from "@fission/core";
+import type { DesignDocument } from "./document.ts";
 import { constructPlaneItem, CONSTRUCT_REF, type ConstructAnswer } from "./construct-data.ts";
 
 /** A value from a file, for a message (document.ts `shown`'s rule): text as it is, anything else by kind, never its own toString. */
@@ -242,4 +243,32 @@ export function savedValues(v: PatternValues): PatternValues {
   if (v.kind === "circular") return { kind: "circular", axis: v.axis, ...(turnAxisItem(v.axis) === null ? { centre: [...v.centre!] as [number, number, number] } : {}), count: v.count, angle: v.angle, join: v.join };
   const grid = v.direction2 === undefined ? {} : { direction2: v.direction2, spacing2: v.spacing2!, count2: v.count2! };
   return { kind: "linear", direction: v.direction, spacing: v.spacing, count: v.count, ...grid, join: v.join };
+}
+
+/**
+ * The Patterns whose copies are bodies of their own (not joined): until 61d tells copies apart in names, every face
+ * and edge name made from a copy's names is shared by the copies, so Chamfer and Shell hold none of them
+ * (`copyShared`; bug sweep 2026-11-28, A1-2: a later item changing one copy made another's name look unique).
+ */
+export function patternCopyMakers(doc: DesignDocument): Set<string> {
+  return new Set(doc.timeline.features.filter((f) => f.intent.type === "pattern" && f.intent.parameters.join !== true).map((f) => f.id));
+}
+
+/** Whether `name` (a face's, or an edge's held name, which may be URI-encoded) on body `body` is made from the names of a copy of a Pattern in `copied`. */
+export function copyShared(body: string, name: string, copied: ReadonlySet<string>): boolean {
+  const maker = /^body:([^/]+)\/piece:\d+$/.exec(body)?.[1];
+  if (maker === undefined || !copied.has(maker)) return false;
+  let text = name;
+  for (let k = 0; k < 4; k++) {
+    if (text.includes(`face:${maker}/`)) return true;
+    let next: string;
+    try {
+      next = decodeURIComponent(text);
+    } catch {
+      return false;
+    }
+    if (next === text) return false;
+    text = next;
+  }
+  return false;
 }

@@ -1,0 +1,43 @@
+{
+  "seed": 202611251,
+  "what": "The command search box opened, then a project file opened under it (Design mounted afresh), then Rotate clicked in the box: it ran the old mount's Rotate, whose properties panel had left the page, and setting its warning's textContent threw (seed 202611251 at action 328, issue #891); the box now looks the command up again when it is run.",
+  "failure": {
+    "check": "no errors",
+    "message": "uncaught: Cannot set properties of null (setting 'textContent')"
+  },
+  "shrunk": true,
+  "actions": [
+    {
+      "do": "canvas",
+      "x": 0.418,
+      "y": 0.449,
+      "double": false
+    },
+    {
+      "do": "resize",
+      "size": [
+        820,
+        600
+      ]
+    },
+    {
+      "do": "click",
+      "sel": "#command-search-button"
+    },
+    {
+      "do": "round-trip"
+    },
+    {
+      "do": "wheel",
+      "x": 0.721,
+      "y": 0.554,
+      "dy": 100
+    },
+    {
+      "do": "canvas",
+      "x": 0.396,
+      "y": 0.564,
+      "double": false
+    }
+  ]
+}

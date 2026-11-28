@@ -397,3 +397,36 @@ test("a name's leading spaces don't count against its NAME_MAX characters", asyn
   const r = sessionFromReply({ access_token: "a", refresh_token: "r", expires_in: 60, user: { id: "abc", email: "e@x", user_metadata: { full_name: " ".repeat(10) + "a".repeat(NAME_MAX) } } }, 0);
   assert.equal(r?.user.name, "a".repeat(NAME_MAX));
 });
+
+test("with no clock of its own, every request still gets the default time limit, AbortSignal.timeout of requestMs (SL #744: auth.ts `(ms) => AbortSignal.timeout(ms)` -> `() => undefined`)", async () => {
+  const svc = fakeService(() => T0 / 1000);
+  const signals: (AbortSignal | null | undefined)[] = [];
+  const asked: number[] = [];
+  const real = AbortSignal.timeout;
+  const made: AbortSignal[] = [];
+  AbortSignal.timeout = (ms: number) => {
+    asked.push(ms);
+    const s = real.call(AbortSignal, ms);
+    made.push(s);
+    return s;
+  };
+  try {
+    const fetch = (async (input: string | URL | Request, init?: RequestInit) => (signals.push(init?.signal), svc.fetch(input, init))) as Fetch;
+    const client = authClient({ config: { url: SERVICE, anonKey: KEY, redirectTo: APP }, fetch, store: memoryStore(), now: () => T0, random: seededRandom(1) });
+    const go = new URL(await client.beginSignIn());
+    const code = svc.approve(go.searchParams.get("code_challenge")!);
+    const back = new URL(APP);
+    back.searchParams.set("code", code);
+    await client.finishSignIn(String(back));
+  } finally {
+    AbortSignal.timeout = real;
+  }
+  assert.ok(signals.length > 0, "a request was made");
+  for (const [i, s] of signals.entries()) {
+    assert.ok(s instanceof AbortSignal, `request ${i} has a signal`);
+    assert.equal(s, made[i], `request ${i}'s signal is the default time limit's`);
+  }
+  // A small request: by hand REQUEST_MS 15,000 ms plus its JSON body at 50 KiB/s; a body under 51 bytes adds 1 ms
+  // (ceil(n * 1000 / 51,200) = 1 for 1 <= n <= 51), one under 1 KiB at most 20 ms. So each limit is 15,000 to 15,020 ms.
+  for (const ms of asked) assert.ok(ms >= 15_000 && ms <= 15_020, `${ms} ms`);
+});

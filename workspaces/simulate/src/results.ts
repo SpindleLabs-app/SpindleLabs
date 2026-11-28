@@ -16,7 +16,7 @@
 import type { AnalysisOverlay, DisplayMesh, Mechanical, StressTestResult } from "@fission/core";
 import { weakerWay } from "@fission/core";
 import { mpaWords } from "./materials.ts";
-import { bends, bentMesh, boxDiagonal, drawnScale, ESTIMATE, figure, safetyBand, safetyWords, scaleColour, vertexColours, type SafetyBand } from "./run.ts";
+import { bends, bentMesh, boxDiagonal, drawnScale, ESTIMATE, factorFigure, figure, safetyBand, safetyWords, scaleColour, vertexColours, type SafetyBand } from "./run.ts";
 import { DIRECTION_WORDS, newtons, newtonWords, type HeldFace, type Load, type Study } from "./study.ts";
 import { downloadTestFile, testFileOf, type RunRecord } from "./test-file.ts";
 import { suggestSection } from "./suggest.ts";
@@ -131,7 +131,7 @@ export function resultLines(r: Result): { label: string; words: string }[] {
 /** The safety factor in words for its badge ("3.4", "over 1,000"), or "none" when nothing is stressed. */
 export function factorWords(factor: number | null): string {
   if (factor === null) return "none";
-  return factor > 1000 ? "over 1,000" : figure(factor);
+  return factor > 1000 ? "over 1,000" : factorFigure(factor);
 }
 
 /** How the answer was worked out, in one sentence (the panel's details). */
