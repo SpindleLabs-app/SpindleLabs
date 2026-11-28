@@ -3,7 +3,7 @@
 
 import type { GeometryReference, Selection, ViewportPick } from "@fission/core";
 import { bodyReference } from "./references.ts";
-import { sceneHit, sceneReference, type Scene } from "./scene.ts";
+import { bodyOf, sceneHit, sceneReference, type Scene } from "./scene.ts";
 
 /**
  * The change a pick makes: replace with one face or edge, toggle one, clear,
@@ -32,15 +32,18 @@ export type SelectionChange =
  * double-click selects just the body and a Shift+double-click adds the body
  * and takes out the face or edge the first click added. Even a face with no
  * name gives its body. A double-click on empty space is two clicks there.
+ * A face or edge whose name finds another shown body (one a Pattern's copies
+ * share) picks the body clicked instead, so a pick never lands on another.
  */
 export function pickChange(pick: ViewportPick, scene: Scene | null): SelectionChange {
   const hit = pick.edge != null ? ({ kind: "edge", index: pick.edge } as const) : pick.face !== null ? ({ kind: "face", index: pick.face } as const) : null;
   if (hit === null) return pick.shift ? { change: "keep" } : { change: "clear" };
-  const item = scene === null ? null : sceneReference(hit.kind, scene, hit.index);
-  if (pick.double && scene !== null) {
-    const on = sceneHit(scene, hit.kind, hit.index);
-    if (on !== null) return { change: "body", body: bodyReference(scene.bodies[on.body].body), drop: pick.shift ? item : null };
-  }
+  const named = scene === null ? null : sceneReference(hit.kind, scene, hit.index);
+  const on = scene === null ? null : sceneHit(scene, hit.kind, hit.index);
+  // A name the clicked body shares with another shown body (a Pattern's copies, cad.md 61d) finds the first that
+  // carries it, not this one: the body clicked is picked instead, never another (bug sweep 2026-11-28, A1-1).
+  const item = named !== null && on !== null && bodyOf(scene!, named) !== on.body ? bodyReference(scene!.bodies[on.body].body) : named;
+  if (pick.double && scene !== null && on !== null) return { change: "body", body: bodyReference(scene.bodies[on.body].body), drop: pick.shift ? item : null };
   if (item === null) return { change: "keep" };
   return pick.shift ? { change: "toggle", item } : { change: "set", item };
 }
