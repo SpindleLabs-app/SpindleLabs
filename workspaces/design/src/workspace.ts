@@ -6275,6 +6275,9 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
       // its OK stayed held for good, so the page asked "Leave site?" on every reload though it said Saved, and Undo
       // waited for it (nightly monkey #749: a file opened as the question came up).
       missAsk.close();
+      // The command search box goes too: left open over the Design mounted next, a command clicked in it ran this
+      // mount's code on a panel that had left the page (SL #891: a file opened while the box was open).
+      searchBox.close();
       unitWatch = null;
       for (const d of [pointDrag, liveDrag]) if (d) cancelDrag(d);
       putAwayByRestore = ctx.history.restoring() ? ctx.project : null;
