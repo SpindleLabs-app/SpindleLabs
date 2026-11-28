@@ -390,6 +390,12 @@ export function refusalWords(message: string, height?: number): string {
   if (tall) return `The part is about ${tall[1]} mm tall, and the P1S prints up to ${tall[2]} mm. Make it shorter or split it into pieces.`;
   const air = /starts in mid-air at z = (-?[\d.]+) mm, around \((-?[\d.]+), (-?[\d.]+)\), with nothing under it/.exec(message);
   if (air) return `Part of the model hangs in the air ${air[1]} mm above the plate, around (${air[2]}, ${air[3]}) mm, with nothing under it. Turn Supports on, or move it down onto the plate or the part.`;
+  // The engine says the float32 mesh's height in full (0.05000000074505806): three significant figures, and a full stop.
+  const thin = /the part is (-?[\d.e+-]+) mm high, lower than half the first layer \(([\d.e+-]+) mm\), so no layer cuts it/.exec(message);
+  if (thin && Number.isFinite(Number(thin[1])) && Number.isFinite(Number(thin[2]))) {
+    const [high, half] = [thin[1], thin[2]].map((v) => Number(Number(v).toPrecision(3)));
+    return `The part is ${high} mm high, lower than half the first layer (${half} mm), so no layer cuts it. Make it at least ${half} mm tall.`;
+  }
   return message.charAt(0).toUpperCase() + message.slice(1);
 }
 
