@@ -4200,7 +4200,7 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
     let checked: Checked;
     let next: DesignDocument | null = null;
     try {
-      const held = await okCheck(bodies.using(() => heldNamesOf(built, (b) => bodies.view(b.handle), picks)));
+      const held = await okCheck(bodies.using(() => heldNamesOf(built, (b) => bodies.view(b.handle), picks, patternCopyMakers(before))));
       if (chamferOpenings !== opened) return;
       if (held.some((h) => h === null)) checked = { refused: NO_NAME, misses: [] };
       else {
@@ -4482,7 +4482,7 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
     let checked: Checked;
     let next: DesignDocument | null = null;
     try {
-      const held = await okCheck(bodies.using(() => heldFaceNames(built, (b) => bodies.view(b.handle), picks.body, picks.faces)));
+      const held = await okCheck(bodies.using(() => heldFaceNames(built, (b) => bodies.view(b.handle), picks.body, picks.faces, patternCopyMakers(before))));
       if (shellOpenings !== opened) return;
       if (held.some((h) => h === null)) checked = { refused: SHELL_NO_NAME, misses: [] };
       else {

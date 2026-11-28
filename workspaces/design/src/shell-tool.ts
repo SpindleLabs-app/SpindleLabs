@@ -14,6 +14,7 @@ import { namedBody } from "./built-body.ts";
 import { shellThicknessProblem } from "./document.ts";
 import { faceFeature, isFacePlane } from "./face-sketch.ts";
 import type { BuiltBody } from "./rebuild.ts";
+import { copyShared } from "./pattern-values.ts";
 
 /**
  * What the tool holds: the body being shelled (a body id; null until a
@@ -132,7 +133,7 @@ export function shellHintWords(bodies: number): string {
  * that no other face of the design carries. Null for a face with no such
  * name, a body the build does not hold, or a face it does not have.
  */
-export async function heldFaceNames(bodies: Readonly<Record<string, BuiltBody>>, view: (b: BuiltBody) => Promise<BodyView>, body: string, faces: readonly number[]): Promise<(string | null)[]> {
+export async function heldFaceNames(bodies: Readonly<Record<string, BuiltBody>>, view: (b: BuiltBody) => Promise<BodyView>, body: string, faces: readonly number[], copied: ReadonlySet<string> = new Set()): Promise<(string | null)[]> {
   const ids = Object.keys(bodies);
   const list = await Promise.all(ids.map(async (k) => namedBody(k, bodies[k], await view(bodies[k]), 0)));
   const count = new Map<string, number>();
@@ -140,6 +141,6 @@ export async function heldFaceNames(bodies: Readonly<Record<string, BuiltBody>>,
   const at = ids.indexOf(body);
   return faces.map((face) => {
     const names = at < 0 ? undefined : list[at].faces[face]?.names;
-    return names?.find((n) => count.get(n) === 1 && isFacePlane(n) && faceFeature(n) !== null) ?? null;
+    return names?.find((n) => count.get(n) === 1 && isFacePlane(n) && faceFeature(n) !== null && !copyShared(body, n, copied)) ?? null; // a Pattern copy's: shared (A1-2)
   });
 }
