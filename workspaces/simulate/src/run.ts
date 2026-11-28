@@ -322,6 +322,18 @@ export function figure(x: number): string {
   return Number(x.toPrecision(3)).toLocaleString("en", { maximumSignificantDigits: 3 });
 }
 
+/**
+ * The safety factor to three significant figures, as `figure`, except where rounding would carry it over its band's edge
+ * (1.9996 to "2", 0.9996 to "1"): then rounded down ("1.99", "0.999"), so the number never contradicts its band's words
+ * and never claims more strength than worked out (bug sweep 2026-11-28, A2-5).
+ */
+export function factorFigure(x: number): string {
+  const shown = figure(x);
+  if (!(x > 0) || x >= 1000 || safetyBand(Number(shown.replaceAll(",", ""))) === safetyBand(x)) return shown;
+  const step = 10 ** (Math.floor(Math.log10(x)) - 2);
+  return figure(Number((Math.floor(x / step) * step).toPrecision(3)));
+}
+
 /** The safety factor's band: below 1 it fails, below 2 it is close, from 2 it has room to spare. */
 export type SafetyBand = "fails" | "close" | "safe";
 
@@ -338,7 +350,7 @@ export function safetyWords(factor: number | null, strengthKind: Mechanical["str
   const band = safetyBand(factor);
   if (band === "fails") return `The stress goes past the material's strength: the part would ${broken} under these loads.`;
   if (band === "close") return `It holds, but with little to spare: a weaker print or a bigger load could make it ${broken}. Aim for 2 or more.`;
-  return `It holds with room to spare: the material is ${figure(factor)} times stronger than the biggest stress.`;
+  return `It holds with room to spare: the material is ${factorFigure(factor)} times stronger than the biggest stress.`;
 }
 
 /** What the progress line says while a stage runs. */

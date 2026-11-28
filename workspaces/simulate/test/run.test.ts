@@ -3,7 +3,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { materialLibrary, type DisplayMesh, type FaceFound, type StableId, type StressTestResult } from "@fission/core";
-import { answerProblem, bentMesh, drawnScale, faceFacts, figure, FLAT_FACE, kernelLoads, MAX_IMBALANCE, MAX_RESIDUAL, safetyBand, safetyWords, scaleColour, stressTestOf, type StudyNow } from "../src/index.ts";
+import { answerProblem, bentMesh, drawnScale, factorFigure, faceFacts, figure, FLAT_FACE, kernelLoads, MAX_IMBALANCE, MAX_RESIDUAL, safetyBand, safetyWords, scaleColour, stressTestOf, type StudyNow } from "../src/index.ts";
 import { factorWords, resultOf, scaleWords } from "../src/results.ts";
 import type { Load, Study } from "../src/study.ts";
 
@@ -223,4 +223,19 @@ test("a result made from an answer: the scale from the surface's own size", () =
   const r = resultOf(sound(), { name: "Steel", mechanical: materialLibrary().get("steel-a36")!.mechanical! }, { body: "Body 1", held: [], loads: [] });
   assert.equal(r.scale, 1000);
   assert.deepEqual(r.bend, [0, 0.005, 0.005]);
+});
+
+test("the safety factor's figure never shows the next band's edge: three figures, rounded down where rounding would cross a band edge, so the number agrees with its band (bug sweep 2026-11-28, A2-5)", () => {
+  // By hand: 1.9996 to three figures is 2.00 rounded, but it is below 2, so close; rounded down it is 1.99, which reads as
+  // close too. 0.9996 rounded is 1.00 but it fails; down it is 0.999. Away from an edge it rounds as every figure does:
+  // 2 -> 2, 1 -> 1, 3.456 -> 3.46, 12.34 -> 12.3.
+  for (const [f, shown, band] of [[1.9996, "1.99", "close"], [1.9951, "1.99", "close"], [0.9996, "0.999", "fails"], [2, "2", "safe"], [1, "1", "close"], [3.456, "3.46", "safe"], [2.01, "2.01", "safe"], [0.549, "0.549", "fails"], [12.34, "12.3", "safe"]] as const) {
+    assert.equal(factorFigure(f), shown, `${f}`);
+    assert.equal(safetyBand(f), band, `${f}`);
+    // The band the shown figure would be read as is the band the words say.
+    assert.equal(safetyBand(Number(shown)), band, `${f}: shown ${shown}`);
+  }
+  // The badge and the words say that figure.
+  assert.equal(factorWords(1.9996), "1.99");
+  assert.match(safetyWords(2.0049, "tensile"), /is 2 times stronger/);
 });
