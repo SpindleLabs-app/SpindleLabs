@@ -1926,7 +1926,8 @@ async function patternRun(doc: DesignDocument, f: Feature, done: Record<string, 
   if (r.status !== "built") {
     // A round face anywhere among the inputs: the kernel's booleans don't join curved bodies yet, said in the Pattern's words.
     const round = await Promise.all(sources.map(async (b) => (await cache.view(bodies[b].handle)).face_types.some((t) => t !== "plane")));
-    return r.status === "failed" && r.cause === "error" && round.some(Boolean) ? { ...r, message: `${label} can't be made: ${CURVED_JOIN}` } : r;
+    if (r.status === "failed" && r.cause === "error" && round.some(Boolean)) return { ...r, message: `${label} can't be made: ${CURVED_JOIN}` };
+    return r.status === "failed" ? { ...r, message: patternJoinWords(r.message) } : r;
   }
   // A copy is no piece split from its body: a Move holding the body never takes it (`moveBodies`' `from`).
   for (const id of r.bodies ?? [])
@@ -2801,4 +2802,20 @@ function baseOf(placed: SketchPlacement | null | undefined): { base?: Plane } {
   const plane = placed == null ? null : squared(placed.plane);
   if (plane === null || carried(plane, undefined) === null) return {};
   return { base: plane };
+}
+
+/**
+ * A joined Pattern's refusal in its own words (bug sweep 2026-11-28, A1-3): the Join's copies are its "tools" to the
+ * kernel, but a Pattern has none the person chose, so "tool N: the parts only touch" says "copy N only touches the
+ * rest", any other "tool N:" "copy N:"; and the points in brackets are rounded to 0.000001 mm (float noise, and -0, read 0).
+ */
+export function patternJoinWords(message: string): string {
+  const round = (v: string) => {
+    const n = Math.round(Number(v) * 1e6) / 1e6;
+    return Number.isFinite(n) ? String(n === 0 ? 0 : n) : v;
+  };
+  return message
+    .replace(/tool (\d+): the parts only touch/, "copy $1 only touches the rest")
+    .replace(/tool (\d+): /, "copy $1: ")
+    .replace(/\[(-?[\d.e+-]+), (-?[\d.e+-]+), (-?[\d.e+-]+)\]/g, (_m, x: string, y: string, z: string) => `[${round(x)}, ${round(y)}, ${round(z)}]`);
 }

@@ -12,7 +12,7 @@ import { insertPattern, type PatternValues } from "../src/pattern.ts";
 import { DESIGN_VERSION, insertPreset, numberPieces, partDocument, readDesignDocument, type DesignDocument } from "../src/document.ts";
 import { insertCombine } from "../src/combine.ts";
 import { deleteItem, suppressItem } from "../src/timeline-edits.ts";
-import { BodyCache, rebuildTimeline, type TimelineBuild } from "../src/rebuild.ts";
+import { BodyCache, patternJoinWords, rebuildTimeline, type TimelineBuild } from "../src/rebuild.ts";
 
 const kernel = nodeKernel();
 
@@ -261,4 +261,24 @@ test("what a Pattern uses and changes for the items after it: its bodies; change
   assert.deepEqual(bodiesUsed(item(plain.doc, plain.id)), [body]);
   assert.deepEqual(bodiesChanged(item(plain.doc, plain.id)), [], "the copies are new bodies; the cube stays as it was");
   assert.deepEqual(bodiesChanged(item(joined.doc, joined.id)), [body], "with Join the cube is joined to its copies");
+});
+
+test("a joined Pattern whose copies only touch along a line is refused in the Pattern's words: no \"tool 1:\" (a Pattern has no tools), each copy named as one, and the points rounded (bug sweep 2026-11-28, A1-3)", async () => {
+  // By hand: a 10 mm cube x, y 0..10 turned round the Z axis through the origin, 3 in a full turn (0°, 120°, 240°): each
+  // keeps its corner edge on the axis (x = y = 0, z 0..10), and a 90° corner turned 120° meets the original only along
+  // that edge (90 < 120), so the Join is refused there, from [0, 0, 0] to [0, 0, 10].
+  const p = insertPattern(partDocument("box", 10, 10, 10), ["body:feature-1"], { kind: "circular", axis: "Z", centre: [0, 0, 0], count: 3, angle: 360, join: true });
+  const cache = new BodyCache(kernel);
+  const b = await rebuildTimeline(p.doc, cache, kernel);
+  await cache.close();
+  const r = b.results[p.id] as { status: string; message?: string };
+  assert.equal(r.status, "failed");
+  assert.doesNotMatch(r.message!, /tool \d/);
+  assert.match(r.message!, /^Pattern 1 can't be made: copy 1 only touches the rest along a line, from \[0, 0, 0\] to \[0, 0, 10\]/);
+  // The words of the kernel's sentence as one Pattern says them: float noise of 4.4e-16 mm reads 0, -0 too, and a
+  // point a micrometre off keeps its six decimals (0.000001); any other sentence is kept as it is.
+  assert.equal(patternJoinWords("Pattern 5 can't be made: the parts only touch along a line, from [0.0000000000000004440892098500626, -0.0000000000000004440892098500626, 0] to [-0, 17.0000000000000036, 1.000001], so the result would not be a solid"), "Pattern 5 can't be made: the parts only touch along a line, from [0, 0, 0] to [0, 17, 1.000001], so the result would not be a solid");
+  assert.equal(patternJoinWords("Pattern 1 can't be made: tool 2: the parts only touch along a line, from [1, 2, 3] to [4, 5, 6], so"), "Pattern 1 can't be made: copy 2 only touches the rest along a line, from [1, 2, 3] to [4, 5, 6], so");
+  assert.equal(patternJoinWords("Pattern 1 can't be made: tool 3: the result is too thin"), "Pattern 1 can't be made: copy 3: the result is too thin");
+  assert.equal(patternJoinWords("Pattern 1 can't be made: the kernel can't make this pattern"), "Pattern 1 can't be made: the kernel can't make this pattern");
 });
